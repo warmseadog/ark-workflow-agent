@@ -7,9 +7,9 @@ from app import media
 from app.config import settings
 
 
-def test_mask_scale_defaults_to_one_without_changing_other_defaults():
+def test_mask_scale_defaults_to_1_4_without_changing_other_defaults():
     options = media.BlurOptions()
-    assert options.mask_scale == 1.0
+    assert options.mask_scale == 1.4
     assert options.style == 'mosaic'
     assert options.shape == 'ellipse'
     assert options.mosaic_size == 20
@@ -29,6 +29,7 @@ def test_task_options_reach_deface_without_changing_server_defaults():
     assert '--keep-audio' not in command
     defaults = media.BlurOptions.from_settings(settings)
     assert defaults.mask_scale == settings.deface_mask_scale
+    assert settings.deface_mask_scale == 1.4
 
 
 @pytest.mark.parametrize('values', [

@@ -21,7 +21,7 @@ class BlurOptions(BaseModel):
     shape: Literal['ellipse', 'box'] = 'ellipse'
     mask_mode: Literal['face', 'face_hair_primary', 'hair_primary', 'face_hair_all'] = 'face'
     robust_tracking: bool = False
-    mask_scale: float = Field(default=1.0, gt=0, le=3)
+    mask_scale: float = Field(default=1.4, gt=0, le=3)
     mosaic_size: int = Field(default=20, ge=4, le=100)
     threshold: float = Field(default=0.2, gt=0, le=1)
     detection_size: int | None = Field(default=None)

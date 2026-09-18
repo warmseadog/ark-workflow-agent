@@ -69,7 +69,7 @@ async def create_job(
     blur_shape: str = Form(default="ellipse"),
     mask_mode: str = Form(default="face"),
     robust_tracking: bool | None = Form(default=None),
-    mask_scale: float = Form(default=1.0),
+    mask_scale: float = Form(default=1.4),
     mosaic_size: int = Form(default=20),
     threshold: float = Form(default=0.2),
     detection_size: str | None = Form(default=None),

@@ -42,7 +42,7 @@ class Settings:
             deface_bin=os.getenv("DEFACE_BIN", "deface"),
             deface_replacewith=os.getenv("DEFACE_REPLACEWITH", "mosaic"),
             deface_mosaic_size=int(os.getenv("DEFACE_MOSAIC_SIZE", "20")),
-            deface_mask_scale=float(os.getenv("DEFACE_MASK_SCALE", "1")),
+            deface_mask_scale=float(os.getenv("DEFACE_MASK_SCALE", "1.4")),
             seedance_mode=os.getenv("SEEDANCE_MODE", "mock").strip().lower(),
             seedance_api_url=os.getenv("SEEDANCE_API_URL", "").rstrip("/"),
             seedance_api_key=os.getenv("SEEDANCE_API_KEY", ""),

@@ -22,7 +22,7 @@ def test_settings_drawer_has_open_close_behavior():
     assert "settings-close" in SCRIPT
     assert "drawer-open" in SCRIPT
     assert 'id="mask-scale"' in TEMPLATE
-    assert 'value="1"' in TEMPLATE
+    assert 'value="1.4"' in TEMPLATE
 
 
 def test_two_stage_video_flow_has_preview_and_generation_step():
@@ -81,3 +81,10 @@ def test_v2_installation_documents_hair_models():
     assert "头发" in readme
     assert "face_hair_primary" in readme
     assert "selfie_multiclass_256x256.tflite" in readme
+
+
+def test_task_settings_are_persisted_in_browser_storage():
+    assert 'face-mosaic-settings-v2' in SCRIPT
+    assert 'localStorage' in SCRIPT
+    assert 'saveSettings' in SCRIPT
+    assert 'loadSettings' in SCRIPT

@@ -28,9 +28,52 @@ const maskScale = document.querySelector('#mask-scale');
 const maskScaleValue = document.querySelector('#mask-scale-value');
 const threshold = document.querySelector('#threshold');
 const thresholdValue = document.querySelector('#threshold-value');
+const blurShape = document.querySelector('[name="blur_shape"]');
+const mosaicSize = document.querySelector('[name="mosaic_size"]');
+const detectionSize = document.querySelector('[name="detection_size"]');
+const keepAudio = document.querySelector('[name="keep_audio"]');
+const robustTracking = document.querySelector('[name="robust_tracking"]');
+const SETTINGS_STORAGE_KEY = 'face-mosaic-settings-v2';
 
 let activeJobId = null;
 let generationStepActive = false;
+
+const persistedSettings = [
+  ['blur_style', blurStyle],
+  ['blur_shape', blurShape],
+  ['mask_mode', maskMode],
+  ['mask_scale', maskScale],
+  ['mosaic_size', mosaicSize],
+  ['threshold', threshold],
+  ['detection_size', detectionSize],
+  ['keep_audio', keepAudio],
+  ['robust_tracking', robustTracking],
+];
+
+function saveSettings() {
+  const values = {};
+  persistedSettings.forEach(([name, element]) => {
+    values[name] = element.type === 'checkbox' ? element.checked : element.value;
+  });
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(values));
+  } catch (_error) {
+    // Private browsing or a restricted browser may disable localStorage.
+  }
+}
+
+function loadSettings() {
+  try {
+    const values = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}');
+    persistedSettings.forEach(([name, element]) => {
+      if (!(name in values)) return;
+      if (element.type === 'checkbox') element.checked = Boolean(values[name]);
+      else element.value = values[name];
+    });
+  } catch (_error) {
+    // Invalid or unavailable saved settings fall back to the HTML defaults.
+  }
+}
 
 function setSettingsDrawer(open) {
   settingsDrawer.hidden = !open;
@@ -61,9 +104,21 @@ function updateBlurControls() {
 
 maskMode.addEventListener('change', updateBlurControls);
 blurStyle.addEventListener('change', updateBlurControls);
-maskScale.addEventListener('input', () => { maskScaleValue.textContent = maskScale.value; });
-threshold.addEventListener('input', () => { thresholdValue.textContent = Number(threshold.value).toFixed(2); });
+persistedSettings.forEach(([_name, element]) => {
+  element.addEventListener('change', saveSettings);
+  element.addEventListener('input', saveSettings);
+});
+function syncRangeLabels() {
+  maskScaleValue.textContent = maskScale.value;
+  thresholdValue.textContent = Number(threshold.value).toFixed(2);
+}
+
+maskScale.addEventListener('input', syncRangeLabels);
+threshold.addEventListener('input', syncRangeLabels);
+loadSettings();
+syncRangeLabels();
 updateBlurControls();
+saveSettings();
 
 function resetStageTwo() {
   generationStepActive = false;
