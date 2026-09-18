@@ -21,6 +21,20 @@
 
 这些选项只作用于当前任务，不会修改 `.env` 中的默认值，也不会影响其他任务。
 
+
+### v2 头发遮挡模式
+
+v2 在保留 ORB-HD/deface 人脸打码的同时，接入了本地的头发语义分割和视频跟踪。页面的“遮挡目标”可以选择：
+
+- `face`：只遮人脸，使用现有 deface 流程；
+- `face_hair_primary`：遮主人脸和主人物头发；
+- `hair_primary`：只遮主人物头发；
+- `face_hair_all`：遮画面中所有人物的人脸和头发。
+
+后三种模式使用本地 MediaPipe 分割模型 `storage/attached_local_face_mosaic_v3/local-face-mosaic-tracking/models/selfie_multiclass_256x256.tflite`，并通过 OpenCV/MediaPipe 脚本逐帧处理。头发模式当前使用马赛克样式，主人物模式可以开启稳定跟踪来应对转身和短暂漏检；所有人物模式使用 YuNet 模型 `face_detection_yunet_2023mar.onnx`。
+
+头发模型会生成头发区域掩码，再对掩码做少量边缘扩张和连通区域过滤，因此长发、马尾和发髻可以沿实际轮廓处理，不需要把人脸椭圆整体放大。处理过程在本机完成，视频仍保存在 `storage/work/<job_id>`，不会因为头发模式上传到外部服务。
+
 当前默认 `SEEDANCE_MODE=mock`。在 mock 模式下，应用会把打码后的文件作为演示结果，页面会明确标注“演示结果”，不会冒充 Seedance 生成结果。这让你可以先验证上传、下载、deface 和任务状态流程。
 
 ## 本地运行
@@ -32,7 +46,6 @@ py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-pip install deface
 Copy-Item .env.example .env
 .\run.ps1
 ```

@@ -67,6 +67,8 @@ async def create_job(
     replace_image: UploadFile | None = File(default=None),
     blur_style: str = Form(default="mosaic"),
     blur_shape: str = Form(default="ellipse"),
+    mask_mode: str = Form(default="face"),
+    robust_tracking: bool | None = Form(default=None),
     mask_scale: float = Form(default=1.0),
     mosaic_size: int = Form(default=20),
     threshold: float = Form(default=0.2),
@@ -101,6 +103,8 @@ async def create_job(
         blur_options = BlurOptions(
             style=blur_style,
             shape=blur_shape,
+            mask_mode=mask_mode,
+            robust_tracking=robust_tracking is True,
             mask_scale=mask_scale,
             mosaic_size=mosaic_size,
             threshold=threshold,

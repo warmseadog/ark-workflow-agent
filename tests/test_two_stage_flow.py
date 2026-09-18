@@ -106,3 +106,23 @@ def test_empty_detection_size_is_treated_as_original_resolution():
     assert _parse_detection_size("") is None
     assert _parse_detection_size(None) is None
     assert _parse_detection_size("640") == 640
+
+
+def test_deface_pipeline_log_identifies_hair_aware_mode(monkeypatch, tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+    local_settings = replace(settings, storage_dir=tmp_path)
+    store = jobs.JobStore()
+    monkeypatch.setattr(jobs, "store", store)
+    job = store.create()
+
+    def fake_deface(_input_path, output_path, _settings, _options):
+        output_path.write_bytes(b"defaced")
+        return output_path
+
+    monkeypatch.setattr(jobs, "run_deface", fake_deface)
+    options = BlurOptions(mask_mode="face_hair_primary", robust_tracking=True)
+    jobs.run_deface_pipeline(job.id, local_settings, source, None, options)
+
+    assert any("face_hair_primary" in entry for entry in store.get(job.id).logs)
+    assert any("本地" in entry for entry in store.get(job.id).logs)

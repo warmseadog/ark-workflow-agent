@@ -7,3 +7,6 @@ storage/*
 !storage/.gitkeep
 !storage/attached_local_face_mosaic_v3/
 !storage/attached_local_face_mosaic_v3/**
+storage/attached_local_face_mosaic_v3/**/__pycache__/
+storage/attached_local_face_mosaic_v3/**/*.py[cod]
+

@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -22,6 +23,28 @@ from process_primary_face_mosaic import (
 from hair_mosaic import HairSegmenter, mosaic_hair
 
 
+def create_yunet_detector(model, input_size, score_threshold):
+    """Create YuNet, falling back to an ASCII temp path on Windows."""
+    try:
+        return cv2.FaceDetectorYN.create(
+            str(model), "", input_size, score_threshold, 0.3, 5000
+        )
+    except cv2.error as original:
+        fallback_path = None
+        try:
+            with tempfile.NamedTemporaryFile(prefix="yunet_", suffix=".onnx", delete=False) as handle:
+                handle.write(model.read_bytes())
+                fallback_path = Path(handle.name)
+            return cv2.FaceDetectorYN.create(
+                str(fallback_path), "", input_size, score_threshold, 0.3, 5000
+            )
+        except Exception:
+            raise original
+        finally:
+            if fallback_path:
+                fallback_path.unlink(missing_ok=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("input", type=Path)
@@ -32,6 +55,7 @@ def main():
     parser.add_argument("--score-threshold", type=float, default=0.65)
     parser.add_argument("--hold-frames", type=int, default=12)
     parser.add_argument("--no-hair", action="store_true")
+    parser.add_argument("--hair-only", action="store_true", help="Skip face mosaic and mask only segmented hair.")
     parser.add_argument("--hair-update-hz", type=float, default=6.0)
     args = parser.parse_args()
 
@@ -53,9 +77,7 @@ def main():
     dh = round(height * dw / width)
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
-    detector = cv2.FaceDetectorYN.create(
-        str(model), "", (dw, dh), args.score_threshold, 0.3, 5000
-    )
+    detector = create_yunet_detector(model, (dw, dh), args.score_threshold)
     hair_segmenter = None if args.no_hair else HairSegmenter(
         Path(__file__).parents[1], width, height, fps, args.hair_update_hz
     )
@@ -161,7 +183,8 @@ def main():
                 ])
                 polygon[:, 0] = np.clip(polygon[:, 0], 0, width - 1)
                 polygon[:, 1] = np.clip(polygon[:, 1], 0, height - 1)
-                frame = mosaic(frame, polygon.astype(np.int32))
+                if not args.hair_only:
+                    frame = mosaic(frame, polygon.astype(np.int32))
 
             if hair_mask is not None:
                 frame = mosaic_hair(frame, hair_mask)

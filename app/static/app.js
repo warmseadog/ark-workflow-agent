@@ -19,6 +19,8 @@ const settingsToggle = document.querySelector('#settings-toggle');
 const settingsDrawer = document.querySelector('#settings-drawer');
 const settingsClose = document.querySelector('#settings-close');
 const blurStyle = document.querySelector('#blur-style');
+const maskMode = document.querySelector('#mask-mode');
+const hairModeNote = document.querySelector('#hair-mode-note');
 const shapeField = document.querySelector('#shape-field');
 const mosaicSizeField = document.querySelector('#mosaic-size-field');
 const replaceImageField = document.querySelector('#replace-image-field');
@@ -40,13 +42,24 @@ function setSettingsDrawer(open) {
 settingsToggle.addEventListener('click', () => setSettingsDrawer(true));
 settingsClose.addEventListener('click', () => setSettingsDrawer(false));
 
+function updateMaskControls() {
+  const hairMode = maskMode.value !== 'face';
+  hairModeNote.hidden = !hairMode;
+  [...blurStyle.options].forEach(option => {
+    option.disabled = hairMode && option.value !== 'mosaic';
+  });
+  if (hairMode && blurStyle.value !== 'mosaic') blurStyle.value = 'mosaic';
+}
+
 function updateBlurControls() {
+  updateMaskControls();
   const style = blurStyle.value;
   shapeField.hidden = style !== 'blur';
   mosaicSizeField.hidden = style !== 'mosaic';
   replaceImageField.hidden = style !== 'img';
 }
 
+maskMode.addEventListener('change', updateBlurControls);
 blurStyle.addEventListener('change', updateBlurControls);
 maskScale.addEventListener('input', () => { maskScaleValue.textContent = maskScale.value; });
 threshold.addEventListener('input', () => { thresholdValue.textContent = Number(threshold.value).toFixed(2); });

@@ -42,7 +42,7 @@ h2 { margin: 0; font-size: 24px; }
 .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .field.compact { margin-bottom: 12px; }
 .field output { color: var(--accent); font-variant-numeric: tabular-nums; }
-.replace-image { padding: 0 16px; }
+.replace-image { padding: 0 16px; } .inline-note { margin: 6px 16px 14px; padding: 10px 12px; border: 1px solid #4a5b37; border-radius: 10px; color: var(--accent); background: #20291a; font-size: 12px; line-height: 1.5; }
 .check { display: inline-flex; align-items: center; gap: 8px; margin: 0 16px 16px; color: var(--muted); font-size: 13px; font-weight: 500; }
 .check input { width: auto; accent-color: var(--accent); }
 input, textarea { width: 100%; border: 1px solid var(--line); border-radius: 11px; padding: 12px 13px; background: #10120f; color: var(--text); font: inherit; font-size: 14px; }

@@ -16,6 +16,8 @@ def test_mask_scale_defaults_to_one_without_changing_other_defaults():
     assert options.threshold == 0.2
     assert options.detection_size is None
     assert options.keep_audio is True
+    assert options.mask_mode == 'face'
+    assert options.robust_tracking is False
 
 
 def test_task_options_reach_deface_without_changing_server_defaults():
@@ -36,6 +38,14 @@ def test_task_options_reach_deface_without_changing_server_defaults():
 def test_invalid_options_are_rejected(values):
     with pytest.raises(ValidationError):
         media.BlurOptions(**values)
+
+
+def test_hair_modes_require_mosaic_style():
+    for mode in ['face_hair_primary', 'hair_primary', 'face_hair_all']:
+        options = media.BlurOptions(mask_mode=mode)
+        assert options.mask_mode == mode
+        with pytest.raises(ValidationError, match='马赛克'):
+            media.BlurOptions(mask_mode=mode, style='blur')
 
 
 def test_shape_only_applies_to_blur_and_image_requires_upload():

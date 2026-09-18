@@ -35,6 +35,16 @@
             <option value="img">图片覆盖</option>
           </select>
         </label>
+        <label class="field compact">
+          <span>遮挡目标</span>
+          <select form="job-form" name="mask_mode" id="mask-mode">
+            <option value="face" selected>只遮人脸（deface）</option>
+            <option value="face_hair_primary">人脸 + 主人物头发</option>
+            <option value="hair_primary">只遮主人物头发</option>
+            <option value="face_hair_all">所有人物脸和头发</option>
+          </select>
+          <small>头发模式使用本地语义分割和跟踪。</small>
+        </label>
         <label class="field compact" id="shape-field">
           <span>模糊形状</span>
           <select form="job-form" name="blur_shape">
@@ -69,12 +79,14 @@
           <small>缩小检测尺寸可提升速度。</small>
         </label>
       </div>
+      <p class="inline-note" id="hair-mode-note" hidden>头发模式当前使用马赛克；如果选择其他样式，系统会自动切回马赛克。</p>
       <label class="field replace-image" id="replace-image-field" hidden>
         <span>图片覆盖素材</span>
         <input form="job-form" type="file" name="replace_image" accept="image/*" />
         <small>选择“图片覆盖”时必填，例如贴纸或图标。</small>
       </label>
       <label class="check"><input form="job-form" type="checkbox" name="keep_audio" checked /> 保留原视频音频</label>
+      <label class="check"><input form="job-form" type="checkbox" name="robust_tracking" /> 稳定跟踪（转身或短暂漏检时更稳，但速度较慢）</label>
     </aside>
 
     <section class="card step-card" id="source-step">

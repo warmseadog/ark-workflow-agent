@@ -20,7 +20,7 @@ class HairSegmenter:
         self.height = max(64, round(height * self.width / width))
         self.interval = max(1, round(fps / update_hz))
         options = mp.tasks.vision.ImageSegmenterOptions(
-            base_options=mp.tasks.BaseOptions(model_asset_path=str(model)),
+            base_options=mp.tasks.BaseOptions(model_asset_buffer=model.read_bytes()),
             output_category_mask=True,
         )
         self.segmenter = mp.tasks.vision.ImageSegmenter.create_from_options(options)

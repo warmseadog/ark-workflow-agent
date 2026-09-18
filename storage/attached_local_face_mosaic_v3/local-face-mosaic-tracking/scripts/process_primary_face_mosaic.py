@@ -152,6 +152,7 @@ def main():
         help="Use slower CSRT head/hair tracking during face-detector gaps.",
     )
     parser.add_argument("--no-hair", action="store_true")
+    parser.add_argument("--hair-only", action="store_true", help="Skip face mosaic and mask only segmented hair.")
     parser.add_argument("--hair-update-hz", type=float, default=6.0)
     args = parser.parse_args()
 
@@ -283,7 +284,8 @@ def main():
                     ])
                     polygon[:, 0] = np.clip(polygon[:, 0], 0, width - 1)
                     polygon[:, 1] = np.clip(polygon[:, 1], 0, height - 1)
-                    frame = mosaic(frame, polygon.astype(np.int32))
+                    if not args.hair_only:
+                        frame = mosaic(frame, polygon.astype(np.int32))
                     if hair_mask is not None:
                         face_boxes = [(
                             float(center[0] / dw), float(center[1] / dh),

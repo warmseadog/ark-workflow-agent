@@ -92,9 +92,10 @@ def run_deface_pipeline(
             raise RuntimeError("没有可处理的视频输入。")
 
         defaced_path = job_dir / "defaced.mp4"
-        store.update(job_id, progress=25, message="正在使用 deface 进行人脸打码")
         blur_options = blur_options or BlurOptions.from_settings(settings)
-        store.log(job_id, f"deface：{blur_options.style}，遮罩 {blur_options.mask_scale} 倍，检测阈值 {blur_options.threshold}。")
+        processor_name = "deface" if blur_options.mask_mode == "face" else "本地人脸/头发跟踪器"
+        store.update(job_id, progress=25, message=f"正在使用{processor_name}处理")
+        store.log(job_id, f"{processor_name}：模式 {blur_options.mask_mode}，样式 {blur_options.style}，遮罩 {blur_options.mask_scale} 倍，检测阈值 {blur_options.threshold}，稳定跟踪 {blur_options.robust_tracking}。")
         run_deface(source_path, defaced_path, settings, blur_options)
         store.update(
             job_id,
@@ -103,7 +104,7 @@ def run_deface_pipeline(
             message="打码完成，请先预览视频",
             defaced_name=defaced_path.name,
         )
-        store.log(job_id, "人脸打码完成，可在下一步前预览结果。")
+        store.log(job_id, "人脸/头发打码完成，可在下一步前预览结果。")
     except Exception as exc:  # noqa: BLE001 - surface pipeline failures to the UI
         store.log(job_id, f"失败：{exc}")
         store.update(job_id, status="failed", progress=100, message="处理失败", error=str(exc))

@@ -51,3 +51,33 @@ def test_settings_drawer_is_fixed_to_the_right_and_mobile_safe():
     assert "right: 0" in STYLES
     assert ".settings-drawer.drawer-open" in STYLES
     assert "@media (max-width: 680px)" in STYLES
+
+
+def test_hair_aware_mask_controls_are_exposed():
+    assert 'name="mask_mode"' in TEMPLATE
+    assert 'value="face_hair_primary"' in TEMPLATE
+    assert 'value="hair_primary"' in TEMPLATE
+    assert 'value="face_hair_all"' in TEMPLATE
+    assert 'id="hair-mode-note"' in TEMPLATE
+    assert 'name="robust_tracking"' in TEMPLATE
+    assert 'maskMode' in SCRIPT
+    assert 'hair-mode-note' in SCRIPT
+
+
+def test_jobs_route_accepts_hair_aware_options():
+    import inspect
+    from app.main import create_job
+
+    parameters = inspect.signature(create_job).parameters
+    assert 'mask_mode' in parameters
+    assert 'robust_tracking' in parameters
+
+
+def test_v2_installation_documents_hair_models():
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "mediapipe" in requirements
+    assert "opencv-contrib-python" in requirements
+    assert "头发" in readme
+    assert "face_hair_primary" in readme
+    assert "selfie_multiclass_256x256.tflite" in readme
