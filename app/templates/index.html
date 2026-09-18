@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>视频人脸打码 · Seedance 工作流</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <button type="button" class="settings-toggle" id="settings-toggle" aria-controls="settings-drawer" aria-expanded="false">打码设置</button>
+      <p class="eyebrow">LOCAL VIDEO WORKFLOW</p>
+      <h1>把视频变成新的角色短片</h1>
+      <p class="lede">先在本地使用 deface 对人物打码，再将运动参考、人物参考和服装参考交给 Seedance 生成。</p>
+      <div class="status-pill"><span></span> Seedance provider：{{ seedance_mode }}</div>
+    </section>
+
+    <aside class="settings-drawer" id="settings-drawer" hidden aria-label="打码设置">
+      <div class="drawer-header">
+        <div>
+          <p class="eyebrow">TASK OPTIONS</p>
+          <h2>打码设置</h2>
+          <p>仅影响当前任务，不会修改其他任务。</p>
+        </div>
+        <button type="button" class="drawer-close" id="settings-close" aria-label="关闭打码设置">×</button>
+      </div>
+      <div class="grid three settings-grid">
+        <label class="field compact">
+          <span>打码样式</span>
+          <select form="job-form" name="blur_style" id="blur-style">
+            <option value="mosaic" selected>马赛克</option>
+            <option value="blur">高斯模糊</option>
+            <option value="solid">黑色遮挡</option>
+            <option value="img">图片覆盖</option>
+          </select>
+        </label>
+        <label class="field compact" id="shape-field">
+          <span>模糊形状</span>
+          <select form="job-form" name="blur_shape">
+            <option value="ellipse" selected>椭圆</option>
+            <option value="box">矩形</option>
+          </select>
+          <small>只对高斯模糊生效。</small>
+        </label>
+        <label class="field compact">
+          <span>遮罩倍数 <output id="mask-scale-value">1</output></span>
+          <input form="job-form" type="range" name="mask_scale" id="mask-scale" min="1" max="2" step="0.1" value="1" />
+          <small>越大覆盖范围越宽。</small>
+        </label>
+        <label class="field compact" id="mosaic-size-field">
+          <span>马赛克块大小</span>
+          <input form="job-form" type="number" name="mosaic_size" min="4" max="100" step="1" value="20" />
+          <small>只对马赛克生效，越大越粗。</small>
+        </label>
+        <label class="field compact">
+          <span>检测阈值 <output id="threshold-value">0.20</output></span>
+          <input form="job-form" type="range" name="threshold" id="threshold" min="0.05" max="0.95" step="0.05" value="0.2" />
+          <small>越低更容易发现小脸，也可能误检。</small>
+        </label>
+        <label class="field compact">
+          <span>检测尺寸</span>
+          <select form="job-form" name="detection_size">
+            <option value="">原始尺寸</option>
+            <option value="640">640 px</option>
+            <option value="960">960 px</option>
+            <option value="1280">1280 px</option>
+          </select>
+          <small>缩小检测尺寸可提升速度。</small>
+        </label>
+      </div>
+      <label class="field replace-image" id="replace-image-field" hidden>
+        <span>图片覆盖素材</span>
+        <input form="job-form" type="file" name="replace_image" accept="image/*" />
+        <small>选择“图片覆盖”时必填，例如贴纸或图标。</small>
+      </label>
+      <label class="check"><input form="job-form" type="checkbox" name="keep_audio" checked /> 保留原视频音频</label>
+    </aside>
+
+    <section class="card step-card" id="source-step">
+      <div class="step-head">
+        <div>
+          <p class="eyebrow">STEP 1 · DEFACE</p>
+          <h2>先上传视频并完成打码</h2>
+        </div>
+        <span class="step-number">01</span>
+      </div>
+      <form id="job-form">
+        <div class="grid two">
+          <label class="field">
+            <span>上传视频文件</span>
+            <input type="file" name="video" accept="video/*" />
+            <small>与视频链接二选一，建议先用 5～15 秒片段测试。</small>
+          </label>
+          <label class="field">
+            <span>或输入视频链接</span>
+            <input type="url" name="video_url" placeholder="https://..." />
+            <small>服务器会通过 yt-dlp 尝试下载链接。</small>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button type="submit" id="submit">开始打码</button>
+          <span class="hint">上传限制：{{ max_upload_mb }} MB</span>
+        </div>
+      </form>
+    </section>
+
+    <section class="card step-card preview-step" id="preview-step" hidden>
+      <div class="step-head">
+        <div>
+          <p class="eyebrow">STEP 1 · PREVIEW</p>
+          <h2>确认打码效果</h2>
+          <p class="step-description">先检查人脸是否已经遮盖，再进入参考图和生成设置。</p>
+        </div>
+        <span class="step-number">01✓</span>
+      </div>
+      <video id="defaced-video" class="video-preview" controls playsinline preload="metadata"></video>
+      <div class="actions preview-actions">
+        <button type="button" id="next-step">进入下一步</button>
+        <button type="button" class="secondary" id="reset-step">重新选择视频</button>
+      </div>
+    </section>
+
+    <section class="card step-card" id="generate-step" hidden>
+      <div class="step-head">
+        <div>
+          <p class="eyebrow">STEP 2 · GENERATE</p>
+          <h2>添加参考图并生成</h2>
+          <p class="step-description">打码视频会作为动作和镜头参考，下面的素材用于生成新人物。</p>
+        </div>
+        <span class="step-number">02</span>
+      </div>
+      <form id="generate-form">
+        <div class="grid two">
+          <label class="field">
+            <span>人脸参考图</span>
+            <input type="file" name="face_image" accept="image/*" />
+            <small>建议正脸、光线清楚、没有遮挡。</small>
+          </label>
+          <label class="field">
+            <span>服装参考图</span>
+            <input type="file" name="clothing_image" accept="image/*" />
+            <small>建议能看见完整服装和材质细节。</small>
+          </label>
+        </div>
+
+        <label class="field">
+          <span>生成提示词</span>
+          <textarea name="prompt" rows="5">参考视频只用于动作、镜头运动和节奏。使用人脸参考图中的人物身份，使用服装参考图中的服装款式、颜色和材质。保持人物和服装在镜头之间稳定，不新增其他人物，生成自然的竖屏短视频。</textarea>
+        </label>
+
+        <div class="actions">
+          <button type="submit" id="generate-submit">生成最终视频</button>
+          <span class="hint">可以不上传参考图，先用打码视频测试流程。</span>
+        </div>
+      </form>
+    </section>
+
+    <section class="card result" id="result" hidden>
+      <div class="result-head">
+        <div>
+          <p class="eyebrow">JOB STATUS</p>
+          <h2 id="message">等待处理</h2>
+        </div>
+        <strong id="percent">0%</strong>
+      </div>
+      <div class="progress"><div id="bar"></div></div>
+      <div class="job-id" id="job-id"></div>
+      <div class="logs" id="logs"></div>
+      <a class="download" id="download" hidden>下载结果视频</a>
+    </section>
+
+    <footer>本地 MVP · 当前 mock 模式会用打码后视频作为演示输出，配置 Seedance 后才会生成新视频。</footer>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

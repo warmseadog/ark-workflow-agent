@@ -1,0 +1,4 @@
+interface:
+  display_name: "Local Face Mosaic Tracking"
+  short_description: "Fast local face mosaic for one video or a batch"
+  default_prompt: "Use $local-face-mosaic-tracking to mosaic the primary face locally with speed as the priority."
