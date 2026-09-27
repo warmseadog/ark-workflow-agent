@@ -145,3 +145,12 @@ Python 3.11、虚拟环境、FFmpeg 和缺少的 libGL 动态库均位于新项�
 - 公网验证：1440/390 新控件、折叠、四栏、无横向溢出、原三份来源、打码视频实际播放/暂停通过，无 JS 错误。匿名请求401、跨站写入403、原网站200。
 - 仅重启 ark-video-workflow.service，active/running、NRestarts=0；原 director-prompt-h5 PID仍18654，全部已记录Nginx配置指纹不变。
 - 本次没有提交新的付费视频生成任务；最终发型/场景的生成视觉效果仍以实际模型结果为准。
+
+
+## 2026-09-27 素材目录写入权限修复
+
+- 线上链接导入在解析、下载后，register/copyfile 写入 data/assets 时抛出 PermissionError。目录实际为 root:root 0755，服务账号无法新建文件；此前迁移原任务素材只确保了文件归属，没有确保父目录归属。
+- 原地修正 /opt/ark-video-workflow/data/assets 为 ark-video-workflow:ark-video-workflow 0700；不递归修改既有文件，不重启服务，不改 Nginx。backups 继续 root 私有。
+- 修复前以服务账号写入确认失败；修复后服务账号创建/读取/删除通过。实际运行的素材上传 API 返回200，读取文件字节一致；仅本次随机命名测试素材及其数据库记录被清理。
+- 两个服务进程未变化：新项目217393、原项目18654，均active。本次未再次调用付费链接解析或视频生成。
+- 后续迁移或部署须检查服务用户对 assets/imports/uploads/work/outputs/cache 的实际写入能力；创建数据目录时设置服务用户归属，不能仅对导入文件 chown。不要修改 backups/private 的私密边界。
