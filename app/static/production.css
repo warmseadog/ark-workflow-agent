@@ -132,3 +132,8 @@
 .run-detail-assets video { margin:0; max-height:180px; }
 .run-source-empty { margin:0; padding:16px 8px; min-height:90px; box-sizing:border-box; background:#f2efea; font-size:11px; line-height:1.7; }
 @media(max-width:480px) { .run-detail-assets { grid-template-columns:1fr; } .run-detail-assets img,.run-detail-assets video { max-height:240px; } }
+
+.run-redacted-toggle { padding:6px 10px; font-size:11px; }
+.run-redacted-preview { margin-top:10px; }
+.run-redacted-preview[hidden] { display:none; }
+.run-redacted-preview video { margin:0; max-height:340px; }

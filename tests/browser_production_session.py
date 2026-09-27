@@ -95,7 +95,7 @@ def check(width=1440, portrait_people=False):
                     if not existing:
                         d = drafts[body['draft_id']]
                         rid = f'r{len(runs)+1}'
-                        existing = dict(id=rid, draft_id=d['id'], name=d['name'], status='queued', stage='preprocess', message='等待处理', progress=0, snapshot=copy.deepcopy(d), key=body['idempotency_key'], created_at=d['updated_at'], legacy=False)
+                        existing = dict(id=rid, draft_id=d['id'], name=d['name'], status='queued', stage='preprocess', message='等待处理', progress=0, snapshot=copy.deepcopy(d), key=body['idempotency_key'], created_at=d['updated_at'], legacy=False,defaced_url=f'/api/production/runs/{rid}/defaced')
                         runs[rid] = existing
                     if switches['lose_response']:
                         switches['lose_response']=False; route.abort(); return
@@ -131,6 +131,17 @@ def check(width=1440, portrait_people=False):
         detail_text=first_card.locator('details').inner_text()
         assert not any(x in detail_text for x in ['任务编号','服务商任务编号','Request ID','模型参数','打码参数','base_url','provider'])
         expect(first_card.locator('details pre')).to_have_count(0)
+        preview_toggle=first_card.locator('[data-run-action=preview-redacted]')
+        expect(preview_toggle).to_have_text('预览打码效果')
+        expect(first_card.locator('[data-redacted-preview]')).to_be_hidden()
+        assert first_card.locator('[data-redacted-preview] video').get_attribute('src') is None
+        preview_toggle.click()
+        expect(first_card.locator('[data-redacted-preview]')).to_be_visible()
+        expect(preview_toggle).to_have_attribute('aria-expanded','true')
+        assert first_card.locator('[data-redacted-preview] video').get_attribute('src')==runs['r1']['defaced_url']
+        preview_toggle.click()
+        expect(first_card.locator('[data-redacted-preview]')).to_be_hidden()
+        assert first_card.locator('[data-redacted-preview] video').evaluate('(el)=>el.paused')
         first_card.locator('[data-run-action=details]').click()
         assert runs['r1']['snapshot']['prompt'] == '任务 A 的提示词'
         assert isinstance(runs['r1']['snapshot']['mask']['mask_scale'], (int,float))

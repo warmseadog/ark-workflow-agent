@@ -720,7 +720,26 @@
       };
       detail.addEventListener('toggle',loadSources); loadSources();
       if (item.defaced_url) {
-        const link=node('a','查看打码视频','secondary');link.href=item.defaced_url;link.target='_blank';link.rel='noopener';detail.append(link);
+        const previous=card?.querySelector('[data-redacted-preview]');
+        const previewOpen=Boolean(wasOpen && previous && !previous.hidden);
+        const toggle=node('button',previewOpen ? '收起打码预览' : '预览打码效果','secondary run-redacted-toggle');
+        toggle.type='button';toggle.dataset.runAction='preview-redacted';
+        const panel=node('div','','run-redacted-preview');panel.dataset.redactedPreview='';panel.hidden=!previewOpen;
+        panel.id='run-redacted-'+item.id;toggle.setAttribute('aria-controls',panel.id);
+        toggle.setAttribute('aria-expanded',String(previewOpen));
+        const video=previous?.querySelector('video') || node('video');
+        video.controls=true;video.preload='none';video.playsInline=true;
+        video.setAttribute('aria-label','打码后视频预览');
+        panel.append(video);
+        const setPreview=open=>{
+          panel.hidden=!open;toggle.setAttribute('aria-expanded',String(open));
+          toggle.textContent=open ? '收起打码预览' : '预览打码效果';
+          if (open) { video.preload='metadata'; if (video.getAttribute('src')!==item.defaced_url) video.src=item.defaced_url; }
+          else video.pause();
+        };
+        toggle.addEventListener('click',()=>setPreview(panel.hidden));
+        detail.addEventListener('toggle',()=>{if (!detail.open) setPreview(false);});
+        detail.append(toggle,panel);
       }
       next.append(detail);
       if (card) card.replaceWith(next); list.append(next);
