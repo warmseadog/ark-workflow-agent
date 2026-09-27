@@ -627,11 +627,16 @@
       const next = node('article', '', 'production-run'); next.dataset.runId = item.id; next.dataset.version = fingerprint; next.dataset.state = item.status;
       const heading = node('div','','run-card-heading');
       heading.append(node('h4', item.name || '视频任务'),node('span', (item.legacy ? '历史 · ' : '') + (stateNames[item.status] || item.status),'run-state'));
-      const body = item.error_kind === 'material_rejected'
-        ? '人物素材未通过服务商审核：请先检查并更换第 1 张人物参考图（主参考），复制为草稿后重新提交。此任务不会自动重试。'
-        : item.error_kind === 'submission_uncertain'
-          ? '服务商提交结果尚未确认。请先在服务商控制台确认任务，避免重复提交；有任务编号时可继续查询。'
-          : item.error || item.message || stageNames[item.stage] || '等待处理';
+      const problems = {
+        material_rejected:'人物照片未通过检查，请更换照片后重新提交。',
+        submission_uncertain:'任务提交结果正在确认，请联系管理员核实，暂勿重复提交。',
+        query_unavailable:'暂时无法获取生成进度，可稍后点击“继续查询 / 下载”。',
+        download_failed:'视频已生成，但下载尚未完成，可点击“继续查询 / 下载”重试。',
+      };
+      const body = item.status === 'succeeded' ? '视频已生成，可以播放或下载。'
+        : problems[item.error_kind] || (['failed','needs_attention'].includes(item.status)
+          ? '本次任务未完成，请检查参考素材后重试；仍有问题可联系管理员。'
+          : item.status === 'cancelled' ? '任务已取消。' : stageNames[item.stage] || '等待处理');
       next.append(heading, node('p',body,'run-message'));
       if (['queued','running'].includes(item.status)) {
         const progress = node('progress'); progress.max = 100; progress.value = item.progress || 0;
@@ -683,31 +688,37 @@
         detailsButton.textContent = detail.open ? '收起详情' : '查看详情';
         detailsButton.setAttribute('aria-expanded',String(detail.open));
       });
-      const description = [
-        '状态：'+(stateNames[item.status] || item.status),
-        '任务编号：'+item.id,
-        '创建时间：'+(item.created_at || '—'),
-        '处理阶段：'+(stageNames[item.stage] || item.stage || '—'),
-        '服务商任务编号：'+(item.provider_task_id || '—'),
-        'Request ID：'+(item.request_id || '—'),
-        '错误类型：'+(item.error_kind || '—'),
-        '原始信息：'+(item.error || item.message || '—'),
-        '提示词：'+(item.snapshot?.prompt || '—'),
-        '模型参数：'+(item.snapshot?.model ? JSON.stringify(item.snapshot.model,null,2) : '历史任务未保存'),
-        '打码参数：'+(item.snapshot?.mask ? JSON.stringify(item.snapshot.mask,null,2) : '历史任务未保存'),
-      ];
-      detail.append(node('pre',description.join('\n')));
+      const created = new Date(item.created_at);
+      if (!Number.isNaN(created.getTime())) {
+        detail.append(node('p','创建于 '+created.toLocaleString('zh-CN',{hour12:false}),'run-created'));
+      }
       const materials = node('div','','run-detail-assets');
-      for (const asset of item.snapshot?.assets || []) {
-        const figure=node('figure');
-        const label=({video:'参考视频',face:'人物参考图',clothing:'衣服参考图'})[asset.kind] || '素材';
-        figure.append(node('figcaption',label+' · '+asset.name));
-        const media=node(asset.kind==='video' ? 'video' : 'img'); media.src=asset.url;
-        if (asset.kind==='video') { media.controls=true;media.preload='none'; }
-        else { media.alt=label;media.loading='lazy'; }
-        figure.append(media);materials.append(figure);
+      const assets = item.snapshot?.assets || [];
+      for (const [kind,label] of [['video','参考视频'],['face','人物参考图'],['clothing','衣服参考图']]) {
+        const figure=node('figure'); figure.dataset.sourceKind=kind;
+        figure.append(node('figcaption',label));
+        const sources=assets.filter(asset=>asset.kind===kind);
+        if (!sources.length) figure.append(node('p','这条历史任务未保留原始素材','run-source-empty'));
+        for (const asset of sources) {
+          const media=node(kind==='video' ? 'video' : 'img'); media.dataset.sourceUrl=asset.url;
+          if (kind==='video') { media.controls=true;media.preload='none';media.playsInline=true; }
+          else { media.alt=label;media.loading='lazy';media.decoding='async'; }
+          media.addEventListener('error',()=>{
+            media.hidden=true;
+            figure.append(node('p','素材暂时无法加载，请稍后刷新重试。','run-source-empty'));
+          },{once:true});
+          figure.append(media);
+        }
+        materials.append(figure);
       }
       detail.append(materials);
+      const loadSources=()=>{
+        if (!detail.open) return;
+        materials.querySelectorAll('[data-source-url]').forEach(media=>{
+          media.src=media.dataset.sourceUrl; delete media.dataset.sourceUrl;
+        });
+      };
+      detail.addEventListener('toggle',loadSources); loadSources();
       if (item.defaced_url) {
         const link=node('a','查看打码视频','secondary');link.href=item.defaced_url;link.target='_blank';link.rel='noopener';detail.append(link);
       }
