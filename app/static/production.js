@@ -21,7 +21,9 @@
   let sessionReady = false, restoring = false;
   window.productionSession = true;
   const mediaUrls = new Map();
-  const imageFiles = {face: [], clothing: []};
+  const imageFiles = {face: [], clothing: [], hairstyle: [], scene: []};
+  const imageInputs = {face, clothing, hairstyle:generationForm.elements.namedItem('hairstyle_image'), scene:generationForm.elements.namedItem('scene_image')};
+  const extraKinds = ['hairstyle','scene'];
   let busy = false;
   let job = null;
   let preparedSignature = '';
@@ -123,12 +125,13 @@
     name.textContent = files.length ? kind === 'video' ? files[0].name : `已选 ${files.length} 张 · 第一张为主参考` : kind === 'video' ? '建议 5–15 秒' : '可选择一张或多张图片';
   }
   function syncImages(kind) {
-    const input = kind === 'face' ? face : clothing;
+    const input = imageInputs[kind];
     const transfer = new DataTransfer();
     imageFiles[kind].forEach(file => transfer.items.add(file));
     input.files = transfer.files;
     showFiles(input, kind); clearResult(); updateButtons(); changed();
     if (kind === 'face') renderPhotoStatus();
+    refreshExtraState();
   }
   function validImage(file) {
     if (!(file.type.startsWith('image/') || (!file.type && /\.(png|jpe?g|webp|gif|bmp|tiff?|heic|heif|avif)$/i.test(file.name)))) {
@@ -209,9 +212,14 @@
       lock(false);
     }
   });
-  for (const [input, kind] of [[face, 'face'], [clothing, 'clothing']]) input.addEventListener('change', () => {
+  for (const [kind, input] of Object.entries(imageInputs)) input.addEventListener('change', () => {
     if (busy) return;
     const identity = file => JSON.stringify([file.name, file.size, file.lastModified]);
+    if (extraKinds.includes(kind)) {
+      const file = input.files[0];
+      if (file && validImage(file)) { imageFiles[kind] = [file]; document.getElementById(kind+'-enabled').checked = true; }
+      syncImages(kind); return;
+    }
     const seen = new Set(imageFiles[kind].map(identity));
     for (const file of input.files) {
       if (validImage(file) && !seen.has(identity(file))) { imageFiles[kind].push(file); seen.add(identity(file)); }
@@ -219,9 +227,20 @@
     syncImages(kind);
   });
   document.querySelectorAll('[data-add-images]').forEach(button => button.addEventListener('click', () => {
-    if (!busy) (button.dataset.addImages === 'face' ? face : clothing).click();
+    if (!busy) imageInputs[button.dataset.addImages].click();
   }));
   maskFields.forEach(input => input.addEventListener('input', invalidate));
+  function refreshExtraState() {
+    for (const kind of extraKinds) {
+      const enabled = document.getElementById(kind+'-enabled');
+      document.getElementById(kind+'-reference-state').textContent = !imageFiles[kind].length ? '可选' : enabled.checked ? '已设置' : '未启用';
+      if (!imageFiles[kind].length) document.getElementById(kind+'-file-name').textContent = '未设置';
+      else document.getElementById(kind+'-file-name').textContent = imageFiles[kind][0].name;
+    }
+  }
+  for (const kind of extraKinds) document.getElementById(kind+'-enabled').addEventListener('change', () => { refreshExtraState(); changed(); });
+  document.getElementById('scene-description').addEventListener('input', changed);
+
 
   async function jsonRequest(url, options = {}) {
     const response = await fetch(url, options);
@@ -375,8 +394,7 @@
     clearTimeout(saveTimer);
     // Start media persistence immediately; draft update follows when upload completes.
     const uploadingPerson = window.portraitPeople?.selected, uploadingDraft = draft?.id;
-    [source.files[0], ...imageFiles.face, ...imageFiles.clothing].filter(Boolean).forEach(file => {
-      const kind = file === source.files[0] ? 'video' : imageFiles.face.includes(file) ? 'face' : 'clothing';
+    [['video',source.files[0]], ...Object.entries(imageFiles).flatMap(([kind,files])=>files.map(file=>[kind,file]))].filter(([,file])=>file).forEach(([kind,file]) => {
       persistFile(file, kind).then(asset => { if (kind === 'face' && imageFiles.face.includes(file) && draft?.id === uploadingDraft && window.portraitPeople?.selected === uploadingPerson) queuePhoto(file, asset, uploadingPerson); }).catch(error => showSave('素材保存失败：' + error.message, true));
     });
     saveTimer = setTimeout(() => flushDraft().catch(() => {}), 500);
@@ -509,14 +527,18 @@
   async function captureDraft() {
     // Read all fields synchronously before awaiting uploads: saves represent one editor version.
     const videoFile = source.files[0], faceFiles = [...imageFiles.face], clothingFiles = [...imageFiles.clothing];
+    const extraFiles = Object.fromEntries(extraKinds.map(kind=>[kind,[...imageFiles[kind]]]));
     const selectedPerson = window.portraitPeople?.selected || null;
     const values = {person_id:selectedPerson, name:draft?.name || '未命名视频', prompt:generationForm.elements.namedItem('prompt').value, mask:maskValues(), model:publicModel()};
-    const [videoAsset, faces, clothes] = await Promise.all([
+    for (const kind of extraKinds) values[kind+'_enabled'] = document.getElementById(kind+'-enabled').checked;
+    values.scene_description = document.getElementById('scene-description').value;
+    const [videoAsset, faces, clothes, extras] = await Promise.all([
       videoFile ? persistFile(videoFile,'video') : null,
       Promise.all(faceFiles.map(file => persistFile(file,'face'))),
       Promise.all(clothingFiles.map(file => persistFile(file,'clothing'))),
+      Promise.all(extraKinds.map(async kind=>[kind+'_asset_ids',await Promise.all(extraFiles[kind].map(async file=>(await persistFile(file,kind)).id))])),
     ]);
-    return {...values, source_asset_id:videoAsset?.id || null, face_asset_ids:faces.map(a=>a.id), clothing_asset_ids:clothes.map(a=>a.id)};
+    return {...values, ...Object.fromEntries(extras), source_asset_id:videoAsset?.id || null, face_asset_ids:faces.map(a=>a.id), clothing_asset_ids:clothes.map(a=>a.id)};
   }
   async function flushDraft() {
     clearTimeout(saveTimer);
@@ -550,14 +572,19 @@
         if (!asset) throw new Error('草稿素材缺失，请重试加载。');
         return fileForAsset(asset);
       };
-      const [videoFile, faces, clothes] = await Promise.all([
+      const [videoFile, faces, clothes, extras] = await Promise.all([
         item.source_asset_id ? restore(item.source_asset_id) : null,
         Promise.all((item.face_asset_ids || []).map(restore)),
         Promise.all((item.clothing_asset_ids || []).map(restore)),
+        Promise.all(extraKinds.map(async kind=>[kind,await Promise.all((item[kind+'_asset_ids'] || []).map(restore))])),
       ]);
       const transfer = new DataTransfer(); if (videoFile) transfer.items.add(videoFile);
       source.files = transfer.files; sourceUrl.value = '';
       imageFiles.face = faces; imageFiles.clothing = clothes;
+      Object.assign(imageFiles,Object.fromEntries(extras));
+      for (const kind of extraKinds) document.getElementById(kind+'-enabled').checked = item[kind+'_enabled'] === true;
+      document.getElementById('scene-description').value = item.scene_description || '';
+      for (const kind of extraKinds) document.getElementById(kind+'-references').open = false;
       draft = item; drafts.set(item.id,item);
       window.portraitPeople?.restore(item.person_id);
       generationForm.elements.namedItem('prompt').value = item.prompt ?? defaultPrompt;
@@ -565,7 +592,7 @@
       for (const name of publicModelFields) if (item.model?.[name] !== undefined) modelForm.elements.namedItem(name).value = item.model[name];
       window.productionDraftModel = {...item.model};
       modelForm.elements.namedItem('protocol').dispatchEvent(new Event('change', {bubbles:true}));
-      showFiles(source,'video'); syncImages('face'); syncImages('clothing'); invalidate();
+      showFiles(source,'video'); Object.keys(imageFiles).forEach(syncImages); invalidate();
       dirtyVersion = savedVersion = 0;
       localStorage.setItem(currentKey,item.id);
       ['production-prompt-draft-v1','studio-redaction-settings','active-v1-job'].forEach(key=>localStorage.removeItem(key));
@@ -694,10 +721,13 @@
       }
       const materials = node('div','','run-detail-assets');
       const assets = item.snapshot?.assets || [];
-      for (const [kind,label] of [['video','参考视频'],['face','人物参考图'],['clothing','衣服参考图']]) {
-        const figure=node('figure'); figure.dataset.sourceKind=kind;
-        figure.append(node('figcaption',label));
+      for (const [kind,label] of [['video','参考视频'],['face','人物参考图'],['clothing','衣服参考图'],['hairstyle','发型参考图'],['scene','场景参考图']]) {
         const sources=assets.filter(asset=>asset.kind===kind);
+        if (extraKinds.includes(kind) && !sources.length) continue;
+        const figure=node('figure'); figure.dataset.sourceKind=kind;
+        const unused=extraKinds.includes(kind) && !item.snapshot?.[kind+'_enabled'];
+        figure.append(node('figcaption',label+(unused?' · 未使用':'')));
+        if (kind==='scene' && item.snapshot?.scene_description) figure.append(node('p',item.snapshot.scene_description,'field-hint'));
         if (!sources.length) figure.append(node('p','这条历史任务未保留原始素材','run-source-empty'));
         for (const asset of sources) {
           const media=node(kind==='video' ? 'video' : 'img'); media.dataset.sourceUrl=asset.url;

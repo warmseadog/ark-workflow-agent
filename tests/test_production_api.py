@@ -118,3 +118,34 @@ def test_legacy_task_details_and_delete_survive_reload(client, monkeypatch):
     assert client.get('/api/production/runs/'+ident).status_code == 404
     assert client.post('/api/production/runs/'+ident+'/copy').status_code == 404
     assert client.delete('/api/production/runs/missing').status_code == 404
+
+
+def test_optional_references_snapshot_restore_and_copy(client):
+    draft=complete_draft(client)
+    hair=asset(client,'hairstyle','hair.png'); scene=asset(client,'scene','room.png')
+    values={'hairstyle_asset_ids':[hair['id']], 'scene_asset_ids':[scene['id']],
+            'hairstyle_enabled':True, 'scene_enabled':True, 'scene_description':'暖色室内'}
+    response=client.put('/api/production/drafts/'+draft['id'],json={'revision':draft['revision'],**values})
+    assert response.status_code==200,response.text
+    saved=response.json()
+    run=client.post('/api/production/runs',json={'draft_id':saved['id'],'revision':saved['revision'],'idempotency_key':'extras'}).json()
+    client.put('/api/production/drafts/'+saved['id'],json={'revision':saved['revision'],'scene_enabled':False,'hairstyle_asset_ids':[]})
+    frozen=client.get('/api/production/runs/'+run['id']).json()['snapshot']
+    assert all(frozen[k]==v for k,v in values.items())
+    assert {a['kind'] for a in frozen['assets']}=={'video','face','clothing','scene','hairstyle'}
+    copied=client.post('/api/production/runs/'+run['id']+'/copy').json()
+    assert all(copied[k]==v for k,v in values.items())
+    for bad in ({'scene_enabled':'true'},{'hairstyle_asset_ids':[scene['id']]},{'scene_description':3}):
+        assert client.put('/api/production/drafts/'+copied['id'],json={'revision':copied['revision'],**bad}).status_code==422
+
+
+def test_optional_references_count_only_when_enabled(client):
+    draft=complete_draft(client)
+    faces=[draft['face_asset_ids'][0]]+[asset(client,'face',f'f{i}.png')['id'] for i in range(7)]
+    scene=asset(client,'scene','scene.png')
+    saved=client.put('/api/production/drafts/'+draft['id'],json={'revision':draft['revision'],'face_asset_ids':faces,
+        'scene_asset_ids':[scene['id']],'scene_enabled':True}).json()
+    result=client.post('/api/production/runs',json={'draft_id':saved['id'],'revision':saved['revision'],'idempotency_key':'too-many'})
+    assert result.status_code==422
+    saved=client.put('/api/production/drafts/'+saved['id'],json={'revision':saved['revision'],'scene_enabled':False}).json()
+    assert client.post('/api/production/runs',json={'draft_id':saved['id'],'revision':saved['revision'],'idempotency_key':'within-limit'}).status_code==200

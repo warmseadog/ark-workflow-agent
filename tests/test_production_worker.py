@@ -140,3 +140,28 @@ def test_queue_has_two_workers_and_only_one_process_leader(setup, monkeypatch):
         leader.stop.set()
         for thread in leader.threads: thread.join(5)
         if leader.lockfile: leader.lockfile.close()
+
+
+@pytest.mark.parametrize('enabled',[True,False])
+def test_optional_reference_snapshot_reaches_provider_only_when_enabled(setup,monkeypatch,enabled):
+    import base64
+    cfg,store,draft,private=setup
+    for kind in ('hairstyle','scene'):
+        path=cfg.storage_dir/(kind+'.png');path.write_bytes(kind.encode())
+        store.add_asset(kind,path.name,kind,path,path.stat().st_size,'image/png',hashlib.sha256(path.read_bytes()).hexdigest())
+    draft=store.save_draft(draft['id'],draft['revision'],{'hairstyle_asset_ids':['hairstyle'],'scene_asset_ids':['scene'],
+        'hairstyle_enabled':enabled,'scene_enabled':enabled,'scene_description':'frozen room'})
+    private['generation']=asdict(GenerationConfig(mode='http',provider='ark',protocol='ark',api_key='fixture'))
+    monkeypatch.setattr(worker,'publish_video',lambda *args:'https://example.test/redacted.mp4')
+    sent=[]
+    monkeypatch.setattr(worker.VideoProvider,'_request',lambda self,method,path,**kw:sent.append(kw['json']) or {'id':'remote'})
+    monkeypatch.setattr(worker.VideoProvider,'_poll',lambda self,*args:{})
+    run=store.create_run(draft['id'],draft['revision'],'extra-worker',private)
+    store.save_draft(draft['id'],draft['revision'],{'scene_enabled':not enabled,'scene_description':'edited later'})
+    worker.execute_run(cfg,store,store.claim_next())
+    assert store.get_run(run['id'])['status']=='succeeded'
+    refs=[base64.b64decode(x['image_url']['url'].split(',')[1]) for x in sent[0]['content'] if x['type']=='image_url']
+    assert refs==([b'face',b'clothes',b'hairstyle',b'scene'] if enabled else [b'face',b'clothes'])
+    text=sent[0]['content'][0]['text']
+    assert ('frozen room' in text)==enabled
+    assert 'edited later' not in text

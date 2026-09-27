@@ -70,7 +70,8 @@ class ProductionStore:
     def create_draft(self, values):
         ident, stamp = uuid.uuid4().hex, now()
         data = {'name': '未命名视频', 'source_asset_id': None, 'face_asset_ids': [],
-                'clothing_asset_ids': [], 'prompt': '', 'mask': {}, 'model': {}, **values}
+                'clothing_asset_ids': [], 'hairstyle_asset_ids': [], 'scene_asset_ids': [],
+                'hairstyle_enabled': False, 'scene_enabled': False, 'scene_description': '', 'prompt': '', 'mask': {}, 'model': {}, **values}
         with self.connection() as db:
             db.execute('INSERT INTO production_drafts VALUES (?,?,?,?,?)',
                        (ident, 1, json.dumps(data, ensure_ascii=False), stamp, stamp))

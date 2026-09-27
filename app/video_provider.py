@@ -122,7 +122,9 @@ class VideoProvider:
                  on_submitted: Callable[[str], None] | None = None,
                  on_result: Callable[[str], None] | None = None,
                  resume_task_id: str | None = None, resume_result_url: str | None = None,
-                 image_asset_uris: dict[str, str] | None = None) -> dict:
+                 image_asset_uris: dict[str, str] | None = None,
+                 hairstyles: list[Path] | None = None, scenes: list[Path] | None = None,
+                 scene_description: str = '') -> dict:
         # Recovery needs only the durable remote identity/result, never source files.
         if resume_result_url is not None:
             try:
@@ -149,16 +151,24 @@ class VideoProvider:
         problem = self.config.generation_problem(video_available=bool(video_url))
         if problem:
             raise ProviderError(problem, error_kind='configuration')
-        references = reference_order(faces, clothes)
+        hairstyles, scenes = hairstyles or [], scenes or []
+        references = reference_order(faces, clothes) + [(p,'发型') for p in hairstyles] + [(p,'场景') for p in scenes]
         if self.config.protocol != 'adapter':
             if len(references) > 9:
-                raise ProviderError('人物和衣服参考图合计最多 9 张，请删除部分图片后重试。')
+                raise ProviderError('人物、衣服、发型和场景参考图合计最多 9 张，请删除部分图片后重试。')
             if video.stat().st_size > 50 * 1024 * 1024:
                 raise ProviderError('参考视频超过 50 MB，请压缩或缩短视频后重试。')
             if sum(p.stat().st_size for p, _ in references) > 45 * 1024 * 1024:
                 raise ProviderError('参考图片总大小过大，请压缩图片后重试。')
         mapping = '；'.join(f'@Image{i}（图片{i}）为{kind}参考图' for i, (_, kind) in enumerate(references, 1))
-        structured = f'@Video1（视频1）为动作与场景参考视频，保留其动作、镜头、场景和节奏。{mapping}。主参考确定人物身份和服装，补充参考用于细节，保持全片一致。用户要求：{prompt.strip()}'
+        # Existing saved templates may still contain the original scene instruction.
+        # Normalize the built-in phrases only; preserve custom text and give roles explicit priority.
+        if scenes:
+            for old,new in [('动作、镜头、场景和节奏','动作、镜头和节奏'),('动作、镜头和场景不变','动作、镜头不变'),('动作、镜头和场景','动作和镜头')]:
+                prompt = prompt.replace(old,new)
+        scene_rule = '保留原视频场景。' if not scenes else '场景以场景参考图为准，替换原视频背景，参考空间布局、光线和环境，不引入其中的人物。场景补充：'+scene_description.strip()+'。'
+        hair_rule = '发型沿用主人物参考图。' if not hairstyles else '发型以发型参考图为准，参考发长、轮廓、刘海、卷曲程度和发色；人物身份、五官和脸型仍以主人物参考图为准，不使用发型图的人脸或身份。'
+        structured = f'@Video1（视频1）为动作与镜头参考视频，保留其动作、镜头和节奏。{mapping}。主参考确定人物身份和服装，补充参考用于细节，保持全片一致。用户要求：{prompt.strip()}。素材分工（涉及场景或发型的冲突要求以此为准）：{scene_rule}{hair_rule}'
         self.progress('正在上传参考素材', 65)
         if self.config.protocol == 'toapis':
             with video.open('rb') as source:
@@ -186,7 +196,7 @@ class VideoProvider:
             with ExitStack() as stack:
                 files = [('video', (video.name, stack.enter_context(video.open('rb')), 'video/mp4'))]
                 # Multipart names stay compatible with the documented custom adapter.
-                for field, paths in [('face_image', faces), ('clothing_image', clothes)]:
+                for field, paths in [('face_image', faces), ('clothing_image', clothes), ('hairstyle_image', hairstyles), ('scene_image', scenes)]:
                     files.extend((field, (p.name, stack.enter_context(p.open('rb')), mimetypes.guess_type(p.name)[0] or 'image/png')) for p in paths)
                 submitted = self._request('POST', '/generations', files=files, data={
                     'prompt': structured, 'model': self.config.model, 'duration': self.config.duration,

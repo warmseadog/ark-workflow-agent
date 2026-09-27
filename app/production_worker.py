@@ -43,6 +43,7 @@ def execute_run(settings, store, run):
     try:
         faces, clothes, video_url = [], [], None
         image_asset_uris = {}
+        extra_references = {}
         if not provider_id and not result_url:
             if private.get('portrait'):
                 from .portrait_generation import verify, PortraitPending
@@ -54,6 +55,11 @@ def execute_run(settings, store, run):
             source = store.get_asset(snapshot['source_asset_id'], private=True)
             faces = [Path(store.get_asset(x, private=True)['path']) for x in snapshot['face_asset_ids']]
             clothes = [Path(store.get_asset(x, private=True)['path']) for x in snapshot['clothing_asset_ids']]
+            for kind, argument in [('hairstyle','hairstyles'),('scene','scenes')]:
+                if snapshot.get(kind+'_enabled',False):
+                    extra_references[argument] = [Path(store.get_asset(x,private=True)['path']) for x in snapshot.get(kind+'_asset_ids',[])]
+            if extra_references.get('scenes'):
+                extra_references['scene_description'] = snapshot.get('scene_description','')
             options = mask_options(snapshot['mask'])
             key = hashlib.sha256((source['sha256'] + json.dumps(options.model_dump(mode='json'), sort_keys=True) + settings.deface_bin + ':v1').encode()).hexdigest()
             cache = settings.storage_dir / 'cache' / 'redacted' / (key + '.mp4')
@@ -87,7 +93,7 @@ def execute_run(settings, store, run):
         client = VideoProvider(config, settings.seedance_poll_seconds, progress)
         client.generate(defaced, faces, clothes, snapshot['prompt'], output, video_url=video_url,
                         on_submitted=submitted, on_result=result,
-                        resume_task_id=provider_id, resume_result_url=result_url,
+                        resume_task_id=provider_id, resume_result_url=result_url, **extra_references,
                         **({'image_asset_uris':image_asset_uris} if image_asset_uris else {}))
         store.update_run(ident, status='succeeded', stage='complete', message='生成完成', progress=100,
                          error=None, error_kind=None)

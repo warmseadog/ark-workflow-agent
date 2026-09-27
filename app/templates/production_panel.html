@@ -59,7 +59,34 @@
         <div class="asset-footer"><span id="face-file-name">清晰正脸、光线自然</span><button type="button" data-add-images="face" data-asset-edit>＋ 添加</button></div>
         <p id="person-photo-status" class="field-hint" role="status" aria-live="polite">上传照片后自动校验，可继续准备其他素材。</p>
         <div class="portrait-entry"><button type="button" id="person-photo-retry" hidden>重试校验</button><button type="button" data-portrait-open="assets">已有授权照片</button></div>
+        <details class="hairstyle-references" id="hairstyle-references">
+          <summary>发型参考 <span id="hairstyle-reference-state">可选</span></summary>
+          <div class="optional-reference-body"><div class="asset-picker" id="hairstyle-picker">
+            <span class="asset-empty"><b>＋</b><strong>上传发型参考图</strong><small>可选，上传一张图片</small></span>
+            <span class="asset-thumbnails" id="hairstyle-reference-preview"></span>
+            <input id="studio-hairstyle-image" type="file" name="hairstyle_image" accept="image/*" aria-label="上传发型参考图">
+          </div>
+          <div class="asset-footer"><span id="hairstyle-file-name">未设置</span></div>
+          <label class="optional-enable"><input id="hairstyle-enabled" type="checkbox"> 使用发型参考图</label>
+            <p class="field-hint">只参考发型和发色，人物身份仍使用上方人物图。不上传则沿用人物图发型。</p>
+            <p class="field-hint">建议使用不含可识别人脸的发型图片；含真人脸的图片仍需符合模型的授权要求。</p>
+          </div>
+        </details>
       </article>
+      <details class="asset-entry scene-references" id="scene-references">
+        <summary><span class="scene-number">04</span><strong>场景参考图</strong><span id="scene-reference-state">可选</span><span class="scene-toggle-hint">展开 / 收起</span></summary>
+        <div class="optional-reference-body"><div class="asset-picker" id="scene-picker">
+            <span class="asset-empty"><b>＋</b><strong>上传场景参考图</strong><small>可选，上传一张图片</small></span>
+            <span class="asset-thumbnails" id="scene-reference-preview"></span>
+            <input id="studio-scene-image" type="file" name="scene_image" accept="image/*" aria-label="上传场景参考图">
+          </div>
+          <div class="asset-footer"><span id="scene-file-name">未设置</span></div>
+          <label class="optional-enable"><input id="scene-enabled" type="checkbox"> 使用场景参考图</label>
+          <label class="scene-description-label" for="scene-description">场景补充（可选）</label>
+          <textarea id="scene-description" rows="3" maxlength="2000" placeholder="补充光线、氛围或需要保留的细节"></textarea>
+          <p class="field-hint">使用场景图时替换原视频背景；不使用则保留原视频场景。收起后仍保留设置。</p>
+        </div>
+      </details>
     </div>
     <details class="compact-prompt" id="flow-stage-generation">
       <summary>提示词与模板 <span>可选，展开编辑</span></summary>
@@ -81,8 +108,8 @@
         <p class="field-hint" id="prompt-template-status" role="status" aria-live="polite">正在读取已保存的模板…</p>
       </div>
       <label class="sr-only" for="generation-prompt">生成提示词</label>
-      <textarea id="generation-prompt" name="prompt" rows="4">保持@Video1原视频的动作、镜头、场景和节奏；应用@Image1人物参考图中的脸和身份；应用@Image2衣服参考图中的服装款式、颜色和材质，保持全片自然稳定。</textarea>
-      <p class="field-hint">主人物图对应 @Image1，主衣服图对应 @Image2；其余人物图、衣服图依次编号并一起提交，预设模型合计最多 9 张。</p>
+      <textarea id="generation-prompt" name="prompt" rows="4">保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图中的脸和身份；应用@Image2衣服参考图中的服装款式、颜色和材质，保持全片自然稳定。</textarea>
+      <p class="field-hint">人物确定身份，衣服确定穿着；使用发型图时参考其发型，使用场景图时替换背景。所有模板都会自动加入这些分工，无需手动编号；未设置时沿用人物图发型和原视频场景。全部参考图合计最多 9 张。</p>
     </details>
     <div class="generation-action"><p id="production-status" role="status" aria-live="polite">选择三类素材后即可生成</p><button class="primary" type="submit" id="studio-generate-submit" disabled>生成视频 →</button></div>
     <div id="save-notice" class="save-notice" hidden>

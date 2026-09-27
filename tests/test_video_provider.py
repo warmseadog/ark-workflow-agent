@@ -136,3 +136,32 @@ def test_authorized_portrait_cannot_be_forwarded_to_other_provider(media,tmp_pat
     with pytest.raises(ProviderError,match='官方'):
         VideoProvider(config).generate(media[0],[media[1]],[media[3]],'',tmp_path/'out.mp4',
             image_asset_uris={str(media[1]):'asset://asset-person'})
+
+
+@pytest.mark.parametrize('protocol',['ark','toapis','adapter'])
+def test_optional_images_are_submitted_with_separate_roles(protocol,media,tmp_path,monkeypatch):
+    import base64
+    hair=tmp_path/'hair.png';hair.write_bytes(b'HAIR')
+    scene=tmp_path/'scene.png';scene.write_bytes(b'SCENE')
+    config=GenerationConfig(provider='custom' if protocol=='adapter' else protocol,protocol=protocol,mode='http',api_key='fixture',base_url='https://provider.example',model='fixture')
+    captured=[]
+    def request(method,path,**kwargs):
+        if path=='/uploads/videos':return {'data':{'url':'https://example.test/video'}}
+        captured.append(kwargs)
+        return {'id':'task-extras'}
+    monkeypatch.setattr(VideoProvider,'_request',lambda self,*args,**kw:request(*args,**kw))
+    monkeypatch.setattr(VideoProvider,'_poll',lambda *args: {})
+    VideoProvider(config).generate(media[0],media[1:3],[media[3]],'保持@Video1原视频的动作、镜头、场景和节奏',tmp_path/'out.mp4',
+        video_url='https://example.test/video',hairstyles=[hair],scenes=[scene],scene_description='暖色室内')
+    call=captured[0]
+    if protocol=='adapter':
+        assert [v[0] for v in call['files']]==['video','face_image','face_image','clothing_image','hairstyle_image','scene_image']
+        text=call['data']['prompt']
+    else:
+        body=call['json']
+        refs=[x['image_url']['url'] for x in body['content'] if x['type']=='image_url'] if protocol=='ark' else [x['url'] for x in body['image_with_roles']]
+        assert [base64.b64decode(x.split(',')[1]) for x in refs]==[b'face1.png',b'clothing.png',b'face2.png',b'HAIR',b'SCENE']
+        text=body['content'][0]['text'] if protocol=='ark' else body['prompt']
+    assert '@Image4' in text and '发型' in text and '@Image5' in text and '暖色室内' in text
+    assert '保留其动作、镜头、场景' not in text and '动作、镜头、场景和节奏' not in text
+    assert '人物身份' in text and '发色' in text

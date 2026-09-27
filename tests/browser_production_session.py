@@ -2,6 +2,8 @@
 All requests are intercepted; this never touches live sessions or paid providers.
 """
 import copy
+import io
+from PIL import Image
 import json
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -13,7 +15,8 @@ CONFIG = dict(provider='ark', protocol='ark', mode='mock', base_url='https://exa
               public_base_url='', model='fixture-model', duration=5, fps=0, resolution='720p')
 
 
-def check(width=1440, portrait_people=False):
+def check(width=1440, portrait_people=False, extra_references=False):
+    fixture=io.BytesIO(); Image.new('RGB',(64,80),'#c8ad92').save(fixture,format='PNG'); image_bytes=fixture.getvalue()
     drafts, assets, runs, submissions = {}, {}, {}, []
     uploads = []
     photos = {}
@@ -67,7 +70,7 @@ def check(width=1440, portrait_people=False):
                     assert body['revision'] == d['revision']
                     assert 'api_key' not in body.get('model', {})
                     d.update(body); d['revision'] += 1
-                    d['assets'] = [assets[a] for a in [d['source_asset_id'], *d['face_asset_ids'], *d['clothing_asset_ids']] if a]
+                    d['assets'] = [assets[a] for a in [d['source_asset_id'], *d['face_asset_ids'], *d['clothing_asset_ids'], *d.get('hairstyle_asset_ids',[]), *d.get('scene_asset_ids',[])] if a]
                 route.fulfill(json=copy.deepcopy(d))
             elif path == '/api/video-link/inspect': route.fulfill(json={'configured':True,'platform':'douyin','label':'抖音','url':'https://example.test/video'})
             elif path == '/api/production/assets/import':
@@ -80,14 +83,14 @@ def check(width=1440, portrait_people=False):
             elif path == '/api/jobs/preview/defaced': route.fulfill(body=b'fixture',content_type='video/mp4')
             elif path == '/api/production/assets':
                 data = req.post_data_buffer
-                kind = next(k for k in ('video','face','clothing') if ('\r\n\r\n'+k+'\r\n').encode() in data)
+                kind = next(k for k in ('video','face','clothing','hairstyle','scene') if ('\r\n\r\n'+k+'\r\n').encode() in data)
                 aid = f'a{len(assets)+1}'
                 assets[aid] = dict(id=aid, kind=kind, name=f'{kind}.bin', size=8, mime='video/mp4' if kind=='video' else 'image/png', url=f'/api/production/assets/{aid}/file')
                 uploads.append(kind)
                 if switches.get('hold_face') and kind == 'face': held_uploads.append((route,assets[aid])); return
                 route.fulfill(json=assets[aid])
             elif path.startswith('/api/production/assets/'):
-                route.fulfill(body=b'fixture', content_type='application/octet-stream')
+                route.fulfill(body=image_bytes if extra_references else b'fixture', content_type='image/png' if extra_references else 'application/octet-stream')
             elif path == '/api/production/runs':
                 if req.method == 'POST':
                     submissions.append(body)
@@ -120,6 +123,42 @@ def check(width=1440, portrait_people=False):
         page.locator('#generation-prompt').fill('任务 A 的提示词')
         for name, kind in [('video','video'),('face_image','face'),('clothing_image','clothing')]:
             page.locator(f'[name={name}]').set_input_files({'name':f'{kind}.mp4' if kind=='video' else f'{kind}.png', 'mimeType':'video/mp4' if kind=='video' else 'image/png', 'buffer':b'fixture'})
+        if extra_references:
+            for kind in ('scene','hairstyle'):
+                page.locator(f'#{kind}-references > summary').click()
+                page.locator(f'[name={kind}_image]').set_input_files({'name':kind+'.png','mimeType':'image/png','buffer':image_bytes})
+                expect(page.locator(f'#{kind}-enabled')).to_be_checked()
+            page.locator('#scene-description').fill('暖色室内')
+            page.locator('#scene-references > summary').click()
+            page.locator('#hairstyle-references > summary').click()
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+            page.locator('#studio-generate-submit').click()
+            expect(page.locator('[data-run-id]')).to_have_count(1)
+            assert runs['r1']['snapshot']['scene_description']=='暖色室内'
+            assert len(runs['r1']['snapshot']['assets'])==5
+            page.reload()
+            expect(page.locator('#draft-save-status')).to_contain_text('已保存')
+            for kind in ('scene','hairstyle'):
+                page.locator(f'#{kind}-references > summary').click()
+                expect(page.locator(f'#{kind}-reference-preview img')).to_have_count(1)
+                expect(page.locator(f'#{kind}-enabled')).to_be_checked()
+                assert page.locator(f'#{kind}-reference-preview img').evaluate('(el)=>el.complete && el.naturalWidth>0')
+            expect(page.locator('#scene-description')).to_have_value('暖色室内')
+            page.locator('#scene-enabled').uncheck()
+            page.locator('#studio-generate-submit').click()
+            expect(page.locator('[data-run-id]')).to_have_count(2)
+            assert runs['r1']['snapshot']['scene_enabled'] is True
+            assert runs['r2']['snapshot']['scene_enabled'] is False
+            page.locator('[data-run-id=r2] [data-run-action=details]').click()
+            expect(page.locator('[data-run-id=r2] .run-detail-assets figure')).to_have_count(5)
+            expect(page.locator('[data-run-id=r2] [data-source-kind=scene]')).to_contain_text('未使用')
+            assert len(uploads)==5
+            page.screenshot(path=str(ROOT/'storage'/f'scene-hairstyle-{width}.png'),full_page=True)
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+            assert not errors,errors
+            browser.close()
+            print(f'PASS scene hairstyle {width}: upload, collapse, restore, disable, immutable snapshots')
+            return
         expect(page.locator('#studio-generate-submit')).to_be_enabled()
         page.locator('#studio-generate-submit').click()
         expect(page.locator('[data-run-id]')).to_have_count(1)
