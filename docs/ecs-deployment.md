@@ -114,3 +114,13 @@ Python 3.11、虚拟环境、FFmpeg 和缺少的 libGL 动态库均位于新项�
 - 公网页面、人物列表、任务接口和脚本均200；匿名人物接口401；跨站写请求403；浏览器无JS错误，手机无横向溢出。
 - 新服务 active/running、NRestarts=0；旧 director-prompt-h5 PID仍为18654、网站200；Nginx全部现有配置指纹不变；已有迁移成功视频仍保留。
 - 本次未上传真实人脸照片或调用付费视频模型。照片处理使用官方 CreateAsset / GetAsset，真实照片首次入库权限及一致性结果应以用户实际上传后的官方状态为准。
+
+
+## 2026-09-27 任务来源展示修复
+
+- 功能提交 1ec3063，当前 release 为 /opt/ark-video-workflow/releases/20260927-task-sources；可回退到上一版 20260927-portrait-library。
+- 用户要求查看已迁移视频三个来源。本地核对原成功任务，补传对应 source.mp4、face-01.jpg、clothing-01.png 三份文件，SHA-256 与原记录一致；仅恢复该任务 snapshot 中三类素材引用，未修改当前草稿、生成状态或再次调用模型。
+- 修改前任务库备份：/opt/ark-video-workflow/data/backups/before-task-source-restore.db。源码和素材包分开传输，用户素材不进入 Git。
+- 普通用户展开任务详情后只显示创建时间和参考视频、人物参考图、衣服参考图；去掉编号、服务商原始错误及参数 JSON。没有来源的历史记录显示缺失提示。来源媒体仅在展开后设置地址。
+- 验证：21项相关接口/布局测试、1440/390浏览器回归通过；公网实际展开验证三份来源哈希一致、两张图片已加载、视频地址可访问，技术字段隐藏，无JS错误，无手机横向溢出。
+- 旧 director-prompt-h5 进程和 Nginx 配置指纹保持不变，新服务 active、NRestarts=0。
