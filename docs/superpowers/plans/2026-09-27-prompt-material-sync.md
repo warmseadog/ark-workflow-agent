@@ -14,3 +14,4 @@ Verification ledger:
 - Browser red reproduction confirmed caret issue; final 1440/390 tests cover typing/pause, custom text preservation, immediate submit after copy matching visible prompt, and badge reset. Independent re-review confirms all findings fixed.
 - Prompt budget: red test confirmed generated block could exceed old 10000 total. Now body remains limited to10000, total including managed block bounded14000. Full suite312passed before final JS-only fixes; final rerun pending.
 - Final verification after review fixes:312pytest passed (existing Starlette warning); old browser flow1440/390 and prompt-sync1440/390 pass. No paid model calls.
+- Deployment complete:e1707bf isolated release; current untouched draft base upgraded by revision, frontend saved Image3 hairstyle block. Public1440/390 verified saved-visible equality, media and historical snapshot preservation. No model call; original site/config unchanged.
