@@ -25,7 +25,7 @@ import requests
 
 _HOST = 'ark.cn-beijing.volcengineapi.com'
 _ACTIONS = {'ListAssets', 'GetAsset', 'GetAssetGroup', 'CreateVisualValidateSession', 'GetVisualValidateResult', 'ListAssetGroups', 'CreateAsset', 'CreateAssetGroup'}
-_IMAGE_HOSTS = {'ark-asset.cn-beijing.volcengine.com'}
+_IMAGE_HOSTS = {'ark-asset.cn-beijing.volcengine.com', 'ark-media-asset.tos-cn-beijing.volces.com'}
 _lock = RLock()
 
 

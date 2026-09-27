@@ -128,7 +128,8 @@ def test_download_rejects_untrusted_host_before_network(tmp_path,url):
     assert not (tmp_path/'face.png').exists()
 
 
-def test_download_pins_public_dns_validates_image_and_is_atomic(tmp_path,monkeypatch):
+@pytest.mark.parametrize('hostname',['ark-asset.cn-beijing.volcengine.com','ark-media-asset.tos-cn-beijing.volces.com'])
+def test_download_pins_public_dns_validates_image_and_is_atomic(tmp_path,monkeypatch,hostname):
     s=service(); raw=BytesIO(); Image.new('RGB',(2,2)).save(raw,format='PNG'); data=raw.getvalue()
     monkeypatch.setattr(s.socket,'getaddrinfo',lambda *a,**k:[(2,1,6,'',('8.8.8.8',443))])
     captured={}
@@ -140,7 +141,7 @@ def test_download_pins_public_dns_validates_image_and_is_atomic(tmp_path,monkeyp
     from app import tikhub
     monkeypatch.setattr(tikhub,'_get_pinned_video',pinned)
     destination=tmp_path/'face.png'
-    assert s.download_image({'url':asset()['URL']},destination)==destination
+    assert s.download_image({'url':'https://'+hostname+'/verified.png'},destination)==destination
     assert destination.read_bytes()==data and captured['addresses']==('8.8.8.8',)
 
 
