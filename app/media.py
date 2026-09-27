@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import re
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 import cv2
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -11,6 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .config import Settings
 from .local_mosaic import run_local_mosaic
 from .media_errors import MediaPipelineError
+
+from .video_links import extract_video_url, platform_for_url
 
 
 class BlurOptions(BaseModel):
@@ -94,9 +98,8 @@ def build_deface_command(
     return command
 
 
-def download_video(url: str, destination: Path) -> Path:
-    """Download one video URL using yt-dlp into a deterministic path."""
-    destination.parent.mkdir(parents=True, exist_ok=True)
+def build_download_command(url: str, destination: Path, settings: Settings) -> list[str]:
+    """Build the yt-dlp command, optionally carrying browser authentication."""
     template = str(destination.with_suffix('.%(ext)s'))
     command = [
         sys.executable,
@@ -105,13 +108,32 @@ def download_video(url: str, destination: Path) -> Path:
         '--no-playlist',
         '--no-warnings',
         '--restrict-filenames',
-        '-o',
-        template,
-        url,
     ]
+    if settings.ytdlp_cookies_from_browser:
+        command += ['--cookies-from-browser', settings.ytdlp_cookies_from_browser]
+    elif settings.ytdlp_cookie_file:
+        command += ['--cookies', str(settings.ytdlp_cookie_file)]
+    command += ['-o', template, url]
+    return command
+
+
+def download_video(url: str, destination: Path, settings: Settings | None = None) -> Path:
+    """Use TikHub for social sites and preserve generic yt-dlp compatibility."""
+    settings = settings or Settings.from_env()
+    url = extract_video_url(url)
+    if platform_for_url(url):
+        from .tikhub import download_tikhub_video
+        return download_tikhub_video(url, destination, settings)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    command = build_download_command(url, destination, settings or Settings.from_env())
     result = subprocess.run(command, capture_output=True, text=True, timeout=900)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()[-2000:]
+        lower_detail = detail.lower()
+        if 'could not copy chrome cookie database' in lower_detail:
+            detail += '；浏览器正在占用 Cookie 数据库，请完全退出 Chrome/Edge 后重试。'
+        elif 'fresh cookies' in lower_detail or ('cookies' in lower_detail and 'needed' in lower_detail):
+            detail += '；抖音要求新鲜浏览器 Cookie，请在 Chrome/Edge 登录抖音后配置 YTDLP_COOKIES_FROM_BROWSER。'
         raise MediaPipelineError(f'视频链接下载失败：{detail}')
     candidates = sorted(destination.parent.glob(destination.stem + '.*'))
     candidates = [p for p in candidates if p.suffix.lower() not in {'.part', '.ytdl'}]

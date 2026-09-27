@@ -38,6 +38,11 @@ const SETTINGS_STORAGE_KEY = 'face-mosaic-settings-v2';
 let activeJobId = null;
 let generationStepActive = false;
 
+function readHashJobId() {
+  const value = window.location.hash.replace(/^#/, '');
+  return new URLSearchParams(value).get('job');
+}
+
 const persistedSettings = [
   ['blur_style', blurStyle],
   ['blur_shape', blurShape],
@@ -119,6 +124,17 @@ loadSettings();
 syncRangeLabels();
 updateBlurControls();
 saveSettings();
+
+const restoredJobId = readHashJobId();
+if (restoredJobId) {
+  activeJobId = restoredJobId;
+  resetStageTwo();
+  result.hidden = false;
+  message.textContent = '正在恢复 V1 任务…';
+  poll(restoredJobId).catch(() => {
+    message.textContent = '找不到这个 V1 任务，请回到素材发现重新提交。';
+  });
+}
 
 function resetStageTwo() {
   generationStepActive = false;

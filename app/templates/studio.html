@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="方舟女装视频素材发现与制作工作台">
+  <title>方舟 · 素材发现工作台</title>
+  <link rel="stylesheet" href="/static/studio.css">
+  <style>
+    .production-flow-intro{margin:38px 0 24px}.production-flow-intro h2{margin:5px 0 8px;font-family:var(--serif);font-size:clamp(32px,4vw,52px);font-weight:400;letter-spacing:-.05em}.production-flow-intro p:last-child{color:var(--muted);font-size:13px}
+    .flow-nav{display:flex;gap:0;margin:0 0 28px;border:1px solid var(--hair);background:var(--cream)}.flow-nav button{flex:1;display:flex;align-items:center;gap:10px;padding:14px 17px;border:0;border-right:1px solid var(--hair);background:transparent;color:var(--muted);cursor:pointer;text-align:left;font-size:12px}.flow-nav button:last-child{border-right:0}.flow-nav button[aria-current=step]{background:#eeebe4;color:var(--ink)}.flow-nav b{display:grid;place-items:center;width:27px;height:27px;border:1px solid currentColor;border-radius:50%;font-size:10px;font-weight:500}.flow-nav span{margin-left:auto;font-size:10px;color:var(--muted)}.production-flow{display:block}.production-flow>.creation-form,.production-flow>.surface{width:100%;box-sizing:border-box}.creation-layout.production-flow{display:block}.creation-layout.production-flow>.creation-form{margin-bottom:16px}.creation-form{padding:23px}.flow-config{margin-left:auto;position:relative}.flow-config summary{list-style:none;padding:10px 12px;border:1px solid var(--hair);background:var(--cream);color:var(--muted);cursor:pointer;font-size:11px}.flow-config summary::-webkit-details-marker{display:none}.flow-config[open] summary{border-color:var(--accent);color:var(--accent)}.config-panel{position:absolute;z-index:10;right:0;top:45px;width:min(470px,calc(100vw - 50px));padding:21px;background:var(--cream);border:1px solid var(--hair);box-shadow:var(--shadow)}.config-heading{display:flex;justify-content:space-between;align-items:start;gap:16px}.config-heading h3{margin:3px 0 0;font-size:23px;letter-spacing:-.04em}.config-close{border:0;background:transparent;font-size:24px;line-height:1;cursor:pointer}.config-description{color:var(--muted);font-size:11px;line-height:1.6}.config-panel label{display:grid;gap:7px;color:var(--muted);font-size:11px;margin:10px 0}.config-panel input,.config-panel textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--hair);background:#fff;color:var(--ink)}.config-panel input[readonly]{height:40px}.config-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:15px}.flow-heading{display:flex;align-items:start;justify-content:space-between;gap:20px;margin-bottom:20px}.flow-heading h3{margin:3px 0 6px;font-size:26px;letter-spacing:-.04em}.flow-heading p:last-child{margin:0;color:var(--muted);font-size:12px}.flow-redaction{margin-top:17px;padding-top:22px;border-top:1px solid var(--hair)}.flow-subheading{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.flow-subheading h4{margin:0;font-size:16px}.flow-note{color:var(--muted);font-size:11px}.flow-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:17px}.flow-placeholder{min-height:150px;display:grid;place-items:center;align-content:center;gap:9px;border:1px dashed var(--hair);background:#f3f0ea;color:var(--muted);font-size:12px}.flow-placeholder span{font-size:28px;color:var(--accent)}.flow-placeholder p{margin:0}.preview-panel{margin-top:16px}.preview-panel video{display:block;width:100%;max-height:460px;background:#1b1c1a}.production-flow .generation-panel{display:block;margin-top:16px}.generation-panel .form-kicker{margin-bottom:7px}.generation-panel h4{margin:4px 0 18px;font-size:23px}.reference-tile{position:relative;display:grid!important;gap:8px!important;padding:17px;border:1px solid var(--hair);background:#fff;color:var(--ink)!important}.reference-tile input{order:4}.reference-preview{display:grid;place-items:center;min-height:124px;border:1px dashed var(--hair);background:#f3f0ea;color:var(--muted);font-size:12px}.reference-tile input[type=file]{font-size:11px}.generation-checklist{display:flex;flex-wrap:wrap;gap:10px;margin:19px 0 4px}.generation-checklist span{padding:7px 9px;background:#f3f0ea;color:var(--muted);font-size:11px}.generation-output{margin-top:22px;padding-top:19px;border-top:1px solid var(--hair)}.generation-output video{display:block;width:100%;max-height:460px;margin-top:16px;background:#1b1c1a}.generation-output a{display:inline-block;margin-top:13px;text-decoration:none}.stage-anchor{display:block;position:relative;top:-20px;height:0}.processing-details{margin-top:14px;color:var(--muted);font-size:11px}.demo-notice{padding:10px 12px;border-left:3px solid var(--olive);background:#edf0e8;color:var(--muted);font-size:11px}.view[hidden]{display:none!important}
+    @media(max-width:720px){.flow-nav{overflow:auto}.flow-nav button{min-width:145px}.flow-heading{display:block}.flow-config{margin:14px 0 0}.config-panel{position:fixed;right:16px;left:16px;top:80px;width:auto}.flow-actions{align-items:stretch;flex-direction:column}.flow-actions .primary,.flow-actions .secondary{width:100%}.production-flow-intro{margin-top:20px}}
+  </style>
+  <style>
+    /* compact production flow */
+    #create-view>.stage-head{display:none}.production-flow-intro{margin:24px 0 16px}.production-flow-intro h2{font-size:clamp(28px,3.5vw,42px)}.flow-nav{margin-bottom:16px}.flow-nav button{padding:10px 13px;font-size:11px}.flow-nav b{width:22px;height:22px;font-size:9px}.flow-nav span{font-size:9px}.creation-form,.generation-panel,.preview-panel,.creation-result{padding:16px}.flow-heading{margin-bottom:14px}.flow-heading h3{font-size:22px}.flow-heading p:last-child{font-size:11px}.flow-config summary{padding:4px 0;border:0;background:transparent;font-size:10px;color:var(--accent);text-transform:none}.flow-config[open] summary{border:0}.config-panel{top:30px;width:min(410px,calc(100vw - 40px));padding:16px}.config-heading h3{font-size:19px}.config-description{margin:7px 0;font-size:10px}.config-panel label{gap:5px;margin:7px 0;font-size:10px}.config-panel input,.config-panel textarea{padding:8px}.config-actions{margin-top:10px}.config-actions button{height:34px;padding:0 11px;font-size:10px}.flow-redaction{margin-top:12px;padding-top:15px}.flow-subheading{margin-bottom:9px}.flow-subheading h4{font-size:14px}.flow-placeholder{min-height:108px;font-size:11px}.preview-panel{margin-top:12px}.flow-actions{margin-top:12px}.flow-actions .primary,.flow-actions .secondary{height:37px;font-size:11px}.reference-tile{padding:12px;gap:6px!important}.reference-preview{min-height:92px;font-size:11px}.generation-checklist{gap:6px;margin:13px 0 2px}.generation-checklist span{padding:5px 7px;font-size:10px}.demo-notice{margin:10px 0;padding:8px 10px;font-size:10px}.generation-output{margin-top:15px;padding-top:14px}
+    @media(max-width:720px){.flow-nav button{min-width:120px;padding:9px}.flow-nav button b{flex:0 0 22px}.config-panel{top:58px;right:0;left:auto;width:min(340px,calc(100vw - 32px));position:absolute}.flow-heading{gap:8px}.production-flow-intro{margin-top:16px}}
+  </style>
+  <style>
+    .prompt-editor{margin:16px 0 0;padding-top:14px;border-top:1px solid var(--hair)}.prompt-editor-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px}.prompt-editor-heading label{color:var(--ink);font-size:12px;font-weight:600}.prompt-editor-heading span{color:var(--muted);font-size:10px}.prompt-editor textarea{width:100%;box-sizing:border-box;min-height:92px;padding:11px;border:1px solid var(--hair);background:#fff;color:var(--ink);resize:vertical;font:inherit;font-size:12px;line-height:1.6}.prompt-templates{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.prompt-templates button{height:27px;padding:0 9px;border:1px solid var(--hair);background:#f3f0ea;color:var(--muted);cursor:pointer;font-size:10px}.prompt-templates button:hover{border-color:var(--accent);color:var(--accent);background:#fff}
+  </style>
+  <style>
+    .model-config-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.model-config-grid label{margin:0}.model-config-grid select{min-width:0}.flow-config .config-panel select{height:34px;padding:0 7px;border:1px solid var(--hair);background:#fff;color:var(--ink);font-size:11px}@media(max-width:720px){.model-config-grid{grid-template-columns:1fr}}
+  </style>
+  <link rel="stylesheet" href="/static/model-settings.css?v=20260923-live-generation">
+  <link rel="stylesheet" href="/static/production.css?v=20260923-live-generation">
+</head>
+<body data-initial-view="{{ initial_view|default('discover') }}">
+  <div class="shell">
+    <aside class="rail">
+      <div class="mark"><div class="mark-symbol">方</div><div><strong>方舟</strong><small>CONTENT STUDIO</small></div></div>
+      <p class="rail-label">WORKSPACE</p>
+      <nav>
+        <button class="active" type="button" data-view="discover"><span>⌕</span>素材发现</button>
+        <button type="button" data-view="queue"><span>◌</span>制作队列</button>
+        <button type="button" data-view="cases"><span>▧</span>成功案例</button>
+        <button type="button" data-view="create"><span>◈</span>制作流程</button>
+      </nav>
+      <div class="rail-foot"><span>当前环境</span><strong>本地工作台</strong><p>来源接口：未配置<br>支持人工链接导入</p><span class="dot"></span> V1 节点可用</div>
+    </aside>
+    <main class="main">
+      <header class="top"><div class="top-title"><h1>素材发现</h1><span>把趋势内容筛成可制作的参考</span></div><div class="top-actions"><div class="status" id="model-service-status">正在读取配置</div><button class="help" type="button" data-toast="平台接口未配置，当前使用搜索入口与人工导入">?</button></div></header>
+      <div class="progress"><i id="progress-bar"></i></div>
+      <div class="content">
+        <section class="intro"><p>FASHION VIDEO DISCOVERY</p><h2>先找到值得重做的<br><em>穿搭瞬间。</em></h2><p class="lede">输入主题，参考公司的成功案例，筛出镜头稳定、人物清晰、适合进入 V1 人脸打码的女装视频。</p></section>
+        <div class="stepper"><div class="step active"><b>01</b><span>发现</span></div><div class="step-line"></div><div class="step"><b>02</b><span>审核</span></div><div class="step-line"></div><div class="step"><b>03</b><span>V1 打码</span></div><div class="step-line"></div><div class="step"><b>04</b><span>换装生成</span></div></div>
+
+        <section id="discover-view" class="view active">
+          <div class="stage-head"><div><h3>告诉我你要找什么</h3><p>案例只用来扩展查询词和镜头偏好，不会伪造平台结果。</p></div><div class="stage-count"><strong id="candidate-count">0</strong> 条候选</div></div>
+          <form id="search-form" class="surface search-form">
+            <label>主题<input id="topic" name="topic" value="春季通勤女装" placeholder="例如：法式约会裙装"></label>
+            <label>平台<span class="checks"><span><input type="checkbox" value="douyin" checked> 抖音</span><span><input type="checkbox" value="xiaohongshu" checked> 小红书</span></span></label>
+            <label>案例标签<input id="case-tags" name="tags" placeholder="通勤、显瘦、西装"></label>
+            <button class="primary" type="submit">生成查询计划</button>
+          </form>
+          <div id="query-plan" class="query-plan" hidden></div>
+          <div class="stage-head candidates-head"><div><h3>候选素材</h3><p>真实链接导入后才会生成候选。没有来源接口时，平台入口会显示为查询计划。</p></div><button id="open-import" class="secondary" type="button">＋ 粘贴链接</button></div>
+          <div id="candidate-list" class="candidate-list"><div class="empty">还没有候选素材。先生成查询计划，或粘贴一批平台链接。</div></div>
+        </section>
+
+        {% include "production_panel.html" %}
+
+        <section id="queue-view" class="view" hidden><div class="stage-head"><div><h3>制作队列</h3><p>审核通过的候选会在这里关联到现有 V1 打码流水线。</p></div></div><div id="job-list" class="job-list"></div></section>
+
+        <section id="cases-view" class="view" hidden><div class="stage-head"><div><h3>成功案例</h3><p>把公司过去有效的镜头、风格和失败原因结构化，后续可以接向量检索。</p></div></div><form id="case-form" class="surface case-form"><label>案例标题<input name="title" placeholder="例如：全身固定机位通勤西装"></label><label>标签<input name="tags" placeholder="通勤、西装、显瘦"></label><label>镜头特点<textarea name="shot_notes" placeholder="例如：少切镜、人物占比高"></textarea></label><label>结果<select name="outcome"><option value="success">成功</option><option value="failure">失败</option></select></label><button class="primary" type="submit">保存案例</button></form><div id="case-list" class="case-list"></div></section>
+      </div>
+    </main>
+  </div>
+  <div class="modal" id="import-modal" hidden><div class="modal-card"><button class="modal-close" id="close-import" type="button">×</button><p class="eyebrow">MANUAL IMPORT</p><h3>导入平台链接</h3><p>每行一个抖音或小红书链接。系统会规范化、去重，并保留未采集状态。</p><textarea id="import-links" placeholder="https://www.douyin.com/video/...\nhttps://www.xiaohongshu.com/explore/..."></textarea><div class="modal-actions"><button class="secondary" id="cancel-import" type="button">取消</button><button class="primary" id="submit-import" type="button">导入候选</button></div></div></div>
+  <div class="toast" id="toast"></div>
+  <script src="/static/studio.js?v=20260923-compact"></script>
+  <script src="/static/production.js?v=20260927-video-import"></script>
+  <script src="/static/model-settings.js?v=20260923-live-generation"></script>
+</body>
+</html>
+

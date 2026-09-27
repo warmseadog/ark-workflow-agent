@@ -1,0 +1,109 @@
+<section id="create-view" class="view compact-production"{% if not standalone_production|default(false) %} hidden{% endif %}>
+  <div class="production-intro"><p class="eyebrow">VIDEO STUDIO</p><h2>准备素材，开始创作。</h2><p>参考视频的动作与场景，搭配你选择的衣服和人物。</p></div>
+  <form id="studio-job-form" hidden></form>
+  <form id="studio-generate-form" class="creation-workspace">
+    <div class="asset-grid">
+      <article class="asset-entry" id="flow-stage-source">
+        <div class="asset-heading"><span>01</span><h3>参考视频</h3><small>动作与场景</small></div>
+        <div class="asset-picker" id="video-picker">
+          <span class="asset-empty"><b>＋</b><strong>上传参考视频</strong><small>点击选择视频文件</small></span>
+          <span class="asset-thumbnails" id="video-reference-preview"></span>
+          <input id="studio-source-video" type="file" name="video" form="studio-job-form" accept="video/*" aria-label="上传参考视频">
+        </div>
+        <div class="asset-footer"><span id="source-file-name">建议 5–15 秒</span><span class="asset-edit-actions"><button type="button" id="replace-source-video" data-asset-edit hidden>更换视频</button><button type="button" id="remove-source-video" data-asset-edit hidden>移除视频</button><button type="button" id="toggle-video-url" aria-expanded="false">使用链接</button></span></div>
+        <div id="video-url-entry" hidden>
+          <textarea name="video_url" form="studio-job-form" rows="3" maxlength="10000" placeholder="粘贴链接或整段分享文案，自动识别视频链接" aria-label="参考视频链接" aria-describedby="video-link-status"></textarea>
+          <div class="link-import-actions"><button type="button" class="primary" id="confirm-video-url" disabled>确认并加载视频</button></div>
+          <p class="field-hint">小红书 · 抖音 · 快手 · B 站</p>
+          <p id="video-link-status" class="field-hint" role="status" aria-live="polite">粘贴一个作品的分享文案即可。</p>
+          <details id="link-settings" class="link-settings">
+            <summary>⚙ 链接解析设置 · TikHub <span id="link-key-state">TikHub</span></summary>
+            <div class="link-settings-body">
+              <label for="tikhub-api-key">TikHub API Key</label>
+              <input id="tikhub-api-key" type="password" autocomplete="new-password" placeholder="输入密钥，保存在本机服务端" maxlength="2048">
+              <p class="field-hint">密钥不回显。填写后点击保存，留空保留现有密钥。解析作品将按 TikHub 账户规则计费。</p>
+              <div class="link-settings-actions"><button type="button" class="secondary" id="clear-tikhub-key">清除密钥</button><button type="button" class="secondary" id="test-tikhub-key">测试连接</button><button type="button" class="primary" id="save-tikhub-key">保存配置</button></div>
+              <a href="/admin/settings#tikhub" class="field-hint">在后台管理 TikHub 配置 ↗</a><p id="link-settings-status" class="field-hint" role="status"></p>
+            </div>
+          </details>
+        </div>
+      </article>
+      <article class="asset-entry" id="flow-stage-references">
+        <div class="asset-heading"><span>02</span><h3>衣服参考图</h3><small>款式与材质</small></div>
+        <div class="asset-picker" id="clothing-picker">
+          <span class="asset-empty"><b>＋</b><strong>上传衣服参考图</strong><small>支持选择多张图片</small></span>
+          <span class="asset-thumbnails" id="clothing-reference-preview"></span>
+          <input id="studio-clothing-image" type="file" name="clothing_image" accept="image/*" multiple required aria-label="上传衣服参考图">
+        </div>
+        <div class="asset-footer"><span id="clothing-file-name">款式清晰、完整展示</span><button type="button" data-add-images="clothing" data-asset-edit>＋ 添加</button></div>
+      </article>
+      <article class="asset-entry">
+        <div class="asset-heading"><span>03</span><h3>人物参考图</h3><small>脸部与身份</small></div>
+        <div class="asset-picker" id="face-picker">
+          <span class="asset-empty"><b>＋</b><strong>上传人物参考图</strong><small>支持选择多张图片</small></span>
+          <span class="asset-thumbnails" id="face-reference-preview"></span>
+          <input id="studio-face-image" type="file" name="face_image" accept="image/*" multiple required aria-label="上传人物参考图">
+        </div>
+        <div class="asset-footer"><span id="face-file-name">清晰正脸、光线自然</span><button type="button" data-add-images="face" data-asset-edit>＋ 添加</button></div>
+        <div class="portrait-entry"><button type="button" data-portrait-open="invite">真人认证</button><button type="button" data-portrait-open="assets">已授权人物</button></div>
+      </article>
+    </div>
+    <details class="compact-prompt" id="flow-stage-generation">
+      <summary>提示词与模板 <span>可选，展开编辑</span></summary>
+      <div class="prompt-templates" id="prompt-template-list" aria-label="提示词模板"></div>
+      <div class="template-editor">
+        <label for="prompt-template-name">模板名称</label>
+        <input id="prompt-template-name" maxlength="60" placeholder="输入名称，将当前提示词存为模板" autocomplete="off">
+        <div class="template-actions">
+          <button type="button" class="secondary" id="template-new" data-template-action>新建模板</button>
+          <button type="button" class="secondary" id="template-save" data-template-action disabled>保存修改</button>
+          <button type="button" class="secondary" id="template-copy" data-template-action>另存为新模板</button>
+          <button type="button" class="secondary template-delete" id="template-delete" data-template-action disabled>删除模板</button>
+        </div>
+        <div id="template-delete-confirm" hidden>
+          <span>删除后无法恢复，确认删除所选模板？</span>
+          <button type="button" class="secondary" id="template-delete-cancel" data-template-action>取消</button>
+          <button type="button" class="primary" id="template-delete-accept" data-template-action>确认删除</button>
+        </div>
+        <p class="field-hint" id="prompt-template-status" role="status" aria-live="polite">正在读取已保存的模板…</p>
+      </div>
+      <label class="sr-only" for="generation-prompt">生成提示词</label>
+      <textarea id="generation-prompt" name="prompt" rows="4">保持@Video1原视频的动作、镜头、场景和节奏；应用@Image1人物参考图中的脸和身份；应用@Image2衣服参考图中的服装款式、颜色和材质，保持全片自然稳定。</textarea>
+      <p class="field-hint">主人物图对应 @Image1，主衣服图对应 @Image2；其余人物图、衣服图依次编号并一起提交，预设模型合计最多 9 张。</p>
+    </details>
+    <div class="generation-action"><p id="production-status" role="status" aria-live="polite">选择三类素材后即可生成</p><button class="primary" type="submit" id="studio-generate-submit" disabled>生成视频 →</button></div>
+    <div id="save-notice" class="save-notice" hidden>
+      <span id="draft-save-status" role="status" aria-live="polite">正在恢复内容…</span>
+      <button type="button" class="secondary" id="draft-save-retry" hidden>重试保存</button>
+      <button type="button" class="secondary" id="draft-recover" hidden>保留当前修改</button>
+    </div>
+    <div id="generation-result" class="compact-result" hidden><div class="creation-status"><h4 id="generation-message">等待生成</h4><strong id="generation-percent">0%</strong></div><div class="creation-progress"><i id="generation-bar"></i></div><video id="studio-final-video" controls playsinline hidden></video><a id="studio-download" class="secondary" hidden>下载视频 ↓</a></div>
+  </form>
+  <section class="production-runs" aria-labelledby="production-runs-heading">
+    <div class="runs-heading"><h3 id="production-runs-heading">生成任务</h3><button type="button" class="secondary" id="runs-refresh">刷新任务</button></div>
+    <p id="runs-status" role="status">正在读取任务…</p>
+    <div id="production-run-list"></div>
+  </section>
+  <div class="corner-settings">
+    <details class="flow-config" id="redaction-settings">
+      <summary aria-controls="redaction-settings-panel">⚙ 打码设置</summary>
+      <div class="config-panel" id="redaction-settings-panel" role="region" aria-label="打码设置与预览">
+        <div class="config-heading"><div><p class="eyebrow">MASK SETTINGS</p><h3>打码设置</h3></div><button type="button" class="config-close" data-redaction-cancel aria-label="关闭打码设置">×</button></div>
+        <p class="config-description">生成时自动处理；也可以先预览遮挡效果。</p>
+        <div class="compact-settings">
+          <label>打码样式<select name="blur_style" form="studio-job-form"><option value="mosaic">马赛克</option><option value="blur">高斯模糊</option><option value="solid">黑色遮挡</option></select></label>
+          <label>遮挡目标<select name="mask_mode" form="studio-job-form"><option value="face">只遮人脸</option><option value="face_hair_primary">人脸 + 主人物头发</option><option value="hair_primary">只遮主人物头发</option><option value="face_hair_all">所有人物脸和头发</option></select></label>
+          <label>遮罩倍数<input type="number" name="mask_scale" form="studio-job-form" min="1" max="2" step="0.1" value="1.4"></label>
+          <label>检测阈值<input type="number" name="threshold" form="studio-job-form" min="0.05" max="0.95" step="0.05" value="0.2"></label>
+        </div>
+        <label class="inline-check"><input type="checkbox" name="keep_audio" form="studio-job-form" checked> 保留原视频音频</label>
+        <label class="inline-check"><input type="checkbox" name="robust_tracking" form="studio-job-form"> 稳定跟踪</label>
+        <div class="mask-preview-section" id="flow-stage-redaction"><button type="button" class="secondary" id="studio-preview-submit" disabled>预览打码视频</button><p id="studio-preview-status" role="status">选择参考视频后可预览</p><div id="studio-preview" hidden><video id="studio-defaced-video" controls playsinline preload="metadata"></video></div></div>
+        <div class="config-actions"><button type="button" class="secondary" data-redaction-cancel>取消</button><button type="button" class="primary" data-redaction-save>保存设置</button></div>
+      </div>
+    </details>
+    <details class="flow-config" id="model-settings"><summary id="model-settings-toggle" aria-controls="model-settings-panel" aria-expanded="false">⚙ 视频模型设置</summary>{% include "model_settings_panel.html" %}</details>
+  </div>
+</section>
+
+{% include "portrait_panel.html" %}

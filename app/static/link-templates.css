@@ -1,0 +1,22 @@
+#video-url-entry textarea { display:block; width:100%; margin-top:12px; padding:10px; min-height:86px; resize:vertical; border:1px solid var(--hair); background:var(--cream); font:inherit; font-size:12px; line-height:1.7; }
+#video-url-entry .field-hint { font-size:11px; line-height:1.6; color:var(--muted); overflow-wrap:anywhere; }
+.link-settings { border-top:1px solid var(--hair); padding-top:10px; margin-top:12px; }
+.link-settings summary { cursor:pointer; font-size:11px; color:var(--muted); }
+.link-settings summary span { float:right; font-size:10px; }
+.link-settings-body { padding:12px 0 0; }
+.link-settings-body label { font-size:11px; }
+.link-settings-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; margin-top:10px; }
+.link-settings-actions button { font-size:11px; min-height:32px; }
+.template-editor { margin:12px 0; }
+.template-editor > label { display:block; color:var(--muted); font-size:11px; margin-bottom:6px; }
+.template-editor > input { width:min(100%,380px); border:1px solid var(--hair); padding:9px 12px; background:var(--cream); font-size:12px; }
+.template-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.template-actions button, #template-delete-confirm button { font-size:11px; min-height:32px; padding:4px 12px; }
+.template-delete { color:var(--accent); }
+#prompt-template-list button[aria-pressed="true"] { color:var(--accent); border-color:var(--accent); background:#fff; }
+#prompt-template-list button { max-width:100%; height:auto; min-height:28px; overflow-wrap:anywhere; text-align:left; padding:5px 10px; }
+#template-delete-confirm { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px; padding:12px; background:#f5e7e3; font-size:12px; }
+#video-link-status[data-error="true"], #prompt-template-status[data-error="true"], #link-settings-status[data-error="true"] { color:var(--accent); }
+
+.link-import-actions { display:flex; justify-content:flex-end; margin-top:10px; }
+.link-import-actions button { min-height:34px; font-size:12px; padding:7px 14px; }

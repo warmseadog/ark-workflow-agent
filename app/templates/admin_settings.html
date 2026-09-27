@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>方舟 · 后台配置</title>
+  <link rel="stylesheet" href="/static/model-settings.css?v=20260927">
+  <link rel="stylesheet" href="/static/admin-settings.css?v=20260927">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/"><span class="brand-mark">方</span><span>方舟 <small>创作工作台</small></span></a>
+    <p class="nav-label">工作台管理</p>
+    <nav aria-label="配置分类">
+      <a href="#overview" data-section="overview"><span>◫</span> 配置概览</a>
+      <a href="#model" data-section="model"><span>◇</span> 视频模型</a>
+      <a href="#tikhub" data-section="tikhub"><span>↗</span> 链接解析 <small>TikHub</small></a>
+      <a href="#storage" data-section="storage"><span>▱</span> 对象存储 <small>TOS</small></a>
+      <a href="#prompts" data-section="prompts"><span>≡</span> 提示词模板</a>
+      <a href="#redaction" data-section="redaction"><span>▦</span> 打码参数</a>
+      <a href="#system" data-section="system"><span>⚙</span> 系统信息</a>
+    </nav>
+    <div class="sidebar-bottom"><span class="dot"></span> 本机配置中心<p>服务密钥保存在本机后端</p><a href="/">← 返回视频制作</a></div>
+  </aside>
+  <main>
+    <header class="topbar"><span>工作台 / <strong>后台配置</strong></span><a href="/" class="button">返回制作台 ↗</a></header>
+    <div class="content">
+      <p class="eyebrow">WORKSPACE SETTINGS</p><h1>后台配置</h1>
+      <p class="lead">集中管理模型、素材来源与存储，让每一步制作都有迹可查。</p>
+      <p id="page-error" class="notice error" role="alert" hidden></p>
+      <section id="section-overview" class="section">
+        <div class="section-title"><div><h2>配置概览</h2><p>当前已保存的配置状态。连接是否可用，请在对应分区测试。</p></div><button id="refresh-overview" class="secondary">刷新状态</button></div>
+        <div class="summary-grid">
+          <a href="#model" class="summary-card"><span>视频模型</span><strong id="overview-model">读取中…</strong><small id="overview-model-detail">—</small><b>查看配置 ↗</b></a>
+          <a href="#tikhub" class="summary-card"><span>链接解析 · TikHub</span><strong id="overview-tikhub">读取中…</strong><small>抖音 / 小红书 / 快手 / B 站</small><b>管理 API Key ↗</b></a>
+          <a href="#storage" class="summary-card"><span>对象存储 · TOS</span><strong id="overview-storage">读取中…</strong><small id="overview-storage-detail">—</small><b>管理存储 ↗</b></a>
+        </div>
+        <div class="card"><p class="eyebrow">YOUR WORKFLOW</p><h3>从参考视频到生成结果</h3><div class="workflow"><span>链接 / 本地视频</span><i>→</i><span>本地打码</span><i>→</i><span>TOS / 公网地址</span><i>→</i><span>视频模型</span></div><p class="hint">启用 TOS 后，火山方舟读取带有效期的打码视频链接。其他服务商继续使用各自的素材上传方式。</p><p id="overview-attention" class="notice"></p></div>
+        <div class="card compact"><h3>配置生效方式</h3><p>模型、TikHub 和 TOS 保存后用于新任务。正在生成的任务保留提交时的配置。打码参数沿用当前浏览器的设置。</p></div>
+      </section>
+      <section id="section-model" class="section" hidden>
+        <div class="section-title"><div><h2>视频模型</h2><p>与制作页的视频模型设置同步。</p></div><span id="model-service-status" class="badge"></span></div>
+        <details id="model-settings" open><summary id="model-settings-toggle">模型配置</summary>{% include "model_settings_panel.html" %}</details>
+      </section>
+      <section id="section-tikhub" class="section" hidden>
+        <div class="section-title"><div><h2>链接解析</h2><p>通过你购买的 TikHub API 获取分享链接中的视频。</p></div><span class="badge">TikHub</span></div>
+        <div class="card"><h3>TikHub 账户配置</h3><p class="hint">支持抖音、小红书、快手与 B 站。这里和制作页链接输入处共用同一份密钥。</p>
+          <form id="tikhub-form" autocomplete="off"><fieldset disabled>
+            <label>官方接口地址<input value="https://api.tikhub.io" readonly></label>
+            <label for="admin-tikhub-key">API Key <span id="tikhub-key-status" class="badge"></span></label>
+            <input id="admin-tikhub-key" name="api_key" type="password" maxlength="2048" autocomplete="new-password" placeholder="填写 TikHub API Key">
+            <p class="hint">留空保留已保存的密钥；输入新值可替换。密钥不会回传或写入浏览器存储。</p>
+            <label class="check"><input name="clear_api_key" type="checkbox"> 清除已保存的密钥</label>
+            <div class="actions"><button type="button" id="test-tikhub" class="secondary">测试连接</button><button type="submit" class="primary">保存 TikHub 配置</button></div>
+          </fieldset></form><p id="tikhub-status" class="notice" role="status" hidden></p>
+          <p class="hint">连接测试仅验证账户，不抓取视频。实际解析按 TikHub 账户规则计费。</p>
+        </div>
+      </section>
+      <section id="section-storage" class="section" hidden>
+        <div class="section-title"><div><h2>对象存储</h2><p>把打码后的视频上传到 TOS，供火山方舟读取。</p></div><span class="badge">火山引擎 TOS</span></div>
+        <div class="card"><form id="tos-form" autocomplete="off"><fieldset disabled>
+          <label class="enable-row"><span><strong>启用 TOS 视频上传</strong><small>用于新的火山方舟生成任务</small></span><input name="enabled" type="checkbox"></label>
+          <div class="form-grid"><label>Bucket 名称<input name="bucket" placeholder="例如 my-video-bucket" maxlength="63"></label><label>地域（Region）<input name="region" list="tos-regions" placeholder="cn-beijing" required></label></div>
+          <datalist id="tos-regions"><option value="cn-beijing"><option value="cn-shanghai"><option value="cn-guangzhou"></datalist>
+          <label>公网 Endpoint<input name="endpoint" type="url" placeholder="https://tos-cn-beijing.volces.com" required></label>
+          <p class="hint">填写桶所在地域的官方公网 Endpoint；地域修改后会自动更新地址。</p>
+          <div class="form-grid"><label>Access Key（AK） <span id="tos-ak-status" class="badge"></span><input name="access_key" type="password" autocomplete="new-password" placeholder="输入 Access Key" maxlength="2048"></label><label>Secret Key（SK） <span id="tos-sk-status" class="badge"></span><input name="secret_key" type="password" autocomplete="new-password" placeholder="输入 Secret Key" maxlength="2048"></label></div>
+          <p class="hint">同一 Endpoint 下留空保留密钥；更换地域或 AK 时，请同时填写对应的 AK/SK。</p>
+          <label class="check"><input name="clear_credentials" type="checkbox"> 清除已保存的 AK / SK</label>
+          <div class="form-grid"><label>视频对象目录<input name="prefix" placeholder="ark/redacted/" required></label><label>下载链接有效期<select name="expires_seconds"><option value="3600">1 小时</option><option value="7200">2 小时</option><option value="21600">6 小时</option><option value="86400">24 小时（推荐）</option><option value="259200">3 天</option><option value="604800">7 天</option></select></label></div>
+          <div class="notice">仅上传打码后的视频，对象设为私有，并使用临时签名链接。链接过期不会删除文件，可在 TOS 控制台为上述目录设置生命周期清理。</div>
+          <div class="actions"><button type="button" id="test-tos" class="secondary">测试 Bucket 连接</button><button type="submit" class="primary">保存 TOS 配置</button></div>
+        </fieldset></form><p id="tos-status" class="notice" role="status" hidden></p><p class="hint">测试验证 HeadBucket 权限，不上传素材；实际任务需要 PutObject、GetObject 权限。无需公开桶或将工作台部署到公网。</p></div>
+      </section>
+      <section id="section-prompts" class="section" hidden>
+        <div class="section-title"><div><h2>提示词模板</h2><p>保存常用的生成要求，在制作页直接选用。</p></div></div>
+        <div class="card"><form id="prompt-form"><fieldset disabled>
+          <label>已有模板<select id="admin-template-select"><option value="">新建模板</option></select></label>
+          <label>模板名称<input name="name" required maxlength="60" placeholder="例如：自然换装"></label>
+          <label>提示词内容<textarea name="content" required maxlength="10000" rows="7" placeholder="描述希望保留的动作、场景与生成要求"></textarea></label>
+          <p class="hint">@Video1 为参考视频，@Image1 为人物，@Image2 为衣服。</p>
+          <div class="actions"><button type="button" id="delete-template" class="danger">删除模板</button><button type="button" id="new-template" class="secondary">新建模板</button><button type="submit" class="primary">保存模板</button></div>
+        </fieldset></form><p id="prompt-status" class="notice" role="status" hidden></p></div>
+      </section>
+      <section id="section-redaction" class="section" hidden>
+        <div class="section-title"><div><h2>打码参数</h2><p>查看参数来源。修改本次任务的设置，请返回制作页的“打码设置”。</p></div><a href="/" class="button">前往制作页 ↗</a></div>
+        <div class="card"><h3>服务端默认值</h3><dl id="redaction-defaults" class="info-list"></dl><p class="hint">来自服务端环境配置，修改后需重启服务。</p></div>
+        <div class="card"><h3>当前浏览器已保存的参数</h3><dl id="redaction-browser" class="info-list"></dl><p class="hint">来自此浏览器的本地存储，在制作页保存后生效；不会同步到其他浏览器。</p></div>
+      </section>
+      <section id="section-system" class="section" hidden>
+        <div class="section-title"><div><h2>系统信息</h2><p>查看当前服务的存储位置与运行参数。</p></div><span class="badge">只读</span></div>
+        <div class="card"><dl id="system-info" class="info-list"></dl><p class="hint">这些参数来自当前服务环境，修改环境配置后需要重启。</p></div>
+      </section>
+      <footer>方舟 · 配置中心 <span>配置按分区独立保存</span></footer>
+    </div>
+  </main>
+  <script src="/static/model-settings.js?v=20260927"></script>
+  <script src="/static/admin-settings.js?v=20260927"></script>
+</body>
+</html>

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>女装穿搭视频发现与二创流水线</title>
+  <style>
+    :root { --ink:#14223a; --muted:#64748b; --line:#d8e0ed; --paper:#f7f9fc; --blue:#4f7cff; --purple:#8b5cf6; --green:#18a974; --amber:#d89b19; --rose:#e05a83; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:linear-gradient(135deg,#f5f8ff 0%,#fbfcff 55%,#f3f8f5 100%); font-family:Inter,"Microsoft YaHei",system-ui,sans-serif; }
+    .shell { max-width:1600px; margin:0 auto; padding:44px 42px 52px; }
+    .top { display:flex; justify-content:space-between; gap:28px; align-items:flex-start; margin-bottom:26px; }
+    .eyebrow { font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--blue); font-weight:800; }
+    h1 { font-size:clamp(28px,3vw,48px); line-height:1.08; margin:12px 0 10px; letter-spacing:-.04em; }
+    .subtitle { color:var(--muted); max-width:860px; line-height:1.7; font-size:15px; margin:0; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+    button { border:1px solid var(--line); border-radius:11px; padding:10px 14px; background:#fff; color:var(--ink); cursor:pointer; font:inherit; box-shadow:0 4px 14px #263b5a0d; }
+    button:hover { transform:translateY(-1px); box-shadow:0 7px 18px #263b5a18; }
+    .primary { background:var(--ink); color:#fff; border-color:var(--ink); }
+    .card { background:#fff; border:1px solid #e6ebf3; border-radius:20px; box-shadow:0 15px 50px #263b5a10; }
+    .flow-card { padding:18px; overflow:auto; }
+    .legend { display:flex; gap:18px; flex-wrap:wrap; margin:18px 2px 28px; color:var(--muted); font-size:13px; }
+    .legend span { display:inline-flex; align-items:center; gap:7px; }
+    .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+    .note-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:22px; }
+    .note { padding:20px; min-height:148px; }
+    .note h3 { margin:0 0 10px; font-size:16px; }
+    .note p { color:var(--muted); line-height:1.7; font-size:13px; margin:0; }
+    .badge { display:inline-flex; align-items:center; padding:5px 9px; border-radius:999px; background:#eef3ff; color:#3454b4; font-size:11px; font-weight:800; margin-bottom:12px; }
+    .footer { display:flex; justify-content:space-between; gap:16px; margin-top:20px; color:var(--muted); font-size:12px; }
+    dialog { border:0; border-radius:16px; padding:0; box-shadow:0 25px 80px #17243a40; max-width:720px; width:calc(100% - 36px); }
+    dialog::backdrop { background:#14223a66; backdrop-filter:blur(4px); }
+    .dialog-inner { padding:24px; }
+    pre { white-space:pre-wrap; max-height:60vh; overflow:auto; background:#101827; color:#dce7ff; border-radius:12px; padding:16px; font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace; }
+    @media (max-width:800px) { .shell { padding:28px 18px; } .top { flex-direction:column; } .actions { justify-content:flex-start; } .note-grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="top">
+      <div>
+        <div class="eyebrow">Fashion content operations · v1 workflow map</div>
+        <h1>女装穿搭视频发现与二创流水线</h1>
+        <p class="subtitle">从公司案例检索、平台来源适配，到候选审核，再进入现有 v1 人脸打码流程。RAG 只参与案例检索和查询计划，不直接生成或判断平台链接。</p>
+      </div>
+      <div class="actions">
+        <button id="copyBtn" class="primary">复制 Mermaid 源码</button>
+        <button id="printBtn">打印 / 导出 PDF</button>
+      </div>
+    </div>
+
+    <section class="card flow-card" aria-label="主流程图">
+      <svg viewBox="0 0 1500 1050" role="img" aria-label="女装穿搭视频发现与二创流程图" width="1500" height="1050">
+        <defs>
+          <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#8c9ab2" /></marker>
+          <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#263b5a" flood-opacity=".10" /></filter>
+        </defs>
+        <style>
+          .box{filter:url(#shadow);stroke-width:2}.t{font-family:Inter,'Microsoft YaHei',sans-serif;fill:#14223a;font-size:18px;font-weight:700;text-anchor:middle}.s{font-family:Inter,'Microsoft YaHei',sans-serif;fill:#64748b;font-size:13px;text-anchor:middle}.a{stroke:#9aa9bf;stroke-width:2.5;fill:none;marker-end:url(#arrow)}.d{stroke-dasharray:8 8}
+        </style>
+        <rect x="28" y="22" width="1444" height="102" rx="22" fill="#f0eaff" stroke="#cbb7ff" stroke-width="2"/>
+        <text x="750" y="55" class="t">公司案例层 · 可选 RAG</text><text x="750" y="80" class="s">结构化标签、成功/失败原因、镜头模板、历史效果</text>
+        <rect x="55" y="135" width="150" height="70" rx="16" fill="#e7f0ff" stroke="#4f7cff" class="box"/><text x="130" y="165" class="t">输入需求</text><text x="130" y="188" class="s">主题 · 风格 · 参考图</text>
+        <rect x="250" y="135" width="170" height="70" rx="16" fill="#f0eaff" stroke="#8b5cf6" class="box"/><text x="335" y="165" class="t">案例检索</text><text x="335" y="188" class="s">相似案例 / 查询扩展</text>
+        <rect x="465" y="135" width="190" height="70" rx="16" fill="#fff5dc" stroke="#d89b19" class="box"/><text x="560" y="165" class="t">查询计划器</text><text x="560" y="188" class="s">关键词、标签、平台策略</text>
+        <path d="M205 170h42M420 170h42" class="a"/><path d="M335 124V100M335 100H750" class="a d"/>
+        <rect x="28" y="240" width="1444" height="145" rx="22" fill="#edf9f5" stroke="#bfe8d6" stroke-width="2"/>
+        <text x="750" y="270" class="t">来源适配层</text><text x="750" y="294" class="s">来源只负责返回标准化候选，不把平台页面结构泄漏到后续模块</text>
+        <rect x="100" y="315" width="205" height="48" rx="13" fill="#fff" stroke="#18a974" class="box"/><text x="202" y="345" class="t" font-size="16">人工链接导入</text>
+        <rect x="388" y="315" width="265" height="48" rx="13" fill="#fff" stroke="#18a974" class="box"/><text x="520" y="345" class="t" font-size="16">授权 API / 合作方数据</text>
+        <rect x="736" y="315" width="265" height="48" rx="13" fill="#fff" stroke="#18a974" class="box"/><text x="868" y="345" class="t" font-size="16">合规浏览器适配器</text>
+        <rect x="1084" y="315" width="315" height="48" rx="13" fill="#fff" stroke="#18a974" class="box"/><text x="1241" y="345" class="t" font-size="16">统一 VideoCandidate</text>
+        <path d="M560 205v55M202 363v30M520 363v30M868 363v30M1241 363v30" class="a"/>
+        <rect x="28" y="420" width="1444" height="180" rx="22" fill="#fff8e7" stroke="#f0d79b" stroke-width="2"/>
+        <text x="750" y="450" class="t">标准化与视觉特征</text>
+        <rect x="90" y="485" width="245" height="70" rx="16" fill="#fff" stroke="#d89b19" class="box"/><text x="212" y="515" class="t">URL 规范化</text><text x="212" y="538" class="s">平台 ID / 短链展开</text>
+        <rect x="410" y="485" width="245" height="70" rx="16" fill="#fff" stroke="#d89b19" class="box"/><text x="532" y="515" class="t">重复检测</text><text x="532" y="538" class="s">URL、封面哈希、首帧指纹</text>
+        <rect x="730" y="485" width="245" height="70" rx="16" fill="#fff" stroke="#d89b19" class="box"/><text x="852" y="515" class="t">元数据特征</text><text x="852" y="538" class="s">标题、作者、发布时间、热度</text>
+        <rect x="1050" y="485" width="360" height="70" rx="16" fill="#fff" stroke="#d89b19" class="box"/><text x="1230" y="515" class="t">视觉特征</text><text x="1230" y="538" class="s">人脸跟踪、人物占比、镜头切换、清晰度</text>
+        <path d="M1241 363v122M335 520h72M655 520h72M975 520h67" class="a"/>
+        <rect x="28" y="635" width="720" height="120" rx="22" fill="#fff0f4" stroke="#f3bfd0" stroke-width="2"/>
+        <text x="388" y="669" class="t">混合检索与业务排序</text><text x="388" y="696" class="s">关键词 + 向量 + 可编辑性 + 热度 + 权利状态</text>
+        <rect x="230" y="710" width="315" height="30" rx="9" fill="#fff" stroke="#e05a83"/><text x="387" y="730" class="s">推荐理由可解释</text>
+        <rect x="800" y="635" width="672" height="120" rx="22" fill="#fff0f4" stroke="#e05a83" stroke-width="2"/>
+        <text x="1136" y="669" class="t">候选审核台</text><text x="1136" y="696" class="s">通过 / 暂存 / 拒绝，记录拒绝原因与权利状态</text>
+        <path d="M1230 555v60M388 600v35M748 695h50" class="a"/>
+        <rect x="28" y="800" width="1444" height="180" rx="22" fill="#eaf8ff" stroke="#b9e2f5" stroke-width="2"/>
+        <text x="750" y="830" class="t">Video Job · Temporal 工作流</text><text x="750" y="854" class="s">每一步可重试、可追踪，现有 v1 人脸打码是中间活动</text>
+        <rect x="90" y="890" width="235" height="60" rx="15" fill="#fff" stroke="#2496d2" class="box"/><text x="207" y="916" class="t">获取素材</text><text x="207" y="937" class="s">创建代理文件</text>
+        <rect x="385" y="890" width="235" height="60" rx="15" fill="#dff3ff" stroke="#2496d2" class="box"/><text x="502" y="916" class="t">现有 v1 人脸打码</text><text x="502" y="937" class="s">输出 faceMaskAssetId</text>
+        <rect x="680" y="890" width="235" height="60" rx="15" fill="#fff" stroke="#2496d2" class="box"/><text x="797" y="916" class="t">服装替换</text><text x="797" y="937" class="s">参考图融合</text>
+        <rect x="975" y="890" width="205" height="60" rx="15" fill="#fff" stroke="#2496d2" class="box"/><text x="1077" y="916" class="t">视频生成</text><text x="1077" y="937" class="s">模型调用</text>
+        <rect x="1240" y="890" width="190" height="60" rx="15" fill="#e9f8e9" stroke="#45a657" class="box"/><text x="1335" y="916" class="t">质量检查</text><text x="1335" y="937" class="s">通过 / 返工</text>
+        <path d="M748 755v35M207 950v30M325 920h52M620 920h52M915 920h52M1180 920h52" class="a"/>
+      </svg>
+    </section>
+
+    <div class="legend">
+      <span><i class="dot" style="background:#4f7cff"></i>输入与任务</span>
+      <span><i class="dot" style="background:#8b5cf6"></i>案例检索 / RAG（可选）</span>
+      <span><i class="dot" style="background:#18a974"></i>来源适配</span>
+      <span><i class="dot" style="background:#d89b19"></i>标准化与排序</span>
+      <span><i class="dot" style="background:#e05a83"></i>人工审核与反馈</span>
+      <span><i class="dot" style="background:#2496d2"></i>v1 与后续媒体处理</span>
+    </div>
+
+    <section class="note-grid">
+      <article class="card note"><span class="badge">RAG 的边界</span><h3>只检索公司案例</h3><p>用于查询词扩展、相似镜头模板和推荐解释。它不直接生成平台链接，也不负责判断链接是否真实。</p></article>
+      <article class="card note"><span class="badge" style="background:#e8f8f1;color:#0d7650">v1 的位置</span><h3>作为 Video Job 的中间活动</h3><p>审核通过后进入工作流，完成素材准备 → v1 人脸打码 → 输出 faceMaskAssetId，再进入换装和视频生成。</p></article>
+      <article class="card note"><span class="badge" style="background:#fff4da;color:#94600b">可复用边界</span><h3>来源适配器可替换</h3><p>人工链接、授权 API 和合规浏览器适配器都返回同一套 VideoCandidate，后续排序和媒体流程无需改动。</p></article>
+    </section>
+
+    <div class="footer"><span>建议文件：fashion-video-pipeline.html · fashion-video-pipeline.mmd</span><span>版本：v1.0 · 2026-09</span></div>
+  </main>
+  <dialog id="sourceDialog"><div class="dialog-inner"><h2>Mermaid 源码</h2><p>源码已保存在同目录的 <code>fashion-video-pipeline.mmd</code>。下面是本页内置副本，可复制到 Mermaid 编辑器继续修改。</p><pre id="sourceText"></pre><div style="text-align:right"><button id="closeBtn">关闭</button></div></div></dialog>
+  <script>
+    const source = `flowchart LR
+  A[输入需求\n主题 / 风格 / 单品 / 参考图] --> B[创建 Discovery Run]
+  C1[公司成功案例库] --> C2[相似案例检索] --> C3[查询词与镜头模板扩展]
+  A --> C2 --> D[查询计划器]
+  B --> D
+  D --> S1[人工链接导入]
+  D --> S2[授权 API / 合作方数据]
+  D --> S3[合规浏览器适配器]
+  S1 --> E[统一 VideoCandidate]
+  S2 --> E
+  S3 --> E
+  E --> N[标准化、去重、视觉特征抽取]
+  N --> F[混合检索与业务排序]
+  C2 -. 案例相似度 .-> F
+  F --> G[候选审核台]
+  G -->|通过| I[创建 Video Job]
+  G -->|拒绝| H[反馈数据]
+  H -.-> C1
+  I --> V1A[获取素材]
+  V1A --> V1B[现有 v1 人脸打码]
+  V1B --> V1C[faceMaskAssetId]
+  V1C --> K[服装替换 / 参考图融合]
+  K --> L[视频模型生成]
+  L --> M[质量检查]
+  M --> O[输出二创视频]`;
+    const dialog = document.getElementById('sourceDialog');
+    document.getElementById('sourceText').textContent = source;
+    document.getElementById('copyBtn').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(source); alert('Mermaid 源码已复制'); }
+      catch { dialog.showModal(); }
+    });
+    document.getElementById('printBtn').addEventListener('click', () => window.print());
+    document.getElementById('closeBtn').addEventListener('click', () => dialog.close());
+  </script>
+</body>
+</html>

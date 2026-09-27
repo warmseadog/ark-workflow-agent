@@ -1,0 +1,43 @@
+.portrait-entry { display: flex; gap: 14px; margin-top: 7px; }
+.portrait-entry button { border: 0; padding: 4px 0; color: var(--accent); background: transparent; font: inherit; font-size: 11px; cursor: pointer; }
+.portrait-entry button:disabled { opacity: .5; cursor: not-allowed; }
+.portrait-badge { position: absolute; top: 25px; left: 4px; max-width: calc(100% - 8px); border-radius: 2px; background: #e3efe5f5; color: #2d6342; padding: 3px 5px; font-size: 9px; }
+.portrait-dialog { box-sizing: border-box; width: min(620px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); margin: auto; padding: 26px; border: 1px solid var(--hair); background: var(--cream, #fffdf6); color: var(--ink, #222); overflow-y: auto; overscroll-behavior: contain; font-family: inherit; }
+.portrait-dialog::backdrop { background: #24211c80; }
+.portrait-heading, .portrait-section-heading { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.portrait-heading h2 { margin: 4px 0 10px; font-size: 22px; font-weight: 500; }
+.portrait-heading .eyebrow { margin: 0; }
+#portrait-close { align-self: flex-start; border: 0; padding: 0 7px; background: transparent; color: var(--muted); font-size: 28px; cursor: pointer; }
+.portrait-dialog p { margin: 9px 0; font-size: 12px; line-height: 1.75; overflow-wrap: anywhere; }
+.portrait-dialog .portrait-note { padding: 12px; background: #eee9df; }
+.portrait-section { padding: 17px 0; border-bottom: 1px solid var(--hair); }
+.portrait-section h3 { margin: 0; font-size: 14px; font-weight: 550; }
+.portrait-dialog label { display: block; font-size: 12px; margin: 14px 0 7px; }
+.portrait-dialog input:not([type=checkbox]) { display: block; box-sizing: border-box; width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--hair); background: #fff; color: var(--ink); font: inherit; font-size: 12px; }
+.portrait-dialog button, .portrait-dialog a { font-size: 11px; }
+.portrait-dialog button:disabled { opacity: .5; cursor: wait; }
+.portrait-invitation-row { display: flex; gap: 8px; }
+.portrait-invitation-row button { flex-shrink: 0; }
+#portrait-qr { text-align: center; margin-top: 15px; }
+#portrait-qr-image { display: block; margin: auto; width: min(220px, 100%); aspect-ratio: 1; object-fit: contain; background: white; }
+.portrait-dialog .portrait-small { color: var(--muted); font-size: 11px; }
+.portrait-status { color: var(--muted); }
+.portrait-status[data-error=true] { color: #a8342a; }
+.portrait-settings { margin-top: 20px; }
+.portrait-settings summary { cursor: pointer; font-size: 12px; }
+.portrait-dialog .portrait-check { display: flex; gap: 8px; align-items: center; }
+.portrait-check input { flex-shrink: 0; }
+.portrait-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.portrait-asset { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--hair); }
+.portrait-asset > div { min-width: 0; }
+.portrait-asset strong { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.portrait-asset small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+.portrait-asset button { flex-shrink: 0; }
+.portrait-dialog [hidden] { display: none; }
+@media (max-width: 480px) {
+  .portrait-dialog { padding: 18px; }
+  .portrait-heading h2 { font-size: 19px; }
+  .portrait-invitation-row { flex-direction: column; }
+  .portrait-section-heading { align-items: flex-start; flex-wrap: wrap; }
+  .portrait-dialog .secondary, .portrait-dialog .primary { padding: 10px 12px; }
+}

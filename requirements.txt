@@ -11,3 +11,11 @@ numpy>=1.26,<2
 opencv-contrib-python>=4.10,<5
 imageio-ffmpeg>=0.4,<1
 deface
+
+SQLAlchemy>=2.0,<3
+httpx>=0.28,<1
+psycopg[binary]>=3.2,<4
+tos==2.9.3
+
+qrcode==8.2
+Pillow==12.3.0

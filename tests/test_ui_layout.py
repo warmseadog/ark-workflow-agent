@@ -88,3 +88,54 @@ def test_task_settings_are_persisted_in_browser_storage():
     assert 'localStorage' in SCRIPT
     assert 'saveSettings' in SCRIPT
     assert 'loadSettings' in SCRIPT
+
+
+def test_standalone_production_exposes_core_creation_flow():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    page = TestClient(app).get('/v1').text
+    assert 'id="create-view"' in page
+    assert 'id="studio-job-form"' in page
+    assert 'id="studio-generate-form"' in page
+    assert 'id="studio-defaced-video"' in page
+    assert 'data-view=' not in page
+    assert 'id="discover-view"' not in page
+    assert 'id="cases-view"' not in page
+    assert '/static/studio.js' not in page
+    assert '/static/studio.css' not in page
+
+
+def test_all_entrypoints_open_standalone_production():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    client = TestClient(app)
+    for path in ('/', '/v1', '/studio'):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert '<title>方舟 · 制作流程</title>' in response.text
+        assert 'class="standalone-production production-view"' in response.text
+        assert '素材发现' not in response.text
+        assert '成功案例' not in response.text
+
+
+def test_production_flow_has_three_material_inputs_and_optional_prompt():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    studio = TestClient(app).get('/v1').text
+    assert studio.count('class="asset-entry"') == 3
+    assert 'name="video" form="studio-job-form"' in studio
+    assert 'name="clothing_image"' in studio
+    assert 'name="face_image"' in studio
+    assert '<details class="compact-prompt"' in studio
+    assert 'id="studio-job-submit"' not in studio
+    assert 'id="studio-reference-submit"' not in studio
+
+
+def test_production_flow_keeps_preview_inside_corner_configuration():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    studio = TestClient(app).get('/v1').text
+    assert '<details class="flow-config" id="redaction-settings">' in studio
+    assert '<details class="flow-config" id="model-settings">' in studio
+    assert studio.index('id="redaction-settings"') < studio.index('id="studio-preview-submit"') < studio.index('id="model-settings"')
+    assert 'id="studio-redaction-confirm"' not in studio

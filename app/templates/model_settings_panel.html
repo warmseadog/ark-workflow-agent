@@ -1,0 +1,36 @@
+<div class="config-panel" id="model-settings-panel" role="region" aria-labelledby="model-settings-title">
+  <div class="config-heading">
+    <div><p class="eyebrow">VIDEO MODEL</p><h3 id="model-settings-title">视频模型配置</h3></div>
+    <button type="button" class="config-close" id="close-model-settings" aria-label="关闭模型配置">×</button>
+  </div>
+  <p class="config-description">选择预设快速填写，所有地址和模型均可修改。</p>
+  <form id="model-settings-form" autocomplete="off">
+    <fieldset id="model-settings-fields" disabled>
+      <label>服务预设<select name="provider" id="model-provider"><option value="ark">火山方舟官方</option><option value="toapis">toapis.cn</option><option value="custom">自定义</option></select></label>
+      <label>接口地址（Base URL）<input name="base_url" type="url" placeholder="https://example.com:端口/v1" spellcheck="false"></label>
+      <p class="field-hint">端口可直接写在地址中，例如 http://127.0.0.1:9000/v1。</p>
+      <label for="model-api-key">API Key <span id="model-key-status">尚未填写</span></label>
+      <div class="key-input-row"><input id="model-api-key" name="api_key" type="password" placeholder="填写 API Key" autocomplete="new-password" spellcheck="false"><button type="button" id="toggle-model-key" aria-label="显示 API Key" aria-pressed="false">显示</button></div>
+      <label class="clear-key"><input type="checkbox" name="clear_api_key">清除已保存的 Key</label>
+      <label>模型 ID<input name="model" list="model-options" placeholder="选择模型或输入自己的模型 / Endpoint ID" required spellcheck="false"></label>
+      <datalist id="model-options"></datalist>
+      <div class="model-config-grid">
+        <label>时长（秒）<input name="duration" type="number" min="4" max="15" required></label>
+        <label>输出尺寸<select name="resolution"><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option><option value="4k">4K</option></select></label>
+        <label>帧率<select name="fps"><option value="0">由模型决定</option><option value="24">24 fps</option><option value="25">25 fps</option><option value="30">30 fps</option></select></label>
+      </div>
+      <p class="field-hint" id="model-fps-note">预设接口不传自定义帧率，实际输出以模型为准。</p>
+      <details class="model-advanced"><summary>高级配置</summary>
+        <label>接口格式<select name="protocol"><option value="ark">火山方舟格式</option><option value="toapis">toapis 视频格式</option><option value="adapter">自定义适配层格式</option></select></label>
+        <div id="model-public-base-field" hidden><label>工作台公网地址（未启用 TOS 时填写）<input name="public_base_url" type="url" placeholder="https://studio.example.com" spellcheck="false"></label><p class="field-hint">启用 TOS 后无需填写；或填写指向本工作台的公网地址。<a href="/admin/settings#storage">配置 TOS 对象存储 ↗</a></p></div>
+        <label>运行模式<select name="mode"><option value="http">真实生成</option><option value="mock">本地演示（不调用模型）</option></select></label>
+        <p class="field-hint">自定义地址需使用对应接口格式；预设不会锁定地址或模型。</p>
+      </details>
+      <p class="field-hint" id="model-video-source-hint"></p><p id="model-settings-status" role="status" aria-live="polite"></p>
+      <p class="field-hint">Key 仅保存在本机服务端，保存后不回显。测试使用当前填写的配置，不保存修改，不生成视频。</p>
+      <div class="config-actions"><button type="button" class="secondary" id="cancel-model-settings">取消</button><button type="button" class="secondary" id="test-model-connection">测试连接</button><button type="submit" class="primary" id="save-model-settings">保存配置</button></div>
+      <p id="model-connection-result" role="status" aria-live="polite" hidden></p>
+    </fieldset>
+    <p id="model-settings-error" role="alert" hidden></p>
+  </form>
+</div>

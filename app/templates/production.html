@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="方舟视频制作：上传参考视频、衣服和人物图片，编辑提示词并生成视频。">
+  <title>方舟 · 制作流程</title>
+  <link rel="stylesheet" href="/static/model-settings.css?v=20260927-admin">
+  <link rel="stylesheet" href="/static/production.css?v=20260927-clean-editor">
+  <link rel="stylesheet" href="/static/production-shell.css?v=20260927-admin">
+  <link rel="stylesheet" href="/static/link-templates.css?v=20260927-clean-editor">
+  <link rel="stylesheet" href="/static/portrait.css?v=20260927-portrait-auto-1">
+</head>
+<body class="standalone-production production-view">
+  <header class="production-header">
+    <div class="production-brand"><span class="production-symbol" aria-hidden="true">方</span><span>方舟</span><h1>制作流程</h1></div>
+    <span class="production-header-note">参考视频 · 衣服 · 人物</span><a class="admin-entry" href="/admin/settings">⚙ 后台配置</a>
+    <span id="model-service-status" hidden></span>
+  </header>
+  <main class="production-main">
+    {% set standalone_production = true %}
+    {% include "production_panel.html" %}
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/static/production-shell.js?v=20260927-admin"></script>
+  <script src="/static/production.js?v=20260927-clean-editor"></script>
+  <script src="/static/model-settings.js?v=20260927-clean-editor"></script>
+  <script src="/static/link-templates.js?v=20260927-clean-editor"></script>
+  <script src="/static/portrait.js?v=20260927-portrait-auto-1"></script>
+</body>
+</html>

@@ -8,8 +8,14 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .config import Settings
+from . import database
+from .database import JobRecord
 from .media import BlurOptions, download_video, run_deface
 from .seedance import SeedanceClient
+from .generation_settings import GenerationConfig
+from .video_provider import VideoProvider
+from .reference_media import publish_video
+from . import storage_settings
 
 
 def _now() -> str:
@@ -19,6 +25,7 @@ def _now() -> str:
 @dataclass
 class Job:
     id: str
+    candidate_id: str | None = None
     status: str = "queued"
     progress: int = 0
     message: str = "等待处理"
@@ -38,37 +45,118 @@ class Job:
 
 
 class JobStore:
-    def __init__(self) -> None:
+    def __init__(self, persistent: bool = False) -> None:
         self._jobs: dict[str, Job] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self.persistent = persistent
 
-    def create(self) -> Job:
-        job = Job(id=uuid.uuid4().hex)
+    def create(self, candidate_id: str | None = None) -> Job:
+        job = Job(id=uuid.uuid4().hex, candidate_id=candidate_id)
         with self._lock:
             self._jobs[job.id] = job
+            self._persist(job)
         return job
 
     def get(self, job_id: str) -> Job | None:
         with self._lock:
-            return self._jobs.get(job_id)
+            job = self._jobs.get(job_id)
+            if job is not None or not self.persistent:
+                return job
+            with database.session() as db:
+                record = db.get(JobRecord, job_id)
+                if record is None:
+                    return None
+                job = Job(**database.job_dict(record))
+                self._jobs[job.id] = job
+                return job
+
+    def list(self) -> list[Job]:
+        with self._lock:
+            if not self.persistent:
+                return list(self._jobs.values())
+            from sqlalchemy import select
+            with database.session() as db:
+                records = db.scalars(select(JobRecord).order_by(JobRecord.created_at.desc())).all()
+                result = []
+                for record in records:
+                    job = self._jobs.get(record.id) or Job(**database.job_dict(record))
+                    self._jobs[job.id] = job
+                    result.append(job)
+                return result
+
+    def find_active_for_candidate(self, candidate_id: str) -> Job | None:
+        with self._lock:
+            for job in self._jobs.values():
+                if job.candidate_id == candidate_id and job.status in {"queued", "running", "defaced", "succeeded"}:
+                    return job
+            if not self.persistent:
+                return None
+            with database.session() as db:
+                from sqlalchemy import select
+                record = db.scalar(select(JobRecord).where(
+                    JobRecord.candidate_id == candidate_id,
+                    JobRecord.status.in_(["queued", "running", "defaced", "succeeded"])))
+                if record is None:
+                    return None
+                job = Job(**database.job_dict(record))
+                self._jobs[job.id] = job
+                return job
 
     def update(self, job_id: str, **changes: Any) -> Job:
         with self._lock:
-            job = self._jobs[job_id]
+            job = self.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
             for key, value in changes.items():
                 setattr(job, key, value)
             job.updated_at = _now()
+            self._persist(job)
             return job
 
     def log(self, job_id: str, message: str) -> Job:
         with self._lock:
-            job = self._jobs[job_id]
+            job = self.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
             job.logs.append(message)
             job.updated_at = _now()
+            self._persist(job)
             return job
 
+    def recover_interrupted(self) -> None:
+        with self._lock:
+            jobs = list(self._jobs.values())
+            if self.persistent:
+                from sqlalchemy import select
+                with database.session() as db:
+                    records = db.scalars(select(JobRecord).where(JobRecord.status.in_(["queued", "running"]))).all()
+                    for record in records:
+                        if record.id not in self._jobs:
+                            self._jobs[record.id] = Job(**database.job_dict(record))
+                    jobs = list(self._jobs.values())
+            for job in jobs:
+                if job.status in {"queued", "running"}:
+                    job.status = "failed"
+                    job.progress = 100
+                    job.message = "服务重启，中断的任务需要重试"
+                    job.error = "interrupted_by_restart"
+                    self._persist(job)
 
-store = JobStore()
+    def _persist(self, job: Job) -> None:
+        if not self.persistent:
+            return
+        payload = database.job_dict_to_record(job)
+        with database.session() as db:
+            record = db.get(JobRecord, job.id)
+            if record is None:
+                db.add(JobRecord(**payload))
+            else:
+                for key, value in payload.items():
+                    setattr(record, key, value)
+            db.commit()
+
+
+store = JobStore(persistent=True)
 
 
 def run_deface_pipeline(
@@ -85,7 +173,7 @@ def run_deface_pipeline(
         store.update(job_id, status="running", progress=5, message="准备输入视频")
         if video_url:
             store.log(job_id, "正在使用 yt-dlp 下载视频链接。")
-            source_path = download_video(video_url, job_dir / "source.mp4")
+            source_path = download_video(video_url, job_dir / "source.mp4", settings)
         elif video_path:
             source_path = video_path
         else:
@@ -116,6 +204,11 @@ def run_generation_pipeline(
     face_path: Path | None,
     clothing_path: Path | None,
     prompt: str,
+    *,
+    generation_config: GenerationConfig | None = None,
+    storage_config: storage_settings.StorageConfig | None = None,
+    face_paths: list[Path] | None = None,
+    clothing_paths: list[Path] | None = None,
 ) -> None:
     """Generate the final video from a previously completed deface stage."""
     job_dir = settings.storage_dir / "work" / job_id
@@ -131,9 +224,28 @@ def run_generation_pipeline(
         output_path = settings.storage_dir / "outputs" / f"{job_id}.mp4"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         store.update(job_id, status="running", progress=65, message="正在提交 Seedance 生成")
-        seedance_result = SeedanceClient(settings).generate(
-            defaced_path, face_path, clothing_path, prompt, output_path
-        )
+        if generation_config is None:
+            seedance_result = SeedanceClient(settings).generate(
+                defaced_path, face_path, clothing_path, prompt, output_path
+            )
+        else:
+            video_url = None
+            if generation_config.mode == 'http' and generation_config.protocol == 'ark':
+                storage_config = storage_config or storage_settings.load_config(settings)
+                if storage_config.enabled:
+                    store.update(job_id, message='正在上传打码视频到 TOS', progress=63)
+                    video_url = storage_settings.upload_redacted_video(defaced_path, settings, storage_config)
+                else:
+                    video_url = publish_video(defaced_path, settings.storage_dir, generation_config.public_base_url)
+            def progress(message, percent):
+                store.update(job_id, message=message, progress=percent)
+                if percent == 70:
+                    store.log(job_id, message)
+            client = VideoProvider(generation_config, settings.seedance_poll_seconds, progress)
+            seedance_result = client.generate(defaced_path,
+                face_paths if face_paths is not None else ([face_path] if face_path else []),
+                clothing_paths if clothing_paths is not None else ([clothing_path] if clothing_path else []),
+                prompt, output_path, video_url=video_url)
         store.log(job_id, seedance_result.get("message", "Seedance 处理完成。"))
         store.update(
             job_id,

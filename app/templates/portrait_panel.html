@@ -1,0 +1,39 @@
+<dialog id="portrait-dialog" class="portrait-dialog" aria-labelledby="portrait-title" aria-describedby="portrait-mode">
+  <div class="portrait-heading"><div><p class="eyebrow">OFFICIAL PORTRAIT</p><h2 id="portrait-title">真人认证与授权人物</h2></div><button type="button" id="portrait-close" aria-label="关闭真人认证">×</button></div>
+  <p id="portrait-mode" class="portrait-note">请在火山官方平台完成本人认证和授权，再返回这里刷新已授权人物。</p>
+  <section class="portrait-section" aria-labelledby="portrait-invite-title">
+    <h3 id="portrait-invite-title">1 · 发起官方认证</h3>
+    <div id="portrait-auto" hidden>
+      <p>请本人用手机扫描下方二维码，在火山官方页面完成认证。完成后电脑页面会自动更新状态。</p>
+      <button type="button" id="portrait-auto-retry" class="secondary">重新获取二维码</button>
+    </div>
+    <div id="portrait-manual">
+    <p>打开控制台创建真人授权邀约，复制官方 HTTPS 邀约链接。本人使用手机扫码，在官方页面完成操作。</p>
+    <a id="portrait-console" class="secondary" href="https://console.volcengine.com/ark/region:ark+cn-beijing/experience/vision?modelId=doubao-seedance-2-0-260128" target="_blank" rel="noopener noreferrer">打开火山官方控制台 ↗</a>
+    <label for="portrait-invitation">官方邀约链接</label>
+    <div class="portrait-invitation-row"><input id="portrait-invitation" type="url" autocomplete="off" spellcheck="false" maxlength="4096" placeholder="粘贴官方 HTTPS 邀约链接"><button type="button" id="portrait-qr-create" class="secondary">生成二维码</button></div>
+    </div>
+    <div id="portrait-qr" hidden><img id="portrait-qr-image" alt="官方真人认证邀约二维码"><p id="portrait-qr-status" role="status">等待在官方页面完成认证；显示二维码不代表认证完成。</p></div>
+    <p id="portrait-invite-status" class="portrait-status" role="status" aria-live="polite"></p>
+    <p id="portrait-session-note" class="portrait-small">二维码有效期为 30 分钟。完成手机操作后请点击官方页面的“完成”，返回工作台确认结果。</p>
+  </section>
+  <section class="portrait-section" aria-labelledby="portrait-assets-title">
+    <div class="portrait-section-heading"><h3 id="portrait-assets-title">2 · 选择已授权人物</h3><button type="button" id="portrait-refresh" class="secondary">刷新已授权人物</button></div>
+    <p>仅显示当前账号、项目下状态为 Active 的官方人物图片。选择后会导入官方原图，替换主人物参考图，保留其余参考图。</p>
+    <p id="portrait-assets-status" class="portrait-status" role="status" aria-live="polite">完成官方认证后，点击刷新。</p>
+    <div id="portrait-assets" class="portrait-assets"></div>
+  </section>
+  <details id="portrait-settings" class="portrait-settings">
+    <summary>连接设置 · 项目与 AK/SK</summary>
+    <p>查询真人素材使用火山 Access Key / Secret Key（AK/SK）。请使用有权访问目标项目真人素材的账号凭据。</p>
+    <label for="portrait-project">项目名称</label><input id="portrait-project" maxlength="128" value="default" autocomplete="off">
+    <label class="portrait-check"><input id="portrait-reuse-storage" type="checkbox">明确使用本机已保存的 TOS AK/SK</label>
+    <p class="portrait-small">只有勾选并保存后才会使用现有 TOS 凭据；该账号仍需有真人素材访问权限。</p>
+    <label for="portrait-access-key">Access Key</label><input id="portrait-access-key" type="password" autocomplete="new-password" maxlength="2048" placeholder="留空保留现有 Access Key">
+    <label for="portrait-secret-key">Secret Key</label><input id="portrait-secret-key" type="password" autocomplete="new-password" maxlength="2048" placeholder="留空保留现有 Secret Key">
+    <p id="portrait-key-state" class="portrait-small"></p>
+    <p class="portrait-small">密钥仅保存在本机服务端，不回显。留空保存不会清除密钥。测试连接执行只读查询。</p>
+    <div class="portrait-actions"><button type="button" id="portrait-clear" class="secondary">清除真人凭据</button><button type="button" id="portrait-test" class="secondary">测试连接</button><button type="button" id="portrait-save" class="primary">保存设置</button></div>
+    <p id="portrait-settings-status" class="portrait-status" role="status" aria-live="polite"></p>
+  </details>
+</dialog>

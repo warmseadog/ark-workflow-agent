@@ -1,0 +1,31 @@
+[Unit]
+Description=Ark video workflow (isolated instance)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ark-video-workflow
+Group=ark-video-workflow
+WorkingDirectory=/opt/ark-video-workflow/current
+EnvironmentFile=/opt/ark-video-workflow/config/app.env
+ExecStart=/opt/ark-video-workflow/venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 18080 --workers 1 --no-proxy-headers --no-access-log
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=90
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/ark-video-workflow/data
+CPUQuota=100%
+CPUWeight=20
+MemoryHigh=2G
+MemoryMax=3G
+TasksMax=128
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

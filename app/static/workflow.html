@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>视频制作工作流</title>
+  <link rel="stylesheet" href="/static/workflow.css">
+</head>
+<body>
+  <main class="workflow-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">MANUAL PRODUCTION WORKFLOW</p>
+        <h1>视频制作工作流</h1>
+        <p class="subtitle">从手动输入视频开始，完成打码审核、人脸与衣服素材录入，再生成执行结果。</p>
+      </div>
+      <div class="project-badge" id="project-badge">未创建项目</div>
+    </header>
+
+    <nav id="steps" class="steps" aria-label="制作步骤">
+      <button data-step="source">1. 输入源</button>
+      <button data-step="redaction">2. 打码与预览</button>
+      <button data-step="materials">3. 人脸与衣服</button>
+      <button data-step="execute">4. 执行结果</button>
+    </nav>
+
+    <section class="card" id="source-panel">
+      <div class="card-heading"><div><p class="eyebrow">SOURCE ASSET</p><h2>输入视频</h2></div><span class="state-pill" id="source-state">DRAFT</span></div>
+      <div class="form-grid">
+        <label>项目名称<input id="project-name" placeholder="例如：夏装短片 01"></label>
+        <label>视频网址<input id="source-url" type="url" placeholder="https://..."></label>
+      </div>
+      <label>本地视频文件<input id="source-file" type="file" accept="video/*"></label>
+      <label>来源和授权声明<textarea id="rights" rows="2" placeholder="记录来源、授权或内部素材说明"></textarea></label>
+      <div class="actions"><button class="primary" id="create-project">保存输入源并进入打码</button></div>
+      <p class="status" id="source-status"></p>
+    </section>
+
+    <section class="card hidden" id="redaction-panel">
+      <div class="card-heading"><div><p class="eyebrow">REDACTION</p><h2>打码、进度与预览</h2></div><span class="state-pill" id="redaction-state">REDACTION_REVIEW</span></div>
+      <div class="form-grid">
+        <label>打码样式<select id="redaction-style"><option value="mosaic">马赛克</option><option value="blur">模糊</option><option value="solid">纯色遮罩</option></select></label>
+        <label>处理区域<select id="mask-mode"><option value="face">人脸</option><option value="face_hair_primary">人脸与主要头发</option><option value="hair_primary">主要头发</option><option value="face_hair_all">人脸与全部头发</option></select></label>
+        <label>遮罩扩大倍数<input id="mask-scale" type="number" min="0.1" step="0.1" value="1.4"></label>
+        <label>检测阈值<input id="threshold" type="number" min="0" max="1" step="0.05" value="0.2"></label>
+      </div>
+      <label>目标轨道和人工修改说明<textarea id="redaction-revision" rows="3" placeholder="例如：Subject A；00:03-00:08 补充左侧脸部遮罩"></textarea></label>
+      <div class="actions"><button class="primary" id="start-redaction">开始打码</button><button id="approve-redaction" disabled>审核通过</button></div>
+      <div class="progress-wrap"><div class="progress-track"><div id="redaction-bar" class="progress-bar"></div></div><div class="progress-meta"><span id="redaction-message">等待开始</span><strong id="redaction-percent">0%</strong></div></div>
+      <video id="redaction-video" class="preview-video" controls hidden></video>
+      <pre class="log-panel" id="redaction-log"></pre>
+      <p class="status" id="redaction-status"></p>
+    </section>
+
+    <section class="card hidden" id="materials-panel">
+      <div class="card-heading"><div><p class="eyebrow">REFERENCE ASSETS</p><h2>录入人脸和衣服素材</h2></div><span class="state-pill" id="materials-state">MATERIAL_REVIEW</span></div>
+      <div class="material-grid">
+        <div class="material-box"><h3>人脸素材</h3><p>支持清晰的人脸图片或短视频，上传后保存为可复用版本。</p><input id="face-file" type="file" accept="image/*,video/*"><button id="upload-face">上传并批准人脸</button><p class="status" id="face-status"></p></div>
+        <div class="material-box"><h3>衣服素材</h3><p>支持图片或短视频，建议包含主体完整的正面或多角度视图。</p><input id="garment-file" type="file" accept="image/*,video/*"><button id="upload-garment">上传并批准衣服</button><p class="status" id="garment-status"></p></div>
+      </div>
+      <div class="asset-list" id="asset-list"></div>
+      <div class="actions"><button class="primary" id="prepare-execution">冻结执行快照</button></div>
+      <p class="status" id="materials-status"></p>
+    </section>
+
+    <section class="card hidden" id="execute-panel">
+      <div class="card-heading"><div><p class="eyebrow">EXECUTION</p><h2>生成结果</h2></div><span class="state-pill" id="execute-state">READY_FOR_EXECUTION</span></div>
+      <label>生成提示词<textarea id="prompt" rows="3">保持原视频动作、镜头和节奏，使用参考人脸和服装生成稳定自然的视频。</textarea></label>
+      <div class="actions"><button class="primary" id="start-execution">开始生成</button></div>
+      <div class="progress-wrap"><div class="progress-track"><div id="execute-bar" class="progress-bar"></div></div><div class="progress-meta"><span id="execute-message">等待开始</span><strong id="execute-percent">0%</strong></div></div>
+      <video id="result-video" class="preview-video" controls hidden></video>
+      <a id="result-download" class="download-link" hidden>下载最终视频</a>
+      <p class="status" id="execute-status"></p>
+    </section>
+  </main>
+  <script src="/static/workflow.js"></script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+%% 女装穿搭视频发现与二创流水线
+%% 可在 Mermaid Live Editor、Obsidian、Notion 或支持 Mermaid 的文档中复用
+flowchart LR
+  A[输入需求\n主题 / 风格 / 单品 / 参考图] --> B[创建 Discovery Run]
+
+  subgraph CASES[公司案例层：可选 RAG]
+    C1[成功案例库\n结构化标签 + 向量]
+    C2[相似案例检索]
+    C3[查询词与镜头模板扩展]
+    C1 --> C2 --> C3
+  end
+
+  A --> C2
+  C3 --> D[查询计划器\n输出关键词、标签、平台策略]
+  B --> D
+
+  subgraph SOURCES[来源适配层]
+    S1[人工链接导入]
+    S2[授权 API / 合作方数据]
+    S3[合规浏览器适配器]
+  end
+
+  D --> S1
+  D --> S2
+  D --> S3
+
+  S1 --> E[统一候选模型]
+  S2 --> E
+  S3 --> E
+
+  subgraph NORMALIZE[标准化与特征层]
+    N1[URL 规范化 / 平台 ID]
+    N2[重复检测\nURL + 封面哈希 + 首帧指纹]
+    N3[元数据特征\n标题 / 作者 / 发布时间 / 热度]
+    N4[视觉特征\n人脸跟踪 / 人物占比 / 镜头切换 / 清晰度]
+    N1 --> N2 --> N3 --> N4
+  end
+
+  E --> N1
+  N4 --> F[混合检索与排序\n关键词 + 向量 + 业务规则]
+  C2 -. 案例相似度 .-> F
+
+  F --> G[候选审核台\n通过 / 暂存 / 拒绝]
+  G -->|拒绝原因| H[反馈数据\n沉淀排序与案例标签]
+  H -.-> C1
+
+  G -->|通过且权利状态可用| I[创建 Video Job]
+  G -->|权利未知 / 阻断| J[人工补充权利信息]
+  J --> G
+
+  subgraph V1[V1 媒体处理流程]
+    V1A[获取视频 / 创建代理文件]
+    V1B[现有 V1 人脸打码]
+    V1C[输出 faceMaskAssetId]
+    V1A --> V1B --> V1C
+  end
+
+  I --> V1A
+  V1C --> K[服装替换 / 参考图融合]
+  K --> L[视频模型生成]
+  L --> M[质量检查\n人脸 / 服装 / 时序 / 清晰度]
+  M -->|通过| O[输出二创视频]
+  M -->|失败| P[记录失败原因与重试]
+  P -.-> H
+
+  classDef input fill:#e7f0ff,stroke:#4f7cff,color:#12254a
+  classDef case fill:#f0eaff,stroke:#8b5cf6,color:#28144f
+  classDef source fill:#e9fbf5,stroke:#18a974,color:#0f3b2d
+  classDef process fill:#fff5dc,stroke:#d89b19,color:#4a3200
+  classDef review fill:#fff0f4,stroke:#e05a83,color:#511427
+  classDef v1 fill:#eaf8ff,stroke:#2496d2,color:#0d3448
+  classDef output fill:#e9f8e9,stroke:#45a657,color:#143d1b
+
+  class A,B input
+  class C1,C2,C3 case
+  class S1,S2,S3 source
+  class E,N1,N2,N3,N4,F process
+  class G,H,J review
+  class V1A,V1B,V1C,K,L,M,P v1
+  class I,O output
