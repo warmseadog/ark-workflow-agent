@@ -18,7 +18,7 @@
 - [x] 图片校验：POST /photos {person_id,asset_id} 返回后台 job；GET /photos?ids= 批量查询。校验实际图片格式尺寸；去重和限流；队列处理上传、CreateAsset、GetAsset。测试同照片同人复用、不同人隔离、FaceMismatch、重启、超时不重复创建、敏感字段不出响应。
 - [x] 视频衔接：draft.person_id 保存，prepare 保存不可变照片 job；后台未就绪任务让出队列，Active 后重新核对官方素材，只有 asset URI 入模型；测试切人不改变历史任务、失败不调用模型。
 - [x] 轻量 UI：人物行、下拉与搜索、改名、添加认证；上传本地预览、单一批量状态轮询、认证完成更新人物、保存和恢复选择；桌面/手机浏览器验证。
-- [ ] 全套测试、独立审查、Git 完成提交；发布独立 release、SQLite 备份、切换 current；线上只读验收、新旧站点与服务比对。
+- [x] 全套测试、独立审查、Git 完成提交；发布独立 release、SQLite 备份、切换 current；线上只读验收、新旧站点与服务比对。
 
 ## Review focus
 1. 人物切换途中旧上传响应不能覆盖新选择。
@@ -38,3 +38,8 @@
 
 - Focused reviewer recheck: all three findings resolved.
 - Concurrent legacy import test briefly hit its 5-second barrier on Windows; diagnostic now collects both future exceptions, with no relaxed assertions. Five isolated repetitions passed; full release suite rerun required before publish.
+
+- Final release suite: 302 passed, one existing Starlette deprecation warning.
+- Code commit bb8ac50 deployed as 20260927-portrait-library. Consistent SQLite backups taken first; no active tasks at switch.
+- Public browser passed: existing verified person visible even with0photos; API200, unauth401, cross-site403, oldsite200, noJSerrors/no mobile overflow.
+- Legacy process18654 and Nginx hashes unchanged. New service running/NRestarts0; previously migrated successful video preserved.

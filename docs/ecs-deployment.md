@@ -101,3 +101,16 @@ Python 3.11、虚拟环境、FFmpeg 和缺少的 libGL 动态库均位于新项�
 - 本次原服务基线和验证摘要在本机 storage/ecs-deploy 下（Git 已忽略）。
 
 自动认证发布版本：/opt/ark-video-workflow/releases/20260927-portrait-auto。更新 private 配置文件时必须保留 ark-video-workflow 用户归属和 0600 权限，避免服务无法读取。
+
+
+## 2026-09-27 轻量人物与照片校验发布
+
+- 修改前 Git 基线：c057498；功能提交：bb8ac501d7b91fcb0163c4f208b12ae67f3b2dd8。
+- 当前 release：/opt/ark-video-workflow/releases/20260927-portrait-library，REVISION 文件记录功能提交。
+- 回退版本：/opt/ark-video-workflow/releases/20260927-portrait-auto。仅切换 current 并重启 ark-video-workflow.service 即可；本次数据库只新增表，旧代码兼容。
+- SQLite 一致性备份：/opt/ark-video-workflow/data/backups/before-portrait-library/，包含 production.db 和 portrait-sessions.db。未修改凭据、Nginx、旧网站或旧服务。
+- 新增本地人物目录、备注、人物图片缩略图、后台照片校验和去重记录。现有1个认证人物已自动迁移，可显示“已认证 · 可上传第一张照片”。
+- 发布验证：302项 pytest 通过；桌面1440及手机390浏览器多人选择/改名/刷新/普通模式/慢上传移除/任务快照通过；认证二维码回归通过。
+- 公网页面、人物列表、任务接口和脚本均200；匿名人物接口401；跨站写请求403；浏览器无JS错误，手机无横向溢出。
+- 新服务 active/running、NRestarts=0；旧 director-prompt-h5 PID仍为18654、网站200；Nginx全部现有配置指纹不变；已有迁移成功视频仍保留。
+- 本次未上传真实人脸照片或调用付费视频模型。照片处理使用官方 CreateAsset / GetAsset，真实照片首次入库权限及一致性结果应以用户实际上传后的官方状态为准。
