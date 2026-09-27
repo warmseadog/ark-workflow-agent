@@ -14,6 +14,7 @@ from urllib.parse import quote, urlsplit
 import requests
 
 from .generation_settings import GenerationConfig
+from .reference_roles import ACCESSORY_LABELS, ACCESSORY_RULES
 
 
 class ProviderError(RuntimeError):
@@ -38,12 +39,13 @@ class VideoProvider:
     def __init__(self, config: GenerationConfig, poll_seconds: float = 5, progress=None):
         self.config = config
         self._last_request_id: str | None = None
+        self._content_roles = {}
         self.poll_seconds = poll_seconds
         self.progress = progress or (lambda message, percent: None)
 
     def _safe(self, value) -> str:
         if isinstance(value, dict):
-            value = value.get('message') or value.get('code') or '服务商未提供错误说明'
+            value = ' '.join(str(value[k]) for k in ('code','message') if value.get(k)) or '服务商未提供错误说明'
         text = str(value or '服务商未提供错误说明')
         if self.config.api_key:
             text = text.replace(self.config.api_key, '[已隐藏]')
@@ -58,8 +60,10 @@ class VideoProvider:
         material = str(detail).lower() if detail is not None else ''
         if 'real person' in material or 'real_person' in material:
             error_kind, retryable, submission_uncertain = 'material_rejected', False, False
-            reference = '第 1 张人物参考图' if re.search(r'content\s*\[\s*1\s*\]', material) else '参考素材'
-            message = f'{reference}被服务商判定可能包含真人，请更换为符合服务商要求的人物素材后重新提交。{safe_detail}'
+            indices = list(dict.fromkeys(int(x) for x in re.findall(r'content\s*\[\s*(\d+)\s*\]', material)))
+            labels = [self._content_roles.get(i, f'content[{i}] 参考素材') for i in indices]
+            reference = '、'.join(labels) or '参考素材'
+            message = f'{reference}被服务商判定可能包含真人，请检查对应素材后重新提交。{safe_detail}'
         elif safe_detail:
             message += safe_detail
         return ProviderError(message, error_kind=error_kind, request_id=self._last_request_id,
@@ -124,7 +128,9 @@ class VideoProvider:
                  resume_task_id: str | None = None, resume_result_url: str | None = None,
                  image_asset_uris: dict[str, str] | None = None,
                  hairstyles: list[Path] | None = None, scenes: list[Path] | None = None,
-                 scene_description: str = '') -> dict:
+                 scene_description: str = '', accessories: dict[str, list[Path]] | None = None,
+                 reference_roles: dict[int, str] | None = None) -> dict:
+        self._content_roles = reference_roles or {}
         # Recovery needs only the durable remote identity/result, never source files.
         if resume_result_url is not None:
             try:
@@ -140,11 +146,11 @@ class VideoProvider:
         image_asset_uris = image_asset_uris or {}
         if image_asset_uris:
             if self.config.protocol != 'ark' or self.config.base_url.rstrip('/') != 'https://ark.cn-beijing.volces.com/api/v3':
-                raise ProviderError('已授权真人素材仅支持火山官方接口，请检查模型配置。',error_kind='configuration')
+                raise ProviderError('官方人物素材仅支持火山官方接口，请检查模型配置。',error_kind='configuration')
             if any(not re.fullmatch(r'asset://asset-[A-Za-z0-9-]{1,114}', value) for value in image_asset_uris.values()):
-                raise ProviderError('官方真人素材编号无效，请重新导入。',error_kind='configuration')
+                raise ProviderError('官方人物素材编号无效，请重新导入。',error_kind='configuration')
             if set(image_asset_uris) - {str(path) for path in faces}:
-                raise ProviderError('官方真人素材与所选人物图不匹配。',error_kind='configuration')
+                raise ProviderError('官方人物素材与所选人物图不匹配。',error_kind='configuration')
         if self.config.mode == 'mock':
             shutil.copyfile(video, output)
             return {'provider': 'mock', 'message': '本地演示：输出打码视频，未调用视频模型。'}
@@ -152,10 +158,16 @@ class VideoProvider:
         if problem:
             raise ProviderError(problem, error_kind='configuration')
         hairstyles, scenes = hairstyles or [], scenes or []
+        accessories = accessories or {}
+        if set(accessories) - set(ACCESSORY_LABELS) or any(len(paths)>1 for paths in accessories.values()):
+            raise ProviderError('配饰类别或图片数量不正确。', error_kind='configuration')
         references = reference_order(faces, clothes) + [(p,'发型') for p in hairstyles] + [(p,'场景') for p in scenes]
+        references += [(p,label) for kind,label in ACCESSORY_LABELS.items() for p in accessories.get(kind,[])]
+        self._content_roles = {i: f'第 {i} 张{kind}参考图' for i,(_,kind) in enumerate(references,1)}
+        self._content_roles[len(references)+1] = '参考视频'
         if self.config.protocol != 'adapter':
             if len(references) > 9:
-                raise ProviderError('人物、衣服、发型和场景参考图合计最多 9 张，请删除部分图片后重试。')
+                raise ProviderError('人物、衣服、发型、场景和配饰参考图合计最多 9 张，请删除部分图片后重试。')
             if video.stat().st_size > 50 * 1024 * 1024:
                 raise ProviderError('参考视频超过 50 MB，请压缩或缩短视频后重试。')
             if sum(p.stat().st_size for p, _ in references) > 45 * 1024 * 1024:
@@ -165,12 +177,15 @@ class VideoProvider:
         mapping = '；'.join(f'@Image{i}（图片{i}）为{kind}参考图' for i, (_, kind) in enumerate(references, 1))
         # Existing saved templates may still contain the original scene instruction.
         # Normalize the built-in phrases only; preserve custom text and give roles explicit priority.
-        if scenes:
+        if scenes or scene_description.strip():
             for old,new in [('动作、镜头、场景和节奏','动作、镜头和节奏'),('动作、镜头和场景不变','动作、镜头不变'),('动作、镜头和场景','动作和镜头')]:
                 prompt = prompt.replace(old,new)
         scene_rule = '保留原视频场景。' if not scenes else '场景以场景参考图为准，替换原视频背景，参考空间布局、光线和环境，不引入其中的人物。场景补充：'+scene_description.strip()+'。'
+        if not scenes and scene_description.strip():
+            scene_rule = '根据场景描述替换原视频背景，保留主体动作和镜头：'+scene_description.strip()+'。'
+        accessory_rules = ''.join(ACCESSORY_LABELS[k]+'参考：'+ACCESSORY_RULES[k]+'仅采用该配饰，不引入图中人物或背景。' for k in ACCESSORY_LABELS if accessories.get(k))
         hair_rule = '发型沿用主人物参考图。' if not hairstyles else '发型以发型参考图为准，参考发长、轮廓、刘海、卷曲程度和发色；人物身份、五官和脸型仍以主人物参考图为准，不使用发型图的人脸或身份。'
-        structured = f'@Video1（视频1）为动作与镜头参考视频，保留其动作、镜头和节奏。{mapping}。主参考确定人物身份和服装，补充参考用于细节，保持全片一致。用户要求：{prompt.strip()}。素材分工（涉及场景或发型的冲突要求以此为准）：{scene_rule}{hair_rule}'
+        structured = f'@Video1（视频1）为动作与镜头参考视频，保留其动作、镜头和节奏。{mapping}。主参考确定人物身份和服装，补充参考用于细节，保持全片一致。用户要求：{prompt.strip()}。素材分工（涉及场景或发型的冲突要求以此为准）：{scene_rule}{hair_rule}{accessory_rules}'
         self.progress('正在上传参考素材', 65)
         if self.config.protocol == 'toapis':
             with video.open('rb') as source:
@@ -198,7 +213,7 @@ class VideoProvider:
             with ExitStack() as stack:
                 files = [('video', (video.name, stack.enter_context(video.open('rb')), 'video/mp4'))]
                 # Multipart names stay compatible with the documented custom adapter.
-                for field, paths in [('face_image', faces), ('clothing_image', clothes), ('hairstyle_image', hairstyles), ('scene_image', scenes)]:
+                for field, paths in [('face_image', faces), ('clothing_image', clothes), ('hairstyle_image', hairstyles), ('scene_image', scenes)] + [(kind+'_image',accessories.get(kind,[])) for kind in ACCESSORY_LABELS]:
                     files.extend((field, (p.name, stack.enter_context(p.open('rb')), mimetypes.guess_type(p.name)[0] or 'image/png')) for p in paths)
                 submitted = self._request('POST', '/generations', files=files, data={
                     'prompt': structured, 'model': self.config.model, 'duration': self.config.duration,

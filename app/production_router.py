@@ -11,9 +11,11 @@ from fastapi.responses import FileResponse
 from .production_store import ProductionStore, Conflict
 from . import generation_settings, storage_settings, admin_settings, media, production_worker
 from .media_errors import MediaPipelineError
+from .reference_roles import ACCESSORY_LABELS, OPTIONAL_KINDS
 
 _MODEL_FIELDS = {'provider','protocol','mode','base_url','model','duration','fps','resolution','public_base_url'}
 _DRAFT_FIELDS = {'name','person_id','source_asset_id','face_asset_ids','clothing_asset_ids','hairstyle_asset_ids','scene_asset_ids','hairstyle_enabled','scene_enabled','scene_description','prompt','mask','model'}
+_DRAFT_FIELDS |= {kind+suffix for kind in ACCESSORY_LABELS for suffix in ('_asset_ids','_enabled')}
 _MASK_FIELDS = {'blur_style','style','shape','mask_mode','robust_tracking','mask_scale','mosaic_size','threshold','detection_size','keep_audio'}
 
 
@@ -30,7 +32,7 @@ def get_router(settings_getter, local_guard):
         except (ValueError,TypeError,MediaPipelineError) as exc: raise HTTPException(422,str(exc)) from None
 
     def decorate_draft(draft):
-        ids = ([draft['source_asset_id']] if draft.get('source_asset_id') else []) + draft['face_asset_ids'] + draft['clothing_asset_ids'] + draft.get('hairstyle_asset_ids',[]) + draft.get('scene_asset_ids',[])
+        ids = ([draft['source_asset_id']] if draft.get('source_asset_id') else []) + draft['face_asset_ids'] + draft['clothing_asset_ids'] + [ident for kind in OPTIONAL_KINDS for ident in draft.get(kind+'_asset_ids',[])]
         draft['assets'] = [store().get_asset(x) for x in dict.fromkeys(ids)]
         return draft
 
@@ -56,12 +58,12 @@ def get_router(settings_getter, local_guard):
             prompt = values['prompt']
             if not isinstance(prompt,str) or len(prompt)>14000 or len(strip_reference_rules(prompt))>10000:
                 raise ValueError('提示词正文最多 10000 字，请缩短后重试。')
-        for field in ('hairstyle_enabled','scene_enabled'):
+        for field in (kind+'_enabled' for kind in OPTIONAL_KINDS):
             if field in values and type(values[field]) is not bool: raise ValueError('参考图启用状态不正确。')
-        for field,kind in [('face_asset_ids','face'),('clothing_asset_ids','clothing'),('hairstyle_asset_ids','hairstyle'),('scene_asset_ids','scene')]:
+        for field,kind in [(kind+'_asset_ids',kind) for kind in ('face','clothing',*OPTIONAL_KINDS)]:
             if field in values:
                 ids=values[field]
-                if not isinstance(ids,list) or len(ids)>(1 if kind in {'scene','hairstyle'} else 20) or any(not isinstance(x,str) for x in ids) or len(set(ids))!=len(ids):
+                if not isinstance(ids,list) or len(ids)>(1 if kind in OPTIONAL_KINDS else 20) or any(not isinstance(x,str) for x in ids) or len(set(ids))!=len(ids):
                     raise ValueError('参考素材列表不正确。')
                 for ident in ids:
                     try: asset=store().get_asset(ident)
@@ -97,7 +99,7 @@ def get_router(settings_getter, local_guard):
 
     @router.post('/assets')
     def upload_asset(kind: str=Form(...), file: UploadFile=File(...)):
-        if kind not in {'video','face','clothing','hairstyle','scene'}: raise HTTPException(422,'不支持的素材类型。')
+        if kind not in {'video','face','clothing',*OPTIONAL_KINDS}: raise HTTPException(422,'不支持的素材类型。')
         name=Path((file.filename or '').replace('\\','/')).name
         suffix=Path(name).suffix.lower()
         supported={'.mp4','.mov','.webm','.mkv','.avi','.m4v'} if kind=='video' else {'.png','.jpg','.jpeg','.webp','.gif','.bmp','.tif','.tiff','.heic','.heif','.avif'}
@@ -195,9 +197,9 @@ def get_router(settings_getter, local_guard):
             storage=storage_settings.load_config(settings_getter())
             problem=admin_settings.generation_problem(config,storage)
             if problem: raise HTTPException(409,problem)
-            extra_ids = [ident for kind in ('hairstyle','scene') if draft.get(kind+'_enabled',False) for ident in draft.get(kind+'_asset_ids',[])]
+            extra_ids = [ident for kind in OPTIONAL_KINDS if draft.get(kind+'_enabled',False) for ident in draft.get(kind+'_asset_ids',[])]
             if config.protocol!='adapter' and len(draft['face_asset_ids'])+len(draft['clothing_asset_ids'])+len(extra_ids)>9:
-                raise ValueError('人物、衣服、发型和场景参考图合计最多 9 张。')
+                raise ValueError('人物、衣服、发型、场景和配饰参考图合计最多 9 张，请关闭部分可选项。')
             for ident in [draft['source_asset_id']]+draft['face_asset_ids']+draft['clothing_asset_ids']+extra_ids:
                 if not Path(store().get_asset(ident,private=True)['path']).is_file(): raise ValueError('素材文件不存在，请重新导入。')
             from .portrait_generation import prepare

@@ -16,38 +16,42 @@ def prepare(settings, store, draft, generation):
         lib=PortraitLibrary(settings)
         person=lib.person(draft['person_id'],private=True)
         if generation.protocol!='ark' or generation.base_url.rstrip('/')!=OFFICIAL_BASE:
-            raise ValueError('已认证人物仅支持火山官方模型接口。')
+            raise ValueError('官方人物素材仅支持火山官方模型接口。')
         uploads={ident:lib.enqueue(person['id'],ident)['id'] for ident in draft['face_asset_ids']}
         return {'config':asdict(lib.config),'person_id':person['id'],'group_id':person['group_id'],
-                'uploads':uploads,'bindings':{}}
+                'person_type':person['person_type'],'uploads':uploads,'bindings':{}}
     bindings={ident:store.portrait_binding(ident) for ident in draft['face_asset_ids']}
-    if draft.get('person_id'):
-        from .portrait_library import PortraitLibrary
-        lib=PortraitLibrary(settings)
-        person=lib.person(draft['person_id'],private=True)
-        if generation.protocol!='ark' or generation.base_url.rstrip('/')!=OFFICIAL_BASE:
-            raise ValueError('已认证人物仅支持火山官方模型接口。')
-        uploads={ident:lib.enqueue(person['id'],ident)['id'] for ident in draft['face_asset_ids']}
-        return {'config':asdict(lib.config),'person_id':person['id'],'group_id':person['group_id'],
-                'uploads':uploads,'bindings':{}}
     bindings={ident:value for ident,value in bindings.items() if value}
     if not bindings:return None
     if generation.protocol!='ark' or generation.base_url.rstrip('/')!=OFFICIAL_BASE:
-        raise ValueError('已授权真人素材仅支持火山官方模型接口，请检查模型设置。')
+        raise ValueError('官方人物素材仅支持火山官方模型接口，请检查模型设置。')
     config=portrait_service.load_config(settings)
     if not config.ready:raise ValueError(config.problem())
     fingerprint=portrait_service.fingerprint(config)
     for binding in bindings.values():
         if binding['fingerprint']!=fingerprint:
-            raise ValueError('真人素材的账号或项目配置已变更，请重新同步并选择已授权人物。')
-    snapshot={'config':asdict(config),'bindings':{ident:{k:binding[k] for k in ('remote_asset_id','group_id','project')} for ident,binding in bindings.items()}}
+            raise ValueError('人物素材的账号或项目配置已变更，请重新同步并选择已授权人物。')
+    from .portrait_library import PortraitLibrary
+    lib=PortraitLibrary(settings)
+    for binding in bindings.values():
+        with store.connection() as db:
+            person=db.execute('SELECT person_type FROM portrait_people WHERE account=? AND group_id=?',(lib.account,binding['group_id'])).fetchone()
+        binding['person_type']=person['person_type'] if person else 'LivenessFace'
+    snapshot={'config':asdict(config),'bindings':{ident:{k:binding[k] for k in ('remote_asset_id','group_id','project','person_type')} for ident,binding in bindings.items()}}
     verify(snapshot,store)
     return snapshot
 
 
 def verify(snapshot, store):
     config=portrait_service.PortraitConfig(**snapshot['config'])
-    api=portrait_service.ArkPortraitClient(config)
+    from types import SimpleNamespace
+    current=portrait_service.load_config(SimpleNamespace(storage_dir=store.storage))
+    if portrait_service.fingerprint(config)!=portrait_service.fingerprint(current):
+        raise ValueError('人物素材账号或项目已变更，请重新选择人物和照片。')
+    def client(person_type='LivenessFace'):
+        return (portrait_service.ArkPortraitClient(config) if person_type=='LivenessFace'
+                else portrait_service.ArkPortraitClient(config,person_type=person_type))
+    api=client(snapshot.get('person_type','LivenessFace'))
     image_uris={}
     if snapshot.get('uploads'):
         from types import SimpleNamespace
@@ -55,7 +59,10 @@ def verify(snapshot, store):
         import time
         lib=PortraitLibrary(SimpleNamespace(storage_dir=store.storage))
         if portrait_service.fingerprint(config)!=lib.account:
-            raise ValueError('真人账号或项目已变更，请重新选择人物和照片。')
+            raise ValueError('人物账号或项目已变更，请重新选择人物和照片。')
+        person=lib.person(snapshot['person_id'],private=True)
+        if person['person_type']!=snapshot.get('person_type','LivenessFace') or person['group_id']!=snapshot['group_id']:
+            raise ValueError('任务人物类型或素材组已变化，请重新选择。')
         waiting=False
         for ident,job_id in snapshot['uploads'].items():
             photo=lib.get_photo(job_id,private=True)
@@ -77,7 +84,7 @@ def verify(snapshot, store):
             if remote['group_id']!=snapshot['group_id']: raise ValueError('照片授权人物发生变化。')
             image_uris[str(path)]='asset://'+photo['remote_id']
     for ident,binding in snapshot['bindings'].items():
-        remote=api.get_asset(binding['remote_asset_id'])
+        remote=client(binding.get('person_type','LivenessFace')).get_asset(binding['remote_asset_id'])
         if any(remote[k]!=binding[k] for k in ('remote_asset_id','group_id','project')):
             raise ValueError('真人素材授权信息发生变化，请重新同步。')
         asset=store.get_asset(ident,private=True)

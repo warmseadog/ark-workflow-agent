@@ -21,9 +21,11 @@
   let sessionReady = false, restoring = false;
   window.productionSession = true;
   const mediaUrls = new Map();
-  const imageFiles = {face: [], clothing: [], hairstyle: [], scene: []};
-  const imageInputs = {face, clothing, hairstyle:generationForm.elements.namedItem('hairstyle_image'), scene:generationForm.elements.namedItem('scene_image')};
-  const extraKinds = ['hairstyle','scene'];
+  const accessoryLabels = {bag:'包包',hat:'帽子',watch:'手表',shoes:'鞋子',necklace:'项链',glasses:'眼镜'};
+  const accessoryRules = {bag:'参考包型、颜色、材质及背带，自然手持或背戴',hat:'参考帽型、颜色与佩戴方式',watch:'参考表盘、表带与颜色，佩戴于手腕',shoes:'参考鞋型、颜色与材质，保持足部结构自然',necklace:'参考链条、吊坠及材质，佩戴于颈部',glasses:'参考镜框、镜片与颜色，保持眼部和面部特征'};
+  const extraKinds = ['hairstyle','scene',...Object.keys(accessoryLabels)];
+  const imageFiles = Object.fromEntries(['face','clothing',...extraKinds].map(kind=>[kind,[]]));
+  const imageInputs = Object.fromEntries(Object.keys(imageFiles).map(kind=>[kind,generationForm.elements.namedItem(kind+'_image')]));
   let busy = false;
   let job = null;
   let preparedSignature = '';
@@ -45,10 +47,16 @@
     return JSON.stringify([file ? [file.name, file.size, file.lastModified] : null, sourceUrl.value.trim(), maskValues()]);
   }
   function hasSource() { return Boolean(source.files.length || sourceUrl.value.trim() || job?.defaced_url); }
+  function referenceTotal() { return imageFiles.face.length + imageFiles.clothing.length + extraKinds.reduce((n,k)=>n+(document.getElementById(k+'-enabled').checked ? imageFiles[k].length : 0),0); }
+  function referenceOverLimit() { return model.querySelector('[name=protocol]')?.value !== 'adapter' && referenceTotal()>9; }
   function updateButtons() {
+    const total = referenceTotal(), over = referenceOverLimit();
+    const counter = document.getElementById('reference-count');
+    counter.textContent = `本次参考图 ${total}${model.querySelector('[name=protocol]')?.value === 'adapter' ? '' : ' / 9'} 张` + (over ? ' · 请关闭部分可选项后生成' : '');
+    counter.classList.toggle('over-limit',over);
     importButton.disabled = busy || !sessionReady || !sourceUrl.value.trim();
     previewButton.disabled = busy || !sessionReady || !hasSource();
-    generateButton.disabled = busy || !sessionReady || (!pendingSubmission && !(hasSource() && face.files.length && clothing.files.length));
+    generateButton.disabled = busy || !sessionReady || (!pendingSubmission && (referenceOverLimit() || !(hasSource() && face.files.length && clothing.files.length)));
     generateButton.formNoValidate = Boolean(pendingSubmission);
     for (const id of ['replace-source-video', 'remove-source-video']) document.getElementById(id).hidden = !hasSource();
     if (!busy) generateButton.textContent = pendingSubmission ? '确认上次提交结果' : '生成视频 →';
@@ -235,7 +243,7 @@
   }
   function syncReferencePrompt() {
     const input = generationForm.elements.namedItem('prompt');
-    if (!extraKinds.some(kind => imageFiles[kind].length) && !input.value.includes('【素材联动】')) {
+    if (!extraKinds.some(kind => imageFiles[kind].length) && !document.getElementById('scene-description').value.trim() && !input.value.includes('【素材联动】')) {
       input.rows = 4;
       const hint = document.getElementById('prompt-reference-status');
       if (hint) hint.textContent = '可选，展开编辑';
@@ -244,33 +252,44 @@
     const rules = [];
     let index = imageFiles.face.length + imageFiles.clothing.length;
     const hair = imageFiles.hairstyle.length > 0 && document.getElementById('hairstyle-enabled').checked;
-    const scene = imageFiles.scene.length > 0 && document.getElementById('scene-enabled').checked;
+    const description = document.getElementById('scene-description').value.trim();
+    const sceneEnabled = document.getElementById('scene-enabled').checked;
+    const scene = imageFiles.scene.length > 0 && sceneEnabled;
     if (hair) rules.push(`@Image${++index} 发型参考：采用图中的发长、轮廓、刘海、卷曲程度和发色；仅参考头发，不采用该图的人脸、身份、服装或背景。人物身份以 @Image1 为准，发型以本图为准。`);
     else rules.push('发型沿用主人物参考图，不使用独立发型图。');
     if (scene) {
       rules.push(`@Image${++index} 场景参考：使用图中的空间、布景、光线和环境替换原视频背景；不引入图中的人物，保留 @Video1 的主体动作、运镜与节奏。`);
-      const description = document.getElementById('scene-description').value.trim();
       if (description) rules.push('场景补充：'+description);
-    } else rules.push('保留原视频场景，不替换背景。');
-    rules.push('涉及发型或场景的要求以本段素材分工为准。');
+    } else if (sceneEnabled && description) rules.push('按文字描述替换场景：'+description+'；保留原视频的动作、镜头与节奏。');
+    else rules.push('保留原视频场景，不替换背景。');
+    for (const [kind,label] of Object.entries(accessoryLabels)) {
+      if (imageFiles[kind].length && document.getElementById(kind+'-enabled').checked) rules.push(`@Image${++index} ${label}参考：${accessoryRules[kind]}；仅采用对应配饰，不引入图中人物、服装或背景。`);
+    }
+    rules.push('涉及发型、场景或配饰的要求以本段素材分工为准。');
     const base = stripReferenceRules(input.value);
     input.value = base + '\n\n【素材联动】\n' + rules.join('\n') + '\n【联动结束】';
     input.rows = 9;
     const hint = document.getElementById('prompt-reference-status');
-    if (hint) hint.textContent = hair && scene ? '已联动发型与场景' : hair ? '已联动发型参考' : scene ? '已联动场景参考' : '已恢复默认发型与场景';
+    if (hint) hint.textContent = '已按当前素材联动';
   }
   window.productionPrompt = {strip:stripReferenceRules, sync:syncReferencePrompt};
   function refreshExtraState() {
     for (const kind of extraKinds) {
       const enabled = document.getElementById(kind+'-enabled');
-      document.getElementById(kind+'-reference-state').textContent = !imageFiles[kind].length ? '可选' : enabled.checked ? '已设置' : '未启用';
+      const present = imageFiles[kind].length > 0 || (kind==='scene' && document.getElementById('scene-description').value.trim());
+      document.getElementById(kind+'-reference-state').textContent = !present ? '可选' : enabled.checked ? '已设置' : '未启用';
+      if (accessoryLabels[kind]) {
+        document.getElementById(kind+'-references').hidden = !imageFiles[kind].length;
+        document.getElementById(kind+'-add').classList.toggle('has-reference',Boolean(imageFiles[kind].length));
+      }
       if (!imageFiles[kind].length) document.getElementById(kind+'-file-name').textContent = '未设置';
       else document.getElementById(kind+'-file-name').textContent = imageFiles[kind][0].name;
     }
-    syncReferencePrompt();
+    document.getElementById('accessory-count').textContent = `${Object.keys(accessoryLabels).filter(k=>imageFiles[k].length && document.getElementById(k+'-enabled').checked).length} 项已启用`;
+    syncReferencePrompt(); updateButtons();
   }
   for (const kind of extraKinds) document.getElementById(kind+'-enabled').addEventListener('change', () => { refreshExtraState(); changed(); });
-  document.getElementById('scene-description').addEventListener('input', () => { syncReferencePrompt(); changed(); });
+  document.getElementById('scene-description').addEventListener('input', () => { if (document.getElementById('scene-description').value.trim()) document.getElementById('scene-enabled').checked = true; refreshExtraState(); changed(); });
 
 
   async function jsonRequest(url, options = {}) {
@@ -465,12 +484,12 @@
           throw new Error('官方图片读取失败，原人物图片已保留。请检查网络后重试。');
         }
         if (signal?.aborted) throw new DOMException('Dialog closed', 'AbortError');
-        if (window.portraitPeople) await window.portraitPeople.selectGroup(asset.portrait.group_id);
+        if (window.portraitPeople) await window.portraitPeople.selectGroup(asset.portrait.group_id, asset.person_type || 'LivenessFace');
         imageFiles.face = [file, ...imageFiles.face.slice(1)];
         syncImages('face');
         try { await flushDraft(); }
         catch (_) { throw new Error('官方人物已加载，但草稿保存失败。请关闭弹窗并使用“重试保存”，暂勿刷新页面。'); }
-        status.textContent = '官方已授权人物已设为主参考图';
+        status.textContent = asset.person_type === 'AIGC' ? '官方虚拟人物已设为主参考图' : '官方已授权人物已设为主参考图';
       } finally { lock(false); }
     },
   };
@@ -615,7 +634,8 @@
       Object.assign(imageFiles,Object.fromEntries(extras));
       for (const kind of extraKinds) document.getElementById(kind+'-enabled').checked = item[kind+'_enabled'] === true;
       document.getElementById('scene-description').value = item.scene_description || '';
-      for (const kind of extraKinds) document.getElementById(kind+'-references').open = false;
+      document.getElementById('hairstyle-references').open = false;
+      document.getElementById('accessory-references').open = Object.keys(accessoryLabels).some(k=>imageFiles[k].length);
       draft = item; drafts.set(item.id,item);
       window.portraitPeople?.restore(item.person_id);
       generationForm.elements.namedItem('prompt').value = item.prompt ?? defaultPrompt;
@@ -664,8 +684,8 @@
   });
   window.addEventListener('production-prompt-changed',event => { if (event.detail?.applyTemplate) syncReferencePrompt(); changed(); });
   window.addEventListener('model-settings-saved',changed);
-  modelForm.addEventListener('input',event => { if (publicModelFields.includes(event.target.name)) changed(); });
-  modelForm.addEventListener('change',event => { if (publicModelFields.includes(event.target.name)) changed(); });
+  modelForm.addEventListener('input',event => { if (publicModelFields.includes(event.target.name)) { updateButtons(); changed(); } });
+  modelForm.addEventListener('change',event => { if (publicModelFields.includes(event.target.name)) { updateButtons(); changed(); } });
   window.addEventListener('beforeunload', event => {
     if (savedVersion !== dirtyVersion) { event.preventDefault(); event.returnValue = ''; }
   });
@@ -692,7 +712,7 @@
       const heading = node('div','','run-card-heading');
       heading.append(node('h4', item.name || '视频任务'),node('span', (item.legacy ? '历史 · ' : '') + (stateNames[item.status] || item.status),'run-state'));
       const problems = {
-        material_rejected:'人物照片未通过检查，请更换照片后重新提交。',
+        material_rejected: (item.error || item.message || '参考素材未通过检查，请查看错误详情。').split('。')[0]+'。',
         submission_uncertain:'任务提交结果正在确认，请联系管理员核实，暂勿重复提交。',
         query_unavailable:'暂时无法获取生成进度，可稍后点击“继续查询 / 下载”。',
         download_failed:'视频已生成，但下载尚未完成，可点击“继续查询 / 下载”重试。',
@@ -758,9 +778,9 @@
       }
       const materials = node('div','','run-detail-assets');
       const assets = item.snapshot?.assets || [];
-      for (const [kind,label] of [['video','参考视频'],['face','人物参考图'],['clothing','衣服参考图'],['hairstyle','发型参考图'],['scene','场景参考图']]) {
+      for (const [kind,label] of [['video','参考视频'],['face','人物参考图'],['clothing','衣服参考图'],['hairstyle','发型参考图'],['scene','场景参考图'],...Object.entries(accessoryLabels).map(([kind,label])=>[kind,label+'参考图'])]) {
         const sources=assets.filter(asset=>asset.kind===kind);
-        if (extraKinds.includes(kind) && !sources.length) continue;
+        if (extraKinds.includes(kind) && !sources.length && !(kind==='scene' && item.snapshot?.scene_description)) continue;
         const figure=node('figure'); figure.dataset.sourceKind=kind;
         const unused=extraKinds.includes(kind) && !item.snapshot?.[kind+'_enabled'];
         figure.append(node('figcaption',label+(unused?' · 未使用':'')));
@@ -807,6 +827,12 @@
         toggle.addEventListener('click',()=>setPreview(panel.hidden));
         detail.addEventListener('toggle',()=>{if (!detail.open) setPreview(false);});
         detail.append(toggle,panel);
+      }
+      if (item.error) {
+        const diagnostic=node('details','','run-error-detail'); diagnostic.append(node('summary','错误详情'));
+        diagnostic.append(node('p',item.error));
+        if (item.request_id) diagnostic.append(node('p','Request ID：'+item.request_id));
+        detail.append(diagnostic);
       }
       next.append(detail);
       if (card) card.replaceWith(next); list.append(next);

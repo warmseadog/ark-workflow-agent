@@ -14,6 +14,7 @@ from .storage_settings import StorageConfig, upload_redacted_video
 from .reference_media import publish_video
 from .media import BlurOptions, run_deface
 from .video_provider import VideoProvider, ProviderError
+from .reference_roles import ACCESSORY_LABELS, snapshot_content_roles
 
 _preprocess_lock = threading.Lock()
 _managers = {}
@@ -43,7 +44,7 @@ def execute_run(settings, store, run):
     try:
         faces, clothes, video_url = [], [], None
         image_asset_uris = {}
-        extra_references = {}
+        extra_references = {'reference_roles':snapshot_content_roles(snapshot)} if provider_id or result_url else {}
         if not provider_id and not result_url:
             if private.get('portrait'):
                 from .portrait_generation import verify, PortraitPending
@@ -58,7 +59,10 @@ def execute_run(settings, store, run):
             for kind, argument in [('hairstyle','hairstyles'),('scene','scenes')]:
                 if snapshot.get(kind+'_enabled',False):
                     extra_references[argument] = [Path(store.get_asset(x,private=True)['path']) for x in snapshot.get(kind+'_asset_ids',[])]
-            if extra_references.get('scenes'):
+            accessories = {kind: [Path(store.get_asset(x,private=True)['path']) for x in snapshot.get(kind+'_asset_ids',[])]
+                           for kind in ACCESSORY_LABELS if snapshot.get(kind+'_enabled',False)}
+            if accessories: extra_references['accessories'] = accessories
+            if snapshot.get('scene_enabled',False):
                 extra_references['scene_description'] = snapshot.get('scene_description','')
             options = mask_options(snapshot['mask'])
             key = hashlib.sha256((source['sha256'] + json.dumps(options.model_dump(mode='json'), sort_keys=True) + settings.deface_bin + ':v1').encode()).hexdigest()
@@ -109,8 +113,6 @@ def execute_run(settings, store, run):
             kind = 'submission_uncertain'
         needs_attention = uncertain or kind in {'query_unavailable', 'download_failed'}
         message = VideoProvider(config)._safe(str(exc))
-        if kind == 'material_rejected':
-            message = '人物参考图未通过模型检查，请修改素材后创建新任务。'
         store.update_run(ident, status='needs_attention' if needs_attention else 'failed',
                          error=VideoProvider(config)._safe(str(exc)), error_kind=kind,
                          request_id=getattr(exc,'request_id',None), message=message)

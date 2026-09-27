@@ -36,6 +36,29 @@
           <input id="studio-clothing-image" type="file" name="clothing_image" accept="image/*" multiple required aria-label="上传衣服参考图">
         </div>
         <div class="asset-footer"><span id="clothing-file-name">款式清晰、完整展示</span><button type="button" data-add-images="clothing" data-asset-edit>＋ 添加</button></div>
+        <details class="accessory-references" id="accessory-references">
+          <summary>更多搭配 <span id="accessory-count">可选</span></summary>
+          <p class="field-hint">点击类别上传对应图片，每类一张；关闭“本次使用”可暂时停用。</p>
+          <div class="accessory-buttons">
+          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜')] %}
+            <button type="button" data-add-images="{{ kind }}" data-asset-edit id="{{ kind }}-add">{{ label }}<span id="{{ kind }}-reference-state">可选</span></button>
+          {% endfor %}
+          </div>
+          <div class="accessory-previews">
+          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜')] %}
+          <div class="accessory-card" id="{{ kind }}-references" hidden>
+            <strong>{{ label }}</strong>
+            <div class="asset-picker" id="{{ kind }}-picker">
+              <span class="asset-empty"><b>＋</b><strong>上传{{ label }}参考图</strong></span>
+              <span class="asset-thumbnails" id="{{ kind }}-reference-preview"></span>
+              <input id="studio-{{ kind }}-image" type="file" name="{{ kind }}_image" accept="image/*" aria-label="上传{{ label }}参考图">
+            </div>
+            <span class="field-hint" id="{{ kind }}-file-name">未设置</span>
+            <label class="optional-enable"><input id="{{ kind }}-enabled" type="checkbox"> 本次使用{{ label }}</label>
+          </div>
+          {% endfor %}
+          </div>
+        </details>
       </article>
       <article class="asset-entry">
         <div class="asset-heading"><span>03</span><h3>人物参考图</h3><small>脸部与身份</small></div>
@@ -73,21 +96,22 @@
           </div>
         </details>
       </article>
-      <details class="asset-entry scene-references" id="scene-references">
-        <summary><span class="scene-number">04</span><strong>场景参考图</strong><span id="scene-reference-state">可选</span><span class="scene-toggle-hint">展开 / 收起</span></summary>
+      <article class="asset-entry scene-references" id="scene-references">
+        <div class="asset-heading"><span>04</span><h3>场景参考图</h3><small id="scene-reference-state">可选</small></div>
         <div class="optional-reference-body"><div class="asset-picker" id="scene-picker">
             <span class="asset-empty"><b>＋</b><strong>上传场景参考图</strong><small>可选，上传一张图片</small></span>
             <span class="asset-thumbnails" id="scene-reference-preview"></span>
             <input id="studio-scene-image" type="file" name="scene_image" accept="image/*" aria-label="上传场景参考图">
           </div>
           <div class="asset-footer"><span id="scene-file-name">未设置</span></div>
-          <label class="optional-enable"><input id="scene-enabled" type="checkbox"> 使用场景参考图</label>
+          <label class="optional-enable"><input id="scene-enabled" type="checkbox"> 使用场景参考（图片 / 文字）</label>
           <label class="scene-description-label" for="scene-description">场景补充（可选）</label>
           <textarea id="scene-description" rows="3" maxlength="2000" placeholder="补充光线、氛围或需要保留的细节"></textarea>
-          <p class="field-hint">使用场景图时替换原视频背景；不使用则保留原视频场景。收起后仍保留设置。</p>
+          <p class="field-hint">可上传场景图或仅填写场景描述；启用时替换背景，不使用时保留原视频场景。</p>
         </div>
-      </details>
+      </article>
     </div>
+    <p id="reference-count" class="field-hint reference-count" role="status" aria-live="polite">本次参考图 0 / 9 张</p>
     <details class="compact-prompt" id="flow-stage-generation">
       <summary>提示词与模板 <span id="prompt-reference-status">可选，展开编辑</span></summary>
       <div class="prompt-templates" id="prompt-template-list" aria-label="提示词模板"></div>

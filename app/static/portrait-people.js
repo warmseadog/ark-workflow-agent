@@ -3,7 +3,13 @@
   const picker = document.getElementById('person-picker');
   if (!picker) return;
   const el = id => document.getElementById('person-' + id);
-  let people = [], selected = null, locked = false;
+  let people = [], selected = null, locked = false, personType = 'LivenessFace';
+  const tabs = document.createElement('div'); tabs.className = 'person-library-tabs'; tabs.setAttribute('role','group'); tabs.setAttribute('aria-label','人物库类型');
+  for (const [type,label] of [['LivenessFace','真人库'],['AIGC','虚拟人物库']]) {
+    const button = document.createElement('button'); button.type = 'button'; button.dataset.personType = type; button.textContent = label;
+    button.addEventListener('click',() => { personType = type; render(); }); tabs.append(button);
+  }
+  el('search').before(tabs);
   async function request(path, method = 'GET', body) {
     const response = await fetch('/api/portrait/' + path, {method,
       headers: body === undefined ? {} : {'Content-Type':'application/json'},
@@ -14,21 +20,22 @@
   }
   function render() {
     const person = people.find(x => x.id === selected);
-    el('current').textContent = person ? person.name + ' · 已认证' : selected ? '原人物不可用，请重新选择' : '选择人物';
+    el('current').textContent = person ? person.name + (person.person_type === 'AIGC' ? ' · 虚拟人物' : ' · 已认证') : selected ? '原人物不可用，请重新选择' : '选择人物';
     el('avatar').hidden = !person?.thumbnail_url;
     if (person?.thumbnail_url) el('avatar').src = person.thumbnail_url;
     el('add-first').hidden = people.length > 0;
     el('search').hidden = people.length < 8;
     el('rename-toggle').hidden = !person;
+    tabs.querySelectorAll('button').forEach(button => { button.setAttribute('aria-pressed',String(button.dataset.personType === personType)); button.disabled = locked; });
     const query = el('search').value.trim().toLowerCase();
     el('options').replaceChildren();
-    for (const item of people.filter(x => x.name.toLowerCase().includes(query))) {
+    for (const item of people.filter(x => (x.person_type || 'LivenessFace') === personType && x.name.toLowerCase().includes(query))) {
       const button = document.createElement('button'); button.type = 'button';
       button.className = 'person-option'; button.dataset.personId = item.id;
       button.disabled = locked; button.setAttribute('aria-pressed', String(item.id === selected));
       if (item.thumbnail_url) { const img = document.createElement('img'); img.src = item.thumbnail_url; img.alt = ''; img.loading = 'lazy'; button.append(img); }
       const info = document.createElement('span'); info.textContent = item.name;
-      const note = document.createElement('small'); note.textContent = item.photo_count ? '已认证 · 有可用照片' : '已认证 · 可上传第一张照片';
+      const note = document.createElement('small'); note.textContent = (item.person_type === 'AIGC' ? '虚拟人物' : '已认证真人') + (item.photo_count ? ' · 有可用照片' : ' · 可上传第一张照片') + (item.generated_count ? ' · 已成功生成 ' + item.generated_count + ' 次' : ' · 尚无生成成功记录');
       info.append(note); button.append(info);
       button.addEventListener('click', () => choose(item.id)); el('options').append(button);
     }
@@ -39,12 +46,14 @@
   }
   function choose(id, notify = true) {
     if (locked && notify) return;
-    selected = id || null; render(); picker.open = false;
+    selected = id || null;
+    const person = people.find(item => item.id === selected); if (person) personType = person.person_type || 'LivenessFace';
+    render(); picker.open = false;
     el('rename').hidden = true;
     if (notify) window.dispatchEvent(new CustomEvent('portrait-person-changed', {detail:{id:selected}}));
   }
   async function refresh(sync = false) {
-    const data = await request(sync ? 'people/sync' : 'people', sync ? 'POST' : 'GET');
+    const data = await request(sync ? 'people/sync' : 'people', sync ? 'POST' : 'GET', sync ? {person_type:personType} : undefined);
     people = data.items || []; render(); return people;
   }
   el('search').addEventListener('input',render);
@@ -74,11 +83,11 @@
   });
   const ready = refresh().catch(error => { el('current').textContent = '人物暂不可用'; return []; });
   window.portraitPeople = {
-    ready, request, get selected() { return selected; },
+    ready, request, refresh, choose, get items() { return [...people]; }, get selected() { return selected; },
     restore(id) { choose(id === undefined && people.length === 1 ? people[0].id : id, false); },
     lock(value) { locked = value; picker.inert = value; if (value) picker.open = false; render(); },
-    async selectGroup(groupId) {
-      const data = await request('people/resolve','POST',{group_id:groupId});
+    async selectGroup(groupId, personType = 'LivenessFace') {
+      const data = await request('people/resolve','POST',{group_id:groupId,person_type:personType});
       await refresh(); choose(data.id,false);
     },
   };

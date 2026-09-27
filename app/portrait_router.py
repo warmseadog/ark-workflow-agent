@@ -19,10 +19,10 @@ CONSOLE_URL = 'https://console.volcengine.com/ark/region:ark+cn-beijing/experien
 def get_router(settings_getter, local_guard):
     router=APIRouter(prefix='/api/portrait',dependencies=[Depends(local_guard)])
     def store(): return ProductionStore(settings_getter().storage_dir)
-    def client():
+    def client(person_type='LivenessFace'):
         config=portrait_service.load_config(settings_getter())
         if not config.ready: raise HTTPException(409,config.problem())
-        return portrait_service.ArkPortraitClient(config),config
+        return (portrait_service.ArkPortraitClient(config) if person_type=='LivenessFace' else portrait_service.ArkPortraitClient(config,person_type=person_type)),config
     def guarded(operation):
         try: return operation()
         except HTTPException: raise
@@ -36,20 +36,46 @@ def get_router(settings_getter, local_guard):
     @router.get('/people')
     def people(): return guarded(lambda: {'items': library().people()})
 
-    @router.post('/people/sync')
-    def sync_people():
+    @router.post('/people')
+    def create_person(payload:dict):
         def operation():
-            api,_=client(); lib=library()
-            for group in api.list_groups(): lib.add_person(group['Id'],group.get('Name',''))
+            if payload.get('person_type')!='AIGC': raise ValueError('真人请通过本人认证添加。')
+            return library().create_virtual(payload.get('name'),payload.get('request_id'))
+        return guarded(operation)
+
+    @router.get('/virtual/status')
+    def virtual_status():
+        from . import storage_settings
+        lib=library()
+        return {**lib.virtual_status(),'person_type':'AIGC','ready':lib.config.ready,
+                'project_name':lib.config.project_name,'tos_ready':storage_settings.load_config(settings_getter()).ready,
+                'permission':'unchecked','requests':lib.virtual_requests(),
+                'message':'使用当前项目 AK/SK；只读检查通过后仍需官方允许创建和生成。'}
+
+    @router.post('/virtual/test')
+    def virtual_test():
+        def operation():
+            api,_=client('AIGC')
+            groups=api.list_groups()
+            return {'ok':True,'group_count':len(groups),'message':f'AIGC 素材组只读查询成功，共 {len(groups)} 组；不代表创建或生成权限已开通。'}
+        return guarded(operation)
+
+    @router.post('/people/sync')
+    def sync_people(payload:dict=None):
+        def operation():
+            person_type=(payload or {}).get('person_type','LivenessFace')
+            api,_=client(person_type); lib=library()
+            for group in api.list_groups(): lib.add_person(group['Id'],group.get('Name',''),person_type)
             return {'items':lib.people()}
         return guarded(operation)
 
     @router.post('/people/resolve')
     def resolve_person(payload:dict):
         def operation():
-            api,_=client()
+            person_type=payload.get('person_type','LivenessFace')
+            api,_=client(person_type)
             group=api.get_group(payload.get('group_id'))
-            return library().add_person(group['Id'],group.get('Name',''))
+            return library().add_person(group['Id'],group.get('Name',''),person_type)
         return guarded(operation)
 
     @router.put('/people/{ident}')
@@ -107,9 +133,9 @@ def get_router(settings_getter, local_guard):
         return guarded(operation)
 
     @router.get('/assets')
-    def assets():
+    def assets(person_type:str='LivenessFace'):
         def operation():
-            api,_=client()
+            api,_=client(person_type)
             return {'items':[{'id':a['remote_asset_id'],'name':a['name'],'group_id':a['group_id'],
                              'status':a['status'],'asset_type':a['asset_type']} for a in api.list_assets()]}
         return guarded(operation)
@@ -140,15 +166,19 @@ def get_router(settings_getter, local_guard):
             remote_id=payload.get('remote_asset_id')
             if not isinstance(remote_id,str) or not re.fullmatch(r'asset-[A-Za-z0-9-]{1,114}',remote_id):
                 raise ValueError('请选择有效的官方素材编号。')
-            api,config=client()
+            person_type=payload.get('person_type','LivenessFace')
+            api,config=client(person_type)
             remote=api.get_asset(remote_id)
+            # Persist type before imported bindings are discovered by the directory.
+            person=library().add_person(remote['group_id'],person_type=person_type)
             fingerprint=portrait_service.fingerprint(config)
             existing=store().find_portrait(remote_id,fingerprint)
             if existing:
                 asset=store().get_asset(existing,private=True)
                 if Path(asset['path']).is_file():
                     store().bind_portrait(existing,remote,fingerprint)
-                    return store().get_asset(existing)
+                    library().record_verified_import(person['id'],existing,remote_id)
+                    return {**store().get_asset(existing),'person_type':person_type}
             root=settings_getter().storage_dir/'assets'
             root.mkdir(parents=True,exist_ok=True)
             ident=uuid.uuid4().hex
@@ -167,7 +197,8 @@ def get_router(settings_getter, local_guard):
                 selected=store().register_portrait(ident,name,destination,destination.stat().st_size,mime,
                     hashlib.sha256(destination.read_bytes()).hexdigest(),remote,fingerprint)
                 if selected!=ident:destination.unlink(missing_ok=True)
-                return store().get_asset(selected)
+                library().record_verified_import(person['id'],selected,remote_id)
+                return {**store().get_asset(selected),'person_type':person_type}
             finally:
                 temporary.unlink(missing_ok=True)
         return guarded(operation)

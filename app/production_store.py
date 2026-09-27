@@ -71,6 +71,7 @@ class ProductionStore:
         ident, stamp = uuid.uuid4().hex, now()
         data = {'name': '未命名视频', 'source_asset_id': None, 'face_asset_ids': [],
                 'clothing_asset_ids': [], 'hairstyle_asset_ids': [], 'scene_asset_ids': [],
+                **{kind+suffix: ([] if suffix=='_asset_ids' else False) for kind in ('bag','hat','watch','shoes','necklace','glasses') for suffix in ('_asset_ids','_enabled')},
                 'hairstyle_enabled': False, 'scene_enabled': False, 'scene_description': '', 'prompt': '', 'mask': {}, 'model': {}, **values}
         with self.connection() as db:
             db.execute('INSERT INTO production_drafts VALUES (?,?,?,?,?)',

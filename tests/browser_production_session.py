@@ -15,7 +15,7 @@ CONFIG = dict(provider='ark', protocol='ark', mode='mock', base_url='https://exa
               public_base_url='', model='fixture-model', duration=5, fps=0, resolution='720p')
 
 
-def check(width=1440, portrait_people=False, extra_references=False, prompt_sync=False):
+def check(width=1440, portrait_people=False, extra_references=False, prompt_sync=False, accessories=False):
     fixture=io.BytesIO(); Image.new('RGB',(64,80),'#c8ad92').save(fixture,format='PNG'); image_bytes=fixture.getvalue()
     drafts, assets, runs, submissions = {}, {}, {}, []
     uploads = []
@@ -70,7 +70,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
                     assert body['revision'] == d['revision']
                     assert 'api_key' not in body.get('model', {})
                     d.update(body); d['revision'] += 1
-                    d['assets'] = [assets[a] for a in [d['source_asset_id'], *d['face_asset_ids'], *d['clothing_asset_ids'], *d.get('hairstyle_asset_ids',[]), *d.get('scene_asset_ids',[])] if a]
+                    d['assets'] = [assets[a] for a in [d['source_asset_id'], *d['face_asset_ids'], *d['clothing_asset_ids'], *d.get('hairstyle_asset_ids',[]), *d.get('scene_asset_ids',[]), *[a for k in ('bag','hat','watch','shoes','necklace','glasses') for a in d.get(k+'_asset_ids',[])]] if a]
                 route.fulfill(json=copy.deepcopy(d))
             elif path == '/api/video-link/inspect': route.fulfill(json={'configured':True,'platform':'douyin','label':'抖音','url':'https://example.test/video'})
             elif path == '/api/production/assets/import':
@@ -83,14 +83,14 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
             elif path == '/api/jobs/preview/defaced': route.fulfill(body=b'fixture',content_type='video/mp4')
             elif path == '/api/production/assets':
                 data = req.post_data_buffer
-                kind = next(k for k in ('video','face','clothing','hairstyle','scene') if ('\r\n\r\n'+k+'\r\n').encode() in data)
+                kind = next(k for k in ('video','face','clothing','hairstyle','scene','bag','hat','watch','shoes','necklace','glasses') if ('\r\n\r\n'+k+'\r\n').encode() in data)
                 aid = f'a{len(assets)+1}'
                 assets[aid] = dict(id=aid, kind=kind, name=f'{kind}.bin', size=8, mime='video/mp4' if kind=='video' else 'image/png', url=f'/api/production/assets/{aid}/file')
                 uploads.append(kind)
                 if switches.get('hold_face') and kind == 'face': held_uploads.append((route,assets[aid])); return
                 route.fulfill(json=assets[aid])
             elif path.startswith('/api/production/assets/'):
-                route.fulfill(body=image_bytes if extra_references else b'fixture', content_type='image/png' if extra_references else 'application/octet-stream')
+                route.fulfill(body=image_bytes if extra_references or accessories else b'fixture', content_type='image/png' if extra_references or accessories else 'application/octet-stream')
             elif path == '/api/production/runs':
                 if req.method == 'POST':
                     submissions.append(body)
@@ -123,9 +123,57 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         page.locator('#generation-prompt').fill('任务 A 的提示词')
         for name, kind in [('video','video'),('face_image','face'),('clothing_image','clothing')]:
             page.locator(f'[name={name}]').set_input_files({'name':f'{kind}.mp4' if kind=='video' else f'{kind}.png', 'mimeType':'video/mp4' if kind=='video' else 'image/png', 'buffer':b'fixture'})
+        if accessories:
+            expect(page.locator('#scene-picker')).to_be_visible()
+            assert page.locator('#scene-references').evaluate('(el)=>el.tagName')=='ARTICLE'
+            page.locator('#accessory-references > summary').click()
+            kinds={'bag':'包包','hat':'帽子','watch':'手表','shoes':'鞋子','necklace':'项链','glasses':'眼镜'}
+            for kind,label in kinds.items():
+                with page.expect_file_chooser() as chooser:
+                    page.locator('#'+kind+'-add').click()
+                chooser.value.set_files({'name':kind+'.png','mimeType':'image/png','buffer':image_bytes})
+                expect(page.locator('#'+kind+'-references')).to_be_visible()
+                expect(page.locator('#'+kind+'-enabled')).to_be_checked()
+            expect(page.locator('#reference-count')).to_contain_text('8 / 9')
+            assert '@Image8 眼镜参考' in page.locator('#generation-prompt').input_value()
+            page.locator('#hairstyle-references > summary').click()
+            for kind in ['hairstyle','scene']:
+                page.locator('[name='+kind+'_image]').set_input_files({'name':kind+'.png','mimeType':'image/png','buffer':image_bytes})
+            expect(page.locator('#reference-count')).to_contain_text('10 / 9')
+            expect(page.locator('#studio-generate-submit')).to_be_disabled()
+            page.locator('#hat-enabled').uncheck()
+            expect(page.locator('#reference-count')).to_contain_text('9 / 9')
+            page.locator('#studio-generate-submit').click()
+            expect(page.locator('[data-run-id]')).to_have_count(1)
+            assert runs['r1']['snapshot']['hat_enabled'] is False
+            assert len(runs['r1']['snapshot']['assets'])==11
+            page.reload()
+            expect(page.locator('#draft-save-status')).to_contain_text('已保存')
+            expect(page.locator('#scene-picker')).to_be_visible()
+            expect(page.locator('#hat-enabled')).not_to_be_checked()
+            expect(page.locator('#hat-reference-preview img')).to_have_count(1)
+            expect(page.locator('#reference-count')).to_contain_text('9 / 9')
+            page.locator('#accessory-references > summary').click()
+            expect(page.locator('#reference-count')).to_contain_text('9 / 9')
+            page.locator('#accessory-references > summary').click()
+            page.locator('#glasses-reference-preview button[aria-label="删除第 1 张图片"]').click()
+            expect(page.locator('#glasses-references')).to_be_hidden()
+            expect(page.locator('#reference-count')).to_contain_text('8 / 9')
+            assert '眼镜参考：' not in page.locator('#generation-prompt').input_value()
+            page.locator('#scene-reference-preview button[aria-label="删除第 1 张图片"]').click()
+            page.locator('#scene-description').fill('夜晚的海边')
+            assert '按文字描述替换场景：夜晚的海边' in page.locator('#generation-prompt').input_value()
+            page.locator('#scene-enabled').uncheck()
+            assert '夜晚的海边' not in page.locator('#generation-prompt').input_value()
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+            assert not errors,errors
+            page.screenshot(path=str(ROOT/'storage'/f'accessories-{width}.png'),full_page=True)
+            browser.close()
+            print(f'PASS accessories {width}: 6 categories, optional scene, count, prompt, snapshot, reload')
+            return
         if extra_references:
             for kind in ('scene','hairstyle'):
-                page.locator(f'#{kind}-references > summary').click()
+                if kind=='hairstyle': page.locator(f'#{kind}-references > summary').click()
                 page.locator(f'[name={kind}_image]').set_input_files({'name':kind+'.png','mimeType':'image/png','buffer':image_bytes})
                 expect(page.locator(f'#{kind}-enabled')).to_be_checked()
             page.locator('#scene-description').fill('暖色室内')
@@ -158,7 +206,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
                 page.locator('#hairstyle-enabled').check()
                 assert page.locator('#generation-prompt').input_value().count('【素材联动】')==1
 
-            page.locator('#scene-references > summary').click()
+            expect(page.locator('#scene-picker')).to_be_visible()
             page.locator('#hairstyle-references > summary').click()
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
             page.locator('#studio-generate-submit').click()
@@ -168,7 +216,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
             page.reload()
             expect(page.locator('#draft-save-status')).to_contain_text('已保存')
             for kind in ('scene','hairstyle'):
-                page.locator(f'#{kind}-references > summary').click()
+                if kind=='hairstyle': page.locator(f'#{kind}-references > summary').click()
                 expect(page.locator(f'#{kind}-reference-preview img')).to_have_count(1)
                 expect(page.locator(f'#{kind}-enabled')).to_be_checked()
                 assert page.locator(f'#{kind}-reference-preview img').evaluate('(el)=>el.complete && el.naturalWidth>0')
@@ -203,7 +251,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
                 page.locator('#studio-generate-submit').click()
                 expect(page.locator('[data-run-id]')).to_have_count(3)
                 assert runs['r3']['snapshot']['prompt']==visible,'Copied snapshot lost displayed role block'
-                runs['r1']['snapshot'].update(hairstyle_asset_ids=[],scene_asset_ids=[],prompt='plain old draft')
+                runs['r1']['snapshot'].update(hairstyle_asset_ids=[],scene_asset_ids=[],scene_description='',scene_enabled=False,prompt='plain old draft')
                 page.locator('[data-run-id=r1] [data-run-action=copy]').click()
                 expect(page.locator('#generation-prompt')).to_have_value('plain old draft')
                 expect(page.locator('#prompt-reference-status')).to_have_text('可选，展开编辑')
@@ -319,15 +367,15 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         assert len(uploads)==3
         runs['r2'].update(status='failed', error_kind='material_rejected', error='sensitive content', request_id='req-fixture')
         page.locator('#runs-refresh').click()
-        expect(page.locator('[data-run-id=r2]')).to_contain_text('人物照片未通过检查')
+        expect(page.locator('[data-run-id=r2]')).to_contain_text('sensitive content')
         expect(page.locator('[data-run-id=r2] [data-run-action=resume]')).to_have_count(0)
         page.locator('[data-run-id=r2] [data-run-action=details]').click()
-        expect(page.locator('[data-run-id=r2]')).not_to_contain_text('req-fixture')
+        expect(page.locator('[data-run-id=r2] .run-error-detail')).to_contain_text('req-fixture')
         page.locator('[data-run-id=r1] [data-run-action=cancel]').click()
         expect(page.locator('[data-run-id=r1]')).to_contain_text('已取消')
-        expect(page.locator('[data-run-id=r2] details')).to_have_attribute('open','')
+        expect(page.locator('[data-run-id=r2] > details')).to_have_attribute('open','')
         page.locator('#runs-refresh').click()
-        expect(page.locator('[data-run-id=r2] details')).to_have_attribute('open','')
+        expect(page.locator('[data-run-id=r2] > details')).to_have_attribute('open','')
         page.locator('[data-run-id=r2] [data-run-action=delete]').click()
         expect(page.locator('[data-run-id=r2]')).to_have_count(0)
         page.reload()

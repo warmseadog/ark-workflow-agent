@@ -24,7 +24,7 @@ import warnings
 import requests
 
 _HOST = 'ark.cn-beijing.volcengineapi.com'
-_ACTIONS = {'ListAssets', 'GetAsset', 'GetAssetGroup', 'CreateVisualValidateSession', 'GetVisualValidateResult', 'ListAssetGroups', 'CreateAsset'}
+_ACTIONS = {'ListAssets', 'GetAsset', 'GetAssetGroup', 'CreateVisualValidateSession', 'GetVisualValidateResult', 'ListAssetGroups', 'CreateAsset', 'CreateAssetGroup'}
 _IMAGE_HOSTS = {'ark-asset.cn-beijing.volcengine.com'}
 _lock = RLock()
 
@@ -159,8 +159,11 @@ def _identifier(value, prefix):
 
 
 class ArkPortraitClient:
-    def __init__(self, config):
+    def __init__(self, config, person_type='LivenessFace'):
+        if person_type not in {'LivenessFace', 'AIGC'}:
+            raise PortraitError('不支持的人物类型。')
         self.config = config
+        self.person_type = person_type
 
     def _request(self, action, payload):
         if not self.config.ready:
@@ -178,7 +181,7 @@ class ArkPortraitClient:
             if response.status_code != 200 or error:
                 code = (error or {}).get('Code', '') if isinstance(error, dict) else ''
                 code = code if isinstance(code, str) and re.fullmatch(r'[A-Za-z0-9_.-]{1,100}', code) else str(response.status_code)
-                raise PortraitError(f'官方真人认证/素材接口未完成请求（{code}），请检查 Ark 权限、项目或稍后重试。')
+                raise PortraitError(f'官方人物素材接口未完成请求（{code}），请检查 Ark 权限、项目或稍后重试。')
             result = envelope.get('Result')
             if not isinstance(result, dict) and action in {'CreateVisualValidateSession', 'GetVisualValidateResult'}:
                 result = envelope
@@ -187,7 +190,7 @@ class ArkPortraitClient:
         except PortraitError:
             raise
         except (requests.RequestException, ValueError, TypeError):
-            raise PortraitError('官方真人素材查询失败，请检查 AK/SK、项目、网络和 Ark 素材访问权限。') from None
+            raise PortraitError('官方人物素材查询失败，请检查 AK/SK、项目、网络和 Ark 素材访问权限。') from None
         finally:
             if response is not None:
                 response.close()
@@ -214,11 +217,20 @@ class ArkPortraitClient:
         if not _identifier(group, 'group'): raise PortraitError('官方认证结果格式异常，请稍后重试。')
         return group
 
+    def create_group(self, name):
+        if self.person_type != 'AIGC':
+            raise PortraitError('真人素材组必须通过官方本人认证创建。')
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 60 or any(ord(c) < 32 for c in name):
+            raise PortraitError('虚拟人物名称请输入 1–60 个字符。')
+        result = self._request('CreateAssetGroup', {'Name': name.strip(), 'GroupType': 'AIGC',
+                                                   'ProjectName': self.config.project_name})
+        return self.get_group(result.get('Id'))
+
     def get_group(self, group_id):
         if not _identifier(group_id, 'group'):
             raise PortraitError('人物编号不正确，请重新选择。')
         item = self._request('GetAssetGroup', {'Id': group_id, 'ProjectName': self.config.project_name})
-        if (item.get('Id') != group_id or item.get('GroupType') != 'LivenessFace'
+        if (item.get('Id') != group_id or item.get('GroupType') != self.person_type
                 or item.get('ProjectName') != self.config.project_name):
             raise PortraitError('人物授权不可用，请重新认证或检查账号和项目。')
         return item
@@ -226,11 +238,11 @@ class ArkPortraitClient:
     def list_groups(self):
         result, tokens, token = [], set(), None
         for _ in range(10):
-            payload = {'Filter': {'GroupType': 'LivenessFace'}, 'ProjectName': self.config.project_name, 'MaxResults': 100}
+            payload = {'Filter': {'GroupType': self.person_type}, 'ProjectName': self.config.project_name, 'MaxResults': 100}
             if token: payload['NextToken'] = token
             page = self._request('ListAssetGroups', payload)
             if not isinstance(page.get('Items'), list): raise PortraitError('人物列表格式异常。')
-            result.extend(x for x in page['Items'] if isinstance(x, dict) and x.get('GroupType') == 'LivenessFace'
+            result.extend(x for x in page['Items'] if isinstance(x, dict) and x.get('GroupType') == self.person_type
                           and x.get('ProjectName') == self.config.project_name and _identifier(x.get('Id'), 'group'))
             token = page.get('NextToken')
             if not token: return result
@@ -246,7 +258,7 @@ class ArkPortraitClient:
         return ident
 
     def find_created_asset(self, group_id, name):
-        result = self._request('ListAssets', {'Filter': {'GroupType': 'LivenessFace', 'GroupIds': [group_id], 'Name': name},
+        result = self._request('ListAssets', {'Filter': {'GroupType': self.person_type, 'GroupIds': [group_id], 'Name': name},
                                             'ProjectName': self.config.project_name, 'MaxResults': 100})
         for item in result.get('Items', []):
             if (item.get('Name') == name and item.get('GroupId') == group_id
@@ -267,17 +279,17 @@ class ArkPortraitClient:
         if (not isinstance(item, dict) or item.get('Status') != 'Active' or item.get('AssetType') != 'Image'
                 or item.get('ProjectName') != self.config.project_name or not _identifier(item.get('Id'), 'asset')
                 or not _identifier(item.get('GroupId'), 'group')):
-            raise PortraitError('素材不可用：必须是当前项目中已就绪的真人图片素材。')
+            raise PortraitError('素材不可用：必须是当前项目中已就绪的人物图片素材。')
         return {'remote_asset_id': item['Id'], 'name': str(item.get('Name', ''))[:128],
                 'group_id': item['GroupId'], 'project': item['ProjectName'], 'status': 'Active',
-                'asset_type': 'Image', 'url': item.get('URL', '')}
+                'asset_type': 'Image', 'person_type': self.person_type, 'url': item.get('URL', '')}
 
     def list_assets(self):
         items, tokens, seen_ids = [], set(), set()
         token = None
         examined = 0
         for _ in range(100):
-            payload = {'Filter': {'GroupType': 'LivenessFace', 'Statuses': ['Active']},
+            payload = {'Filter': {'GroupType': self.person_type, 'Statuses': ['Active']},
                        'ProjectName': self.config.project_name, 'MaxResults': 100,
                        'SortBy': 'CreateTime', 'SortOrder': 'Desc'}
             if token:
@@ -313,9 +325,9 @@ class ArkPortraitClient:
         if normalized['remote_asset_id'] != remote_asset_id:
             raise PortraitError('官方素材 ID 不一致。')
         group = self._request('GetAssetGroup', {'Id': normalized['group_id'], 'ProjectName': self.config.project_name})
-        if (group.get('Id') != normalized['group_id'] or group.get('GroupType') != 'LivenessFace'
+        if (group.get('Id') != normalized['group_id'] or group.get('GroupType') != self.person_type
                 or group.get('ProjectName') != self.config.project_name):
-            raise PortraitError('该素材不属于当前项目的真人授权素材组。')
+            raise PortraitError('该素材不属于当前项目中所选类型的人物素材组。')
         return normalized
 
     get_authorized_asset = get_asset
