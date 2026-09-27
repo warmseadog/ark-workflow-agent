@@ -230,6 +230,36 @@
     if (!busy) imageInputs[button.dataset.addImages].click();
   }));
   maskFields.forEach(input => input.addEventListener('input', invalidate));
+  function stripReferenceRules(text) {
+    return text.replace(/\n*【素材联动】[\s\S]*?【联动结束】/g, '').trim();
+  }
+  function syncReferencePrompt() {
+    const input = generationForm.elements.namedItem('prompt');
+    if (!extraKinds.some(kind => imageFiles[kind].length) && !input.value.includes('【素材联动】')) {
+      input.rows = 4;
+      const hint = document.getElementById('prompt-reference-status');
+      if (hint) hint.textContent = '可选，展开编辑';
+      return;
+    }
+    const rules = [];
+    let index = imageFiles.face.length + imageFiles.clothing.length;
+    const hair = imageFiles.hairstyle.length > 0 && document.getElementById('hairstyle-enabled').checked;
+    const scene = imageFiles.scene.length > 0 && document.getElementById('scene-enabled').checked;
+    if (hair) rules.push(`@Image${++index} 发型参考：采用图中的发长、轮廓、刘海、卷曲程度和发色；仅参考头发，不采用该图的人脸、身份、服装或背景。人物身份以 @Image1 为准，发型以本图为准。`);
+    else rules.push('发型沿用主人物参考图，不使用独立发型图。');
+    if (scene) {
+      rules.push(`@Image${++index} 场景参考：使用图中的空间、布景、光线和环境替换原视频背景；不引入图中的人物，保留 @Video1 的主体动作、运镜与节奏。`);
+      const description = document.getElementById('scene-description').value.trim();
+      if (description) rules.push('场景补充：'+description);
+    } else rules.push('保留原视频场景，不替换背景。');
+    rules.push('涉及发型或场景的要求以本段素材分工为准。');
+    const base = stripReferenceRules(input.value);
+    input.value = base + '\n\n【素材联动】\n' + rules.join('\n') + '\n【联动结束】';
+    input.rows = 9;
+    const hint = document.getElementById('prompt-reference-status');
+    if (hint) hint.textContent = hair && scene ? '已联动发型与场景' : hair ? '已联动发型参考' : scene ? '已联动场景参考' : '已恢复默认发型与场景';
+  }
+  window.productionPrompt = {strip:stripReferenceRules, sync:syncReferencePrompt};
   function refreshExtraState() {
     for (const kind of extraKinds) {
       const enabled = document.getElementById(kind+'-enabled');
@@ -237,9 +267,10 @@
       if (!imageFiles[kind].length) document.getElementById(kind+'-file-name').textContent = '未设置';
       else document.getElementById(kind+'-file-name').textContent = imageFiles[kind][0].name;
     }
+    syncReferencePrompt();
   }
   for (const kind of extraKinds) document.getElementById(kind+'-enabled').addEventListener('change', () => { refreshExtraState(); changed(); });
-  document.getElementById('scene-description').addEventListener('input', changed);
+  document.getElementById('scene-description').addEventListener('input', () => { syncReferencePrompt(); changed(); });
 
 
   async function jsonRequest(url, options = {}) {
@@ -598,6 +629,7 @@
       ['production-prompt-draft-v1','studio-redaction-settings','active-v1-job'].forEach(key=>localStorage.removeItem(key));
       showSave('已保存到本机');
     } finally { restoring = false; refreshPhotoInputs(); }
+    if (sessionReady && item.prompt !== generationForm.elements.namedItem('prompt').value) changed();
   }
   function draftControls(disabled) {
     ['draft-recover'].forEach(id => document.getElementById(id).disabled = disabled);
@@ -625,7 +657,12 @@
     finally { draftControls(false); lock(false); }
   });
   generationForm.elements.namedItem('prompt').addEventListener('input',changed);
-  window.addEventListener('production-prompt-changed',changed);
+  generationForm.elements.namedItem('prompt').addEventListener('blur',() => {
+    const input = generationForm.elements.namedItem('prompt'), before = input.value;
+    syncReferencePrompt();
+    if (input.value !== before) changed();
+  });
+  window.addEventListener('production-prompt-changed',event => { if (event.detail?.applyTemplate) syncReferencePrompt(); changed(); });
   window.addEventListener('model-settings-saved',changed);
   modelForm.addEventListener('input',event => { if (publicModelFields.includes(event.target.name)) changed(); });
   modelForm.addEventListener('change',event => { if (publicModelFields.includes(event.target.name)) changed(); });
@@ -790,7 +827,7 @@
       const selected = drafts.get(requested) || data.items?.[0];
       const item = selected ? await api('/drafts/'+encodeURIComponent(selected.id)) : await api('/drafts','POST',{});
       await restoreDraft(item); sessionReady=true;
-      if ((item.person_id || null) !== (window.portraitPeople?.selected || null)) changed();
+      if ((item.person_id || null) !== (window.portraitPeople?.selected || null) || item.prompt !== generationForm.elements.namedItem('prompt').value) changed();
       if (pendingSubmission) status.textContent='上次提交结果尚未确认，点击确认可安全恢复。';
     } catch (error) { showSave('恢复失败：'+error.message,true); }
     finally { draftControls(false); lock(false); }

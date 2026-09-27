@@ -10,7 +10,8 @@
   let configured = false, inspectVersion = 0, timer;
   const draftKey = 'production-prompt-draft-v1';
   let baseline = {name:name.value, content:prompt.value};
-  const dirty = () => name.value !== baseline.name || prompt.value !== baseline.content;
+  const reusablePrompt = () => window.productionPrompt?.strip(prompt.value) ?? prompt.value;
+  const dirty = () => name.value !== baseline.name || reusablePrompt() !== baseline.content;
   const busy = () => form.getAttribute('aria-busy') === 'true';
   function message(element, text, error = false) {
     element.textContent = text; element.dataset.error = String(error);
@@ -22,8 +23,8 @@
     if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : '保存失败，请检查名称和内容长度后重试。');
     return data;
   }
-  function stash() {
-    if (window.productionSession) { window.dispatchEvent(new Event('production-prompt-changed')); return; }
+  function stash(sync = false) {
+    if (window.productionSession) { window.dispatchEvent(new CustomEvent('production-prompt-changed', {detail:{applyTemplate:sync === true}})); return; }
     try { localStorage.setItem(draftKey, JSON.stringify({selected, name:name.value, content:prompt.value})); }
     catch (_) { message(templateStatus, '浏览器无法保留草稿；点击保存仍可将模板存到本机服务端。'); }
   }
@@ -51,7 +52,7 @@
         selected = item.id; name.value = item.name; prompt.value = item.content;
         baseline = {name:item.name, content:item.content};
         byId('template-delete-confirm').hidden = true;
-        stash(); renderList(); message(templateStatus, '已应用模板，可编辑名称和提示词后保存修改。');
+        stash(true); renderList(); message(templateStatus, '已应用模板，可编辑名称和提示词后保存修改。');
       });
       list.append(button);
     });
@@ -66,21 +67,21 @@
   byId('template-new').addEventListener('click', () => {
     if (busy() || saving) return;
     selected = null; name.value = ''; byId('template-delete-confirm').hidden = true;
-    stash(); renderList(); name.focus();
+    stash(true); renderList(); name.focus();
     message(templateStatus, '输入模板名称，编辑下方提示词，再点击“另存为新模板”。');
   });
   async function save(asNew) {
     if (busy() || saving || !loaded) return;
-    if (!name.value.trim() || !prompt.value.trim()) { message(templateStatus, '请填写模板名称和提示词。', true); return; }
-    if (name.value.trim().length > 60 || prompt.value.trim().length > 10000) { message(templateStatus, '名称最多 60 字，提示词最多 10000 字。', true); return; }
+    if (!name.value.trim() || !reusablePrompt().trim()) { message(templateStatus, '请填写模板名称和提示词。', true); return; }
+    if (name.value.trim().length > 60 || reusablePrompt().trim().length > 10000) { message(templateStatus, '名称最多 60 字，提示词最多 10000 字。', true); return; }
     saving = true; controls();
     try {
       const url = asNew ? '/api/prompt-templates' : '/api/prompt-templates/' + encodeURIComponent(selected);
-      const item = await request(url, asNew ? 'POST' : 'PUT', {name:name.value.trim(), content:prompt.value.trim()});
+      const item = await request(url, asNew ? 'POST' : 'PUT', {name:name.value.trim(), content:reusablePrompt().trim()});
       if (asNew) items.push(item); else items = items.map(old => old.id === item.id ? item : old);
       selected = item.id; name.value = item.name; prompt.value = item.content;
       baseline = {name:item.name, content:item.content};
-      stash(); renderList(); message(templateStatus, '已保存到本机，刷新页面或重启服务后仍可使用。');
+      stash(true); renderList(); message(templateStatus, '已保存到本机，刷新页面或重启服务后仍可使用。');
     } catch (error) { message(templateStatus, error.message, true); }
     finally { saving = false; controls(); }
   }
@@ -95,7 +96,7 @@
       await request('/api/prompt-templates/' + encodeURIComponent(selected), 'DELETE');
       items = items.filter(item => item.id !== selected); selected = null; name.value = '';
       byId('template-delete-confirm').hidden = true;
-      stash(); renderList(); message(templateStatus, '模板已删除；下方当前提示词仍可继续编辑或使用。');
+      stash(true); renderList(); message(templateStatus, '模板已删除；下方当前提示词仍可继续编辑或使用。');
     } catch (error) { message(templateStatus, error.message, true); }
     finally { saving = false; controls(); }
   });

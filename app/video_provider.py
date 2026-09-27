@@ -160,6 +160,8 @@ class VideoProvider:
                 raise ProviderError('参考视频超过 50 MB，请压缩或缩短视频后重试。')
             if sum(p.stat().st_size for p, _ in references) > 45 * 1024 * 1024:
                 raise ProviderError('参考图片总大小过大，请压缩图片后重试。')
+        from .reference_prompt import strip_reference_rules
+        prompt = strip_reference_rules(prompt)
         mapping = '；'.join(f'@Image{i}（图片{i}）为{kind}参考图' for i, (_, kind) in enumerate(references, 1))
         # Existing saved templates may still contain the original scene instruction.
         # Normalize the built-in phrases only; preserve custom text and give roles explicit priority.

@@ -15,7 +15,7 @@ CONFIG = dict(provider='ark', protocol='ark', mode='mock', base_url='https://exa
               public_base_url='', model='fixture-model', duration=5, fps=0, resolution='720p')
 
 
-def check(width=1440, portrait_people=False, extra_references=False):
+def check(width=1440, portrait_people=False, extra_references=False, prompt_sync=False):
     fixture=io.BytesIO(); Image.new('RGB',(64,80),'#c8ad92').save(fixture,format='PNG'); image_bytes=fixture.getvalue()
     drafts, assets, runs, submissions = {}, {}, {}, []
     uploads = []
@@ -129,6 +129,35 @@ def check(width=1440, portrait_people=False, extra_references=False):
                 page.locator(f'[name={kind}_image]').set_input_files({'name':kind+'.png','mimeType':'image/png','buffer':image_bytes})
                 expect(page.locator(f'#{kind}-enabled')).to_be_checked()
             page.locator('#scene-description').fill('暖色室内')
+            if prompt_sync:
+                text=page.locator('#generation-prompt').input_value()
+                assert '@Image3 发型参考' in text and '@Image4 场景参考' in text,text
+                assert '任务 A 的提示词' in text and '暖色室内' in text
+                prompt=page.locator('#generation-prompt')
+                prompt.fill('hello ')
+                prompt.evaluate('(el)=>el.setSelectionRange(6,6)')
+                page.wait_for_timeout(750)
+                assert prompt.input_value()=='hello ' and prompt.evaluate('(el)=>el.selectionStart')==6,'Autosave moved editing caret'
+                prompt.press('End');prompt.press_sequentially('world')
+                assert prompt.input_value()=='hello world'
+                prompt.fill('请不要改变动作、镜头和场景')
+                page.locator('#scene-enabled').uncheck();page.locator('#scene-enabled').check()
+                assert prompt.input_value().startswith('请不要改变动作、镜头和场景'),'Sync must preserve user body'
+
+                page.locator('[data-prompt-template=t1]').click()
+                text=page.locator('#generation-prompt').input_value()
+                assert text.startswith('模板新提示词') and '@Image3 发型参考' in text
+                page.locator('[name=face_image]').set_input_files({'name':'second-face.png','mimeType':'image/png','buffer':image_bytes})
+                text=page.locator('#generation-prompt').input_value()
+                assert '@Image4 发型参考' in text and '@Image5 场景参考' in text
+                page.locator('#face-reference-preview button[aria-label="删除第 2 张图片"]').click()
+                assert '@Image3 发型参考' in page.locator('#generation-prompt').input_value()
+                page.locator('#hairstyle-enabled').uncheck()
+                text=page.locator('#generation-prompt').input_value()
+                assert '发型沿用主人物参考图' in text and '@Image3 发型参考' not in text and '@Image3 场景参考' in text
+                page.locator('#hairstyle-enabled').check()
+                assert page.locator('#generation-prompt').input_value().count('【素材联动】')==1
+
             page.locator('#scene-references > summary').click()
             page.locator('#hairstyle-references > summary').click()
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
@@ -152,7 +181,33 @@ def check(width=1440, portrait_people=False, extra_references=False):
             page.locator('[data-run-id=r2] [data-run-action=details]').click()
             expect(page.locator('[data-run-id=r2] .run-detail-assets figure')).to_have_count(5)
             expect(page.locator('[data-run-id=r2] [data-source-kind=scene]')).to_contain_text('未使用')
-            assert len(uploads)==5
+            if prompt_sync:
+                text=page.locator('#generation-prompt').input_value()
+                assert '@Image3 发型参考' in text and '保留原视频场景' in text and '暖色室内' not in text
+                page.locator('#hairstyle-reference-preview button[aria-label="删除第 1 张图片"]').click()
+                text=page.locator('#generation-prompt').input_value()
+                assert '发型沿用主人物参考图' in text and '@Image3 发型参考' not in text
+                page.locator('#flow-stage-generation > summary').click()
+                page.locator('#generation-prompt').fill('我的额外要求：自然光')
+                page.locator('#hairstyle-enabled').check()
+                # Scene is still present (disabled): updating roles preserves manually edited base text.
+                assert '我的额外要求：自然光' in page.locator('#generation-prompt').input_value()
+            assert len(uploads)==(6 if prompt_sync else 5)
+            if prompt_sync:
+                # Copy an old snapshot that predates visible rules; immediate submission must freeze visible text.
+                runs['r1']['snapshot']['prompt']='old legacy prompt'
+                page.locator('[data-run-id=r1] [data-run-action=copy]').click()
+                expect(page.locator('#studio-generate-submit')).to_be_enabled()
+                visible=page.locator('#generation-prompt').input_value()
+                assert 'old legacy prompt' in visible and '@Image3 发型参考' in visible
+                page.locator('#studio-generate-submit').click()
+                expect(page.locator('[data-run-id]')).to_have_count(3)
+                assert runs['r3']['snapshot']['prompt']==visible,'Copied snapshot lost displayed role block'
+                runs['r1']['snapshot'].update(hairstyle_asset_ids=[],scene_asset_ids=[],prompt='plain old draft')
+                page.locator('[data-run-id=r1] [data-run-action=copy]').click()
+                expect(page.locator('#generation-prompt')).to_have_value('plain old draft')
+                expect(page.locator('#prompt-reference-status')).to_have_text('可选，展开编辑')
+
             page.screenshot(path=str(ROOT/'storage'/f'scene-hairstyle-{width}.png'),full_page=True)
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
             assert not errors,errors

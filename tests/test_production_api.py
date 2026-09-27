@@ -149,3 +149,13 @@ def test_optional_references_count_only_when_enabled(client):
     assert result.status_code==422
     saved=client.put('/api/production/drafts/'+saved['id'],json={'revision':saved['revision'],'scene_enabled':False}).json()
     assert client.post('/api/production/runs',json={'draft_id':saved['id'],'revision':saved['revision'],'idempotency_key':'within-limit'}).status_code==200
+
+
+def test_generated_prompt_block_does_not_consume_user_prompt_budget(client):
+    draft=complete_draft(client)
+    user='a'*10000
+    block='\n\n【素材联动】\n@Image3 发型参考：参考发型。\n场景补充：'+('场景'*1000)+'\n【联动结束】'
+    result=client.put('/api/production/drafts/'+draft['id'],json={'revision':draft['revision'],'prompt':user+block})
+    assert result.status_code==200,result.text
+    assert result.json()['prompt']==user+block
+    assert client.put('/api/production/drafts/'+draft['id'],json={'revision':result.json()['revision'],'prompt':'a'*10001}).status_code==422

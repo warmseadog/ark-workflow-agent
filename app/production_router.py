@@ -48,9 +48,14 @@ def get_router(settings_getter, local_guard):
             if not isinstance(values['person_id'],str): raise ValueError('请选择有效人物。')
             from .portrait_library import PortraitLibrary
             PortraitLibrary(settings_getter()).person(values['person_id'])
-        for field,limit in [('name',120),('prompt',10000),('scene_description',2000)]:
+        for field,limit in [('name',120),('scene_description',2000)]:
             if field in values and (not isinstance(values[field],str) or len(values[field])>limit):
                 raise ValueError('草稿名称或提示词长度不正确。')
+        if 'prompt' in values:
+            from .reference_prompt import strip_reference_rules
+            prompt = values['prompt']
+            if not isinstance(prompt,str) or len(prompt)>14000 or len(strip_reference_rules(prompt))>10000:
+                raise ValueError('提示词正文最多 10000 字，请缩短后重试。')
         for field in ('hairstyle_enabled','scene_enabled'):
             if field in values and type(values[field]) is not bool: raise ValueError('参考图启用状态不正确。')
         for field,kind in [('face_asset_ids','face'),('clothing_asset_ids','clothing'),('hairstyle_asset_ids','hairstyle'),('scene_asset_ids','scene')]:

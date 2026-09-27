@@ -4,11 +4,25 @@ import sqlite3
 from contextlib import contextmanager
 from uuid import uuid4
 
-DEFAULT_PROMPTS = [
+PREVIOUS_PROMPTS = [
     ('动作保留', '保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图中的脸、五官与身份；应用@Image2衣服参考图中的服装款式、颜色和材质。'),
     ('自然换装', '保持@Video1原视频的动作、镜头不变；使用@Image1人物参考图中的脸和身份；自然换上@Image2衣服参考图中的衣服，保持服装版型、颜色与材质。'),
     ('电商展示', '保持@Video1原视频的动作和镜头；使用@Image1人物参考图的脸、@Image2衣服参考图的衣服，突出服装细节、版型和材质，适合电商展示。'),
     ('稳定一致', '保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图的脸和身份、@Image2衣服参考图的衣服，保持脸部、服装纹理和颜色在全片一致。'),
+]
+
+LEGACY_PROMPTS = [
+    ('动作保留', '保持@Video1原视频的动作、镜头、场景和节奏；应用@Image1人物参考图中的脸、五官与身份；应用@Image2衣服参考图中的服装款式、颜色和材质。'),
+    ('自然换装', '保持@Video1原视频的动作、镜头和场景不变；使用@Image1人物参考图中的脸和身份；自然换上@Image2衣服参考图中的衣服，保持服装版型、颜色与材质。'),
+    ('电商展示', '保持@Video1原视频的动作、镜头和场景；使用@Image1人物参考图的脸、@Image2衣服参考图的衣服，突出服装细节、版型和材质，适合电商展示。'),
+    ('稳定一致', '保持@Video1原视频的动作、镜头、场景和节奏；应用@Image1人物参考图的脸和身份、@Image2衣服参考图的衣服，保持脸部、服装纹理和颜色在全片一致。'),
+]
+
+DEFAULT_PROMPTS = [
+    ('动作保留', '以@Video1为动作与运镜参考，复刻主体的姿态、步态、动作顺序、镜头运动、构图和节奏。以@Image1为主人物身份参考，保持脸型、五官和人物身份一致；以@Image2为主服装参考，准确还原服装款式、剪裁、颜色和面料质感。动作衔接自然，头发与衣物随动作合理运动，保持全片人物和穿着稳定。'),
+    ('自然换装', '沿用@Video1的动作、姿态、运镜和节奏，将主体呈现为@Image1的人物身份，并自然穿着@Image2的服装。服装贴合身体，保留版型、材质、纹理和配饰细节；避免衣物穿模、脸部变形和画面闪烁，光影与环境协调。'),
+    ('电商展示', '参考@Video1的动作和镜头，使用@Image1的人物身份展示@Image2的服装。突出领口、腰线、剪裁、面料和穿着效果，颜色准确，主体清晰；人物动作自然，保留参考视频的展示节奏，服装细节在镜头间一致。'),
+    ('稳定一致', '按照@Video1的动作时序、姿态、构图和运镜生成连续视频。全片保持@Image1的人物身份、脸型和五官，以及@Image2服装的款式、颜色、纹理和材质一致。头发与衣服运动自然，减少脸部漂移、手部畸变、纹理跳变和闪烁。'),
 ]
 
 @contextmanager
@@ -24,6 +38,12 @@ def connection(settings):
             if cursor.rowcount:
                 db.executemany('INSERT INTO prompt_templates VALUES (?, ?, ?)',
                     [(f'default-{i}', name, text) for i, (name, text) in enumerate(DEFAULT_PROMPTS)])
+            # Upgrade only untouched bundled templates, once; never recreate deleted items.
+            upgrade = db.execute("INSERT OR IGNORE INTO preferences VALUES ('prompts_material_roles_v1','1')")
+            if upgrade.rowcount:
+                for i, (name, text) in enumerate(DEFAULT_PROMPTS):
+                    db.execute('UPDATE prompt_templates SET content=? WHERE id=? AND name=? AND content IN (?,?)',
+                               (text,f'default-{i}',name,PREVIOUS_PROMPTS[i][1],LEGACY_PROMPTS[i][1]))
             yield db
     finally:
         db.close()
@@ -33,7 +53,8 @@ def list_templates(settings):
         return [dict(row) for row in db.execute('SELECT * FROM prompt_templates ORDER BY rowid')]
 
 def save_template(settings, name, content, template_id=None):
-    name, content = name.strip(), content.strip()
+    from .reference_prompt import strip_reference_rules
+    name, content = name.strip(), strip_reference_rules(content)
     if not name or len(name) > 60 or not content or len(content) > 10000:
         raise ValueError('模板名称需为 1–60 个字符，提示词需为 1–10000 个字符。')
     with connection(settings) as db:

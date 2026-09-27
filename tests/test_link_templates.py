@@ -64,3 +64,24 @@ def test_link_inspection_is_local_and_recognizes_share_text(client):
     assert response.json()['platform'] == 'bilibili'
     assert response.json()['url'] == 'https://b23.tv/abc'
     assert not response.json()['configured']
+
+
+def test_builtin_prompt_upgrade_preserves_custom_edits_and_deleted_templates(client):
+    import sqlite3
+    from app import local_preferences
+    root=main.settings.storage_dir
+    client.get('/api/prompt-templates')
+    with sqlite3.connect(root/'local-preferences.db') as db:
+        db.execute("DELETE FROM preferences WHERE key='prompts_material_roles_v1'")
+        db.execute("UPDATE prompt_templates SET content=? WHERE id='default-0'",('保持@Video1原视频的动作、镜头、场景和节奏；应用@Image1人物参考图中的脸、五官与身份；应用@Image2衣服参考图中的服装款式、颜色和材质。',))
+        db.execute("UPDATE prompt_templates SET content='保留我改过的模板' WHERE id='default-1'")
+        db.execute("DELETE FROM prompt_templates WHERE id='default-2'")
+    items={x['id']:x for x in client.get('/api/prompt-templates').json()['items']}
+    assert '步态' in items['default-0']['content']
+    assert items['default-1']['content']=='保留我改过的模板'
+    assert 'default-2' not in items
+
+
+def test_saved_templates_do_not_pin_generated_image_numbers(client):
+    result=client.post('/api/prompt-templates',json={'name':'我的模板','content':'自然光\n\n【素材联动】\n@Image8 发型参考：旧编号\n【联动结束】'}).json()
+    assert result['content']=='自然光'
