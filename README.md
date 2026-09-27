@@ -84,9 +84,9 @@ SEEDANCE_API_KEY=replace-with-your-key
 - `clothing_image`: 服装参考图（可选）；
 - `hairstyle_image`: 独立发型参考图（可选，仅工作台启用时发送）；
 - `scene_image`: 独立场景参考图（可选，仅工作台启用时发送）；
+- `prompt`: 文本提示词。
 
 自定义适配器如需支持发型或场景参考，应读取这两个新增文件字段；未启用时不会发送。模型提示词包含各图片的用途和动态编号。
-- `prompt`: 文本提示词。
 
 响应至少需要返回：
 
