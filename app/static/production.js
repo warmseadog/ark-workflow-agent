@@ -56,6 +56,7 @@
   }
   function lock(value) {
     busy = value;
+    window.portraitPeople?.lock(value);
     generationForm.setAttribute('aria-busy', String(value));
     [...sourceForm.elements, ...generationForm.querySelectorAll('input,textarea,[data-prompt-template],[data-template-action],[data-asset-edit]'), document.getElementById('toggle-video-url')].forEach(input => input.disabled = value);
     mask.querySelectorAll('[data-redaction-save]').forEach(button => button.disabled = value);
@@ -110,7 +111,7 @@
         fallback.textContent = '无法预览，可替换图片'; item.prepend(fallback);
       }, {once: true});
       item.append(element, tag, caption, actions);
-      const portrait = assetFiles.get(files[index])?.portrait;
+      const portrait = !window.portraitPeople?.selected ? assetFiles.get(files[index])?.portrait : null;
       if (kind === 'face' && portrait?.status === 'Active' && portrait.remote_asset_id) {
         const badge = document.createElement('span'); badge.className = 'portrait-badge';
         badge.textContent = '官方已授权'; badge.title = '此图片来自官方授权素材；生成时将重新校验授权状态。'; item.append(badge);
@@ -127,6 +128,7 @@
     imageFiles[kind].forEach(file => transfer.items.add(file));
     input.files = transfer.files;
     showFiles(input, kind); clearResult(); updateButtons(); changed();
+    if (kind === 'face') renderPhotoStatus();
   }
   function validImage(file) {
     if (!(file.type.startsWith('image/') || (!file.type && /\.(png|jpe?g|webp|gif|bmp|tiff?|heic|heif|avif)$/i.test(file.name)))) {
@@ -310,7 +312,7 @@
       const submitted = await api('/runs', 'POST', pendingSubmission);
       pendingSubmission = null; localStorage.removeItem(pendingKey);
       runs.set(submitted.id, submitted); renderRuns();
-      status.textContent = '任务已加入队列，可继续编辑或新建草稿';
+      status.textContent = '任务已加入队列，可继续准备下一个视频';
     } catch (error) {
       // A definitive validation error cannot have accepted the task. Network/5xx remains uncertain.
       if (error.httpStatus && error.httpStatus < 500) {
@@ -372,9 +374,10 @@
     dirtyVersion++; showSave('有修改，正在保存…');
     clearTimeout(saveTimer);
     // Start media persistence immediately; draft update follows when upload completes.
+    const uploadingPerson = window.portraitPeople?.selected, uploadingDraft = draft?.id;
     [source.files[0], ...imageFiles.face, ...imageFiles.clothing].filter(Boolean).forEach(file => {
       const kind = file === source.files[0] ? 'video' : imageFiles.face.includes(file) ? 'face' : 'clothing';
-      persistFile(file, kind).catch(error => showSave('素材保存失败：' + error.message, true));
+      persistFile(file, kind).then(asset => { if (kind === 'face' && imageFiles.face.includes(file) && draft?.id === uploadingDraft && window.portraitPeople?.selected === uploadingPerson) queuePhoto(file, asset, uploadingPerson); }).catch(error => showSave('素材保存失败：' + error.message, true));
     });
     saveTimer = setTimeout(() => flushDraft().catch(() => {}), 500);
   }
@@ -413,6 +416,7 @@
           throw new Error('官方图片读取失败，原人物图片已保留。请检查网络后重试。');
         }
         if (signal?.aborted) throw new DOMException('Dialog closed', 'AbortError');
+        if (window.portraitPeople) await window.portraitPeople.selectGroup(asset.portrait.group_id);
         imageFiles.face = [file, ...imageFiles.face.slice(1)];
         syncImages('face');
         try { await flushDraft(); }
@@ -421,13 +425,92 @@
       } finally { lock(false); }
     },
   };
+  // One state query for visible photos; network results are keyed by file AND person.
+  const photoRecords = new Map();
+  let photoTimer = null, photoPolling = false;
+  function photoKey(file, person) { return person + ':' + assetFiles.get(file)?.id; }
+  function currentPhotos() {
+    const person = window.portraitPeople?.selected;
+    return person ? imageFiles.face.map(file => photoRecords.get(photoKey(file, person))).filter(Boolean) : [];
+  }
+  function renderPhotoStatus() {
+    const label = document.getElementById('person-photo-status');
+    if (!label) return;
+    const records = currentPhotos();
+    const failed = records.find(x => x.status === 'failed' || x.status === 'uncertain');
+    label.dataset.error = String(Boolean(failed));
+    label.textContent = !window.portraitPeople?.selected ? '真人照片请先选择或添加已认证人物。' :
+      !imageFiles.face.length ? '上传这个人的照片，系统会自动校验。' : failed ? failed.message :
+      records.length === imageFiles.face.length && records.every(x => x.status === 'active') ? '✓ 照片可用' : '正在校验人物照片，可继续准备素材或提交视频。';
+    document.getElementById('person-photo-retry').hidden = !failed;
+  }
+  async function queuePhoto(file, asset, person = window.portraitPeople?.selected) {
+    if (!person || !window.portraitPeople) { renderPhotoStatus(); return; }
+    const key = person + ':' + asset.id;
+    if (photoRecords.has(key)) { renderPhotoStatus(); schedulePhotoPoll(); return; }
+    const pending = {status:'queued',message:'等待校验'};
+    photoRecords.set(key,pending); renderPhotoStatus();
+    try {
+      const job = await window.portraitPeople.request('photos','POST',{person_id:person,asset_id:asset.id});
+      photoRecords.set(key,job);
+    } catch (error) { photoRecords.set(key,{status:'failed',message:error.message}); }
+    renderPhotoStatus(); schedulePhotoPoll();
+  }
+  function refreshPhotoInputs() {
+    const person = window.portraitPeople?.selected;
+    imageFiles.face.forEach(file => {
+      const asset = assetFiles.get(file);
+      if (asset) queuePhoto(file,asset,person);
+    });
+    renderPhotoStatus();
+  }
+  function schedulePhotoPoll() {
+    if (photoTimer || photoPolling || !currentPhotos().some(x => x.id && !['active','failed'].includes(x.status))) return;
+    photoTimer = setTimeout(pollPhotos, document.hidden ? 15000 : 5000);
+  }
+  async function pollPhotos() {
+    photoTimer = null;
+    const jobs = currentPhotos().filter(x => x.id && !['active','failed'].includes(x.status));
+    if (!jobs.length || photoPolling) return;
+    photoPolling = true;
+    try {
+      const data = await window.portraitPeople.request('photos?ids='+encodeURIComponent([...new Set(jobs.map(x=>x.id))].join(',')));
+      const updated = new Map((data.items || []).map(x=>[x.id,x]));
+      for (const [key,job] of photoRecords) if (updated.has(job.id)) photoRecords.set(key,updated.get(job.id));
+      renderPhotoStatus();
+    } catch (error) {
+      const label=document.getElementById('person-photo-status');
+      label.textContent='照片状态查询暂时失败，稍后自动恢复；可以继续编辑。';
+    } finally { photoPolling=false; schedulePhotoPoll(); }
+  }
+  document.getElementById('person-photo-retry')?.addEventListener('click',async () => {
+    const person=window.portraitPeople?.selected;
+    for (const file of [...imageFiles.face]) {
+      const key=photoKey(file,person), job=photoRecords.get(key);
+      if (!job || !['failed','uncertain'].includes(job.status)) continue;
+      try {
+        if (job.id) photoRecords.set(key,await window.portraitPeople.request('photos/'+job.id+'/retry','POST',{}));
+        else { photoRecords.delete(key); await queuePhoto(file,assetFiles.get(file),person); }
+      } catch (error) { toast(error.message); }
+    }
+    renderPhotoStatus(); schedulePhotoPoll();
+  });
+  window.addEventListener('portrait-person-changed',() => {
+    if (!sessionReady || restoring) return;
+    showFiles(face,'face'); refreshPhotoInputs(); changed();
+  });
+  window.addEventListener('visibilitychange',() => {
+    clearTimeout(photoTimer); photoTimer=null; schedulePhotoPoll();
+  });
+
   function publicModel() {
     return Object.fromEntries(publicModelFields.map(name => [name, ['duration','fps'].includes(name) ? Number(modelForm.elements.namedItem(name).value) : modelForm.elements.namedItem(name).value.trim()]));
   }
   async function captureDraft() {
     // Read all fields synchronously before awaiting uploads: saves represent one editor version.
     const videoFile = source.files[0], faceFiles = [...imageFiles.face], clothingFiles = [...imageFiles.clothing];
-    const values = {name:draft?.name || '未命名视频', prompt:generationForm.elements.namedItem('prompt').value, mask:maskValues(), model:publicModel()};
+    const selectedPerson = window.portraitPeople?.selected || null;
+    const values = {person_id:selectedPerson, name:draft?.name || '未命名视频', prompt:generationForm.elements.namedItem('prompt').value, mask:maskValues(), model:publicModel()};
     const [videoAsset, faces, clothes] = await Promise.all([
       videoFile ? persistFile(videoFile,'video') : null,
       Promise.all(faceFiles.map(file => persistFile(file,'face'))),
@@ -476,6 +559,7 @@
       source.files = transfer.files; sourceUrl.value = '';
       imageFiles.face = faces; imageFiles.clothing = clothes;
       draft = item; drafts.set(item.id,item);
+      window.portraitPeople?.restore(item.person_id);
       generationForm.elements.namedItem('prompt').value = item.prompt ?? defaultPrompt;
       applyMask({...defaultMask,...item.mask}); savedMask = maskValues();
       for (const name of publicModelFields) if (item.model?.[name] !== undefined) modelForm.elements.namedItem(name).value = item.model[name];
@@ -486,7 +570,7 @@
       localStorage.setItem(currentKey,item.id);
       ['production-prompt-draft-v1','studio-redaction-settings','active-v1-job'].forEach(key=>localStorage.removeItem(key));
       showSave('已保存到本机');
-    } finally { restoring = false; }
+    } finally { restoring = false; refreshPhotoInputs(); }
   }
   function draftControls(disabled) {
     ['draft-recover'].forEach(id => document.getElementById(id).disabled = disabled);
@@ -524,7 +608,7 @@
 
   const locallyDeletedRuns = new Set();
   const stateNames = {defaced:'预览已完成',queued:'排队中',running:'处理中',succeeded:'已完成',failed:'失败',cancelled:'已取消',needs_attention:'需要处理'};
-  const stageNames = {preprocess:'处理参考视频',upload:'上传素材',submitting:'提交模型',generating:'模型生成',downloading:'下载结果'};
+  const stageNames = {authorizing:'核实人物照片',preprocess:'处理参考视频',upload:'上传素材',submitting:'提交模型',generating:'模型生成',downloading:'下载结果'};
   function node(tag, text, className) {
     const element = document.createElement(tag); if (text) element.textContent = text;
     if (className) element.className = className; return element;
@@ -640,16 +724,17 @@
   async function initialize() {
     lock(true); draftControls(true);
     try {
-      const [data] = await Promise.all([api('/drafts'),templatesReady,modelsReady]);
+      const [data] = await Promise.all([api('/drafts'),templatesReady,modelsReady,window.portraitPeople?.ready]);
       (data.items || []).forEach(item=>drafts.set(item.id,item));
       const requested = localStorage.getItem(currentKey);
       const selected = drafts.get(requested) || data.items?.[0];
       const item = selected ? await api('/drafts/'+encodeURIComponent(selected.id)) : await api('/drafts','POST',{});
       await restoreDraft(item); sessionReady=true;
+      if ((item.person_id || null) !== (window.portraitPeople?.selected || null)) changed();
       if (pendingSubmission) status.textContent='上次提交结果尚未确认，点击确认可安全恢复。';
     } catch (error) { showSave('恢复失败：'+error.message,true); }
     finally { draftControls(false); lock(false); }
   }
-  initialize(); refreshRuns(); setInterval(refreshRuns,3000);
+  initialize(); refreshRuns(); setInterval(() => { if (!document.hidden) refreshRuns(); },5000);
 
 })();

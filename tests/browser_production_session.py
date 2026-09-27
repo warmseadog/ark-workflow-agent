@@ -13,9 +13,12 @@ CONFIG = dict(provider='ark', protocol='ark', mode='mock', base_url='https://exa
               public_base_url='', model='fixture-model', duration=5, fps=0, resolution='720p')
 
 
-def check(width=1440):
+def check(width=1440, portrait_people=False):
     drafts, assets, runs, submissions = {}, {}, {}, []
     uploads = []
+    photos = {}
+    held_uploads = []
+    people = [dict(id="p1",name="小李",photo_count=0,verified=True),dict(id="p2",name="小张",photo_count=0,verified=True)]
     switches = {'lose_response':False, 'conflict':False}
     def new_draft(source=None):
         item = dict(id=f'd{len(drafts)+1}', name=f'草稿 {len(drafts)+1}', revision=0,
@@ -42,6 +45,15 @@ def check(width=1440):
             if path.startswith('/static/'):
                 route.fulfill(path=str(ROOT / 'app' / path.lstrip('/')))
             elif path == '/': route.fulfill(content_type='text/html', body=html)
+            elif path == '/api/portrait/people': route.fulfill(json={'items':people if portrait_people else []})
+            elif path.startswith('/api/portrait/people/') and req.method == 'PUT':
+                person=next(x for x in people if x['id']==path.rsplit('/',1)[-1]);person['name']=body['name'];route.fulfill(json=person)
+            elif path == '/api/portrait/photos':
+                if req.method == 'POST':
+                    key=body['person_id']+':'+body['asset_id']
+                    photos.setdefault(key,dict(id='job'+str(len(photos)+1),person_id=body['person_id'],asset_id=body['asset_id'],status='processing',message='校验中'))
+                    route.fulfill(json=photos[key])
+                else: route.fulfill(json={'items':list(photos.values())})
             elif path == '/api/model-settings': route.fulfill(json={'config': dict(CONFIG, has_api_key=False, status='demo'), 'presets': {'ark': {'models': []}}})
             elif path == '/api/prompt-templates': route.fulfill(json={'items': [{'id':'t1','name':'应用模板','content':'模板新提示词'}]})
             elif path == '/api/link-settings': route.fulfill(json={'has_api_key':False})
@@ -71,7 +83,9 @@ def check(width=1440):
                 kind = next(k for k in ('video','face','clothing') if ('\r\n\r\n'+k+'\r\n').encode() in data)
                 aid = f'a{len(assets)+1}'
                 assets[aid] = dict(id=aid, kind=kind, name=f'{kind}.bin', size=8, mime='video/mp4' if kind=='video' else 'image/png', url=f'/api/production/assets/{aid}/file')
-                uploads.append(kind); route.fulfill(json=assets[aid])
+                uploads.append(kind)
+                if switches.get('hold_face') and kind == 'face': held_uploads.append((route,assets[aid])); return
+                route.fulfill(json=assets[aid])
             elif path.startswith('/api/production/assets/'):
                 route.fulfill(body=b'fixture', content_type='application/octet-stream')
             elif path == '/api/production/runs':
@@ -98,6 +112,10 @@ def check(width=1440):
         page.goto('http://127.0.0.1:18743/')
         expect(page.locator('#draft-save-status')).to_contain_text('已保存')
         expect(page.locator('#generation-prompt')).to_have_value('服务器保存的提示词')
+        if portrait_people and not drafts['d1'].get('person_id'):
+            page.locator('#person-picker > summary').click()
+            expect(page.locator('[data-person-id=p1]')).to_contain_text('上传第一张照片')
+            page.locator('[data-person-id=p1]').click()
         page.locator('#flow-stage-generation > summary').click()
         page.locator('#generation-prompt').fill('任务 A 的提示词')
         for name, kind in [('video','video'),('face_image','face'),('clothing_image','clothing')]:
@@ -109,16 +127,35 @@ def check(width=1440):
         assert runs['r1']['snapshot']['prompt'] == '任务 A 的提示词'
         assert isinstance(runs['r1']['snapshot']['mask']['mask_scale'], (int,float))
         expect(page.locator('.draft-toolbar')).to_have_count(0)
+        if portrait_people:
+            assert runs['r1']['snapshot']['person_id']=='p1'
+            page.locator('#person-picker > summary').click()
+            page.locator('[data-person-id=p2]').click()
+            expect(page.locator('#person-current')).to_contain_text('小张')
         page.locator('#generation-prompt').fill('任务 B 的提示词')
         page.locator('#studio-generate-submit').click()
         expect(page.locator('[data-run-id]')).to_have_count(2)
         assert runs['r1']['snapshot']['prompt'] == '任务 A 的提示词'
         assert runs['r2']['snapshot']['prompt'] == '任务 B 的提示词'
+        if portrait_people:
+            assert runs['r2']['snapshot']['person_id']=='p2'
+            assert runs['r1']['snapshot']['person_id']=='p1'
+            assert len(photos)==2,photos
+
         assert len(uploads)==3, uploads
         page.reload()
         expect(page.locator('#draft-save-status')).to_contain_text('已保存')
         expect(page.locator('#generation-prompt')).to_have_value('任务 B 的提示词')
         expect(page.locator('#face-reference-preview img')).to_have_count(1)
+        if portrait_people:
+            expect(page.locator('#person-current')).to_contain_text('小张')
+            page.locator('#person-picker > summary').click()
+            page.locator('#person-rename-toggle').click()
+            page.locator('#person-name').fill('模特小张')
+            page.locator('#person-name-save').click()
+            expect(page.locator('#person-current')).to_contain_text('模特小张')
+            page.locator('#person-picker > summary').click()
+
         expect(page.locator('[data-run-id]')).to_have_count(2)
         page.locator('#flow-stage-generation > summary').click()
         page.locator('#generation-prompt').fill('任务 A 的提示词')
@@ -185,6 +222,31 @@ def check(width=1440):
         expect(page.locator('[data-run-id=r2]')).to_have_count(0)
         expect(page.locator('#face-reference-preview img')).to_have_count(1)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+        if portrait_people:
+            page.locator('#person-picker > summary').click()
+            page.locator('[data-person-id=p1]').click()
+            switches['hold_face']=True
+            page.locator('[name=face_image]').set_input_files({'name':'slow.png','mimeType':'image/png','buffer':b'slow upload'})
+            expect(page.locator('#face-reference-preview img')).to_have_count(2)
+            for _ in range(30):
+                if held_uploads:break
+                page.wait_for_timeout(100)
+            assert held_uploads
+            count=len(photos)
+            page.locator('#face-reference-preview button[aria-label="删除第 2 张图片"]').click()
+            page.locator('#person-picker > summary').click();page.locator('[data-person-id=p2]').click()
+            for route,asset in held_uploads:route.fulfill(json=asset)
+            expect(page.locator('#draft-save-status')).to_contain_text('已保存')
+            assert len(photos)==count,'Removed photo must not be submitted for the newly selected person'
+            page.locator('#person-picker > summary').click()
+            page.get_by_role('button',name='普通参考图（不使用真人授权）',exact=True).click()
+            expect(page.locator('#draft-save-status')).to_contain_text('已保存')
+            assert drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['person_id'] is None
+            page.reload();expect(page.locator('#draft-save-status')).to_contain_text('已保存')
+            expect(page.locator('#person-current')).to_have_text('选择人物')
+            page.locator('#person-picker > summary').click();page.locator('[data-person-id=p2]').click()
+            expect(page.locator('#draft-save-status')).to_contain_text('已保存')
+            page.screenshot(path=str(ROOT/'storage'/f'portrait-people-{width}.png'),full_page=True)
         assert not errors, errors
         browser.close()
     print(f'PASS durable production session {width}: restore, upload once, independent snapshots, editor unlock, cancel')

@@ -117,7 +117,10 @@ def test_simultaneous_official_imports_share_one_local_asset(client,official,mon
     monkeypatch.setattr(portrait_service,'download_image',together)
     def upload():return client.post('/api/portrait/import',json={'remote_asset_id':'asset-realperson'})
     with ThreadPoolExecutor(max_workers=2) as pool:
-        first,second=list(pool.map(lambda _:upload(),range(2)))
+        futures=[pool.submit(upload) for _ in range(2)]
+        failures=[future.exception() for future in futures if future.exception()]
+        assert not failures, repr(failures)
+        first,second=[future.result() for future in futures]
     assert first.status_code==second.status_code==200
     assert first.json()['id']==second.json()['id']
     store=ProductionStore(main.settings.storage_dir)

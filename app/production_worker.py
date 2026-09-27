@@ -44,6 +44,13 @@ def execute_run(settings, store, run):
         faces, clothes, video_url = [], [], None
         image_asset_uris = {}
         if not provider_id and not result_url:
+            if private.get('portrait'):
+                from .portrait_generation import verify, PortraitPending
+                store.update_run(ident,stage='authorizing',message='正在核实人物照片',progress=2)
+                try: image_asset_uris=verify(private['portrait'],store)
+                except PortraitPending as pending:
+                    store.update_run(ident,status='queued',stage='authorizing',message=str(pending),progress=2)
+                    return
             source = store.get_asset(snapshot['source_asset_id'], private=True)
             faces = [Path(store.get_asset(x, private=True)['path']) for x in snapshot['face_asset_ids']]
             clothes = [Path(store.get_asset(x, private=True)['path']) for x in snapshot['clothing_asset_ids']]
@@ -64,10 +71,6 @@ def execute_run(settings, store, run):
                         cache_tmp = cache.with_suffix('.tmp.mp4')
                         shutil.copyfile(defaced, cache_tmp)
                         cache_tmp.replace(cache)
-            if private.get('portrait'):
-                from .portrait_generation import verify
-                store.update_run(ident,stage='authorizing',message='正在核实真人素材授权',progress=50)
-                image_asset_uris=verify(private['portrait'],store)
             if config.mode == 'http' and config.protocol == 'ark':
                 store.update_run(ident, stage='upload', message='正在上传打码视频', progress=55)
                 if storage.enabled:
@@ -137,10 +140,21 @@ class QueueManager:
             return False
         self.lockfile = handle
         self.store.recover()
+        from .portrait_library import PortraitLibrary
+        PortraitLibrary(self.settings).recover()
+        thread = threading.Thread(target=self.portrait_loop, daemon=True, name="portrait-worker")
+        thread.start(); self.threads.append(thread)
         for _ in range(2):
             thread = threading.Thread(target=self.loop, daemon=True, name='production-worker')
             thread.start(); self.threads.append(thread)
         return True
+
+    def portrait_loop(self):
+        from .portrait_library import PortraitLibrary
+        while not self.stop.is_set():
+            try: PortraitLibrary(self.settings).process_one()
+            except Exception: pass
+            self.stop.wait(1)
 
     def loop(self):
         while not self.stop.is_set():

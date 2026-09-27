@@ -13,7 +13,7 @@ from . import generation_settings, storage_settings, admin_settings, media, prod
 from .media_errors import MediaPipelineError
 
 _MODEL_FIELDS = {'provider','protocol','mode','base_url','model','duration','fps','resolution','public_base_url'}
-_DRAFT_FIELDS = {'name','source_asset_id','face_asset_ids','clothing_asset_ids','prompt','mask','model'}
+_DRAFT_FIELDS = {'name','person_id','source_asset_id','face_asset_ids','clothing_asset_ids','prompt','mask','model'}
 _MASK_FIELDS = {'blur_style','style','shape','mask_mode','robust_tracking','mask_scale','mosaic_size','threshold','detection_size','keep_audio'}
 
 
@@ -44,6 +44,10 @@ def get_router(settings_getter, local_guard):
     def validate_changes(values, current=None):
         if set(values)-_DRAFT_FIELDS:
             raise ValueError('草稿包含不支持的字段。')
+        if 'person_id' in values and values['person_id'] is not None:
+            if not isinstance(values['person_id'],str): raise ValueError('请选择有效人物。')
+            from .portrait_library import PortraitLibrary
+            PortraitLibrary(settings_getter()).person(values['person_id'])
         for field,limit in [('name',120),('prompt',10000)]:
             if field in values and (not isinstance(values[field],str) or len(values[field])>limit):
                 raise ValueError('草稿名称或提示词长度不正确。')

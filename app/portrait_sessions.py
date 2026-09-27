@@ -115,7 +115,11 @@ class Sessions:
                     else: data['message']='已收到手机返回，正在等待官方确认…'
                 except service.PortraitError as error: data['message']=str(error)
                 self.save(data)
-            return self.public(data)
+            result=self.public(data)
+            if data['status']=='verified':
+                from .portrait_library import PortraitLibrary
+                result['person_id']=PortraitLibrary(self.settings).add_person(data['group_id'])['id']
+            return result
 
     def callback(self, state, token, result):
         with _lock:

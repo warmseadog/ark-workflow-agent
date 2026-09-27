@@ -41,3 +41,19 @@
   .portrait-section-heading { align-items: flex-start; flex-wrap: wrap; }
   .portrait-dialog .secondary, .portrait-dialog .primary { padding: 10px 12px; }
 }
+
+.person-bar { display:flex; align-items:center; gap:8px; margin:0 0 10px; font-size:12px; }
+.person-picker { position:relative; flex:1; min-width:0; }
+.person-picker summary { display:flex; align-items:center; gap:8px; cursor:pointer; padding:8px 10px; border:1px solid var(--hair,#d8d0c3); list-style:none; }
+#person-current { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.person-picker img { width:28px; height:28px; object-fit:cover; border-radius:50%; }
+.person-menu { position:absolute; z-index:20; top:100%; left:0; right:0; padding:10px; border:1px solid var(--hair,#d8d0c3); background:var(--cream,#fffdf6); box-shadow:0 8px 24px #0002; }
+.person-menu input { width:100%; box-sizing:border-box; min-width:0; padding:8px; border:1px solid var(--hair); font:inherit; }
+#person-options { max-height:230px; overflow:auto; }
+.person-option { width:100%; display:flex; align-items:center; gap:8px; text-align:left; padding:10px 5px; border:0; background:transparent; color:inherit; cursor:pointer; font:inherit; }
+.person-option[aria-pressed=true] { background:#eee9df; }
+.person-option small { display:block; font-size:10px; margin-top:4px; color:var(--muted,#666); }
+.person-menu-actions { display:flex; flex-wrap:wrap; gap:12px; border-top:1px solid var(--hair); padding-top:10px; }
+.person-bar button:not(.person-option), #person-name-save { border:0; background:transparent; padding:5px 0; color:var(--accent,#bb352b); font:inherit; cursor:pointer; }
+#person-photo-status[data-error=true] { color:#a8342a; }
+.person-bar [hidden] { display:none; }

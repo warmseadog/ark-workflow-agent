@@ -24,7 +24,7 @@ import warnings
 import requests
 
 _HOST = 'ark.cn-beijing.volcengineapi.com'
-_ACTIONS = {'ListAssets', 'GetAsset', 'GetAssetGroup', 'CreateVisualValidateSession', 'GetVisualValidateResult'}
+_ACTIONS = {'ListAssets', 'GetAsset', 'GetAssetGroup', 'CreateVisualValidateSession', 'GetVisualValidateResult', 'ListAssetGroups', 'CreateAsset'}
 _IMAGE_HOSTS = {'ark-asset.cn-beijing.volcengine.com'}
 _lock = RLock()
 
@@ -213,6 +213,55 @@ class ArkPortraitClient:
         if not group: return None
         if not _identifier(group, 'group'): raise PortraitError('官方认证结果格式异常，请稍后重试。')
         return group
+
+    def get_group(self, group_id):
+        if not _identifier(group_id, 'group'):
+            raise PortraitError('人物编号不正确，请重新选择。')
+        item = self._request('GetAssetGroup', {'Id': group_id, 'ProjectName': self.config.project_name})
+        if (item.get('Id') != group_id or item.get('GroupType') != 'LivenessFace'
+                or item.get('ProjectName') != self.config.project_name):
+            raise PortraitError('人物授权不可用，请重新认证或检查账号和项目。')
+        return item
+
+    def list_groups(self):
+        result, tokens, token = [], set(), None
+        for _ in range(10):
+            payload = {'Filter': {'GroupType': 'LivenessFace'}, 'ProjectName': self.config.project_name, 'MaxResults': 100}
+            if token: payload['NextToken'] = token
+            page = self._request('ListAssetGroups', payload)
+            if not isinstance(page.get('Items'), list): raise PortraitError('人物列表格式异常。')
+            result.extend(x for x in page['Items'] if isinstance(x, dict) and x.get('GroupType') == 'LivenessFace'
+                          and x.get('ProjectName') == self.config.project_name and _identifier(x.get('Id'), 'group'))
+            token = page.get('NextToken')
+            if not token: return result
+            if not isinstance(token, str) or token in tokens: raise PortraitError('人物列表分页异常。')
+            tokens.add(token)
+        raise PortraitError('人物数量超过查询上限，请缩小项目范围。')
+
+    def create_asset(self, group_id, url, name):
+        result = self._request('CreateAsset', {'GroupId': group_id, 'URL': url, 'Name': name,
+                                               'AssetType': 'Image', 'ProjectName': self.config.project_name})
+        ident = result.get('Id')
+        if not _identifier(ident, 'asset'): raise PortraitError('创建照片结果待确认，请稍后查看状态。')
+        return ident
+
+    def find_created_asset(self, group_id, name):
+        result = self._request('ListAssets', {'Filter': {'GroupType': 'LivenessFace', 'GroupIds': [group_id], 'Name': name},
+                                            'ProjectName': self.config.project_name, 'MaxResults': 100})
+        for item in result.get('Items', []):
+            if (item.get('Name') == name and item.get('GroupId') == group_id
+                    and item.get('ProjectName') == self.config.project_name and item.get('AssetType') == 'Image'
+                    and _identifier(item.get('Id'), 'asset')):
+                return item['Id']
+        return None
+
+    def asset_state(self, asset_id, group_id):
+        item = self._request('GetAsset', {'Id': asset_id, 'ProjectName': self.config.project_name})
+        if (item.get('Id') != asset_id or item.get('GroupId') != group_id or item.get('AssetType') != 'Image'
+                or item.get('ProjectName') != self.config.project_name or item.get('Status') not in {'Active','Processing','Failed'}):
+            raise PortraitError('照片与所选人物或项目不匹配，请重新选择。')
+        error = item.get('Error') or {}
+        return {'status': item['Status'], 'error_code': error.get('Code', '') if isinstance(error, dict) else ''}
 
     def _normalize(self, item):
         if (not isinstance(item, dict) or item.get('Status') != 'Active' or item.get('AssetType') != 'Image'

@@ -4,7 +4,7 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 
@@ -239,7 +239,7 @@ class ProductionStore:
     def claim_next(self):
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
-            row = db.execute("SELECT * FROM production_runs WHERE status='queued' ORDER BY created_at LIMIT 1").fetchone()
+            row = db.execute("SELECT * FROM production_runs WHERE status='queued' AND (stage!='authorizing' OR updated_at<?) ORDER BY created_at LIMIT 1", ((datetime.now(timezone.utc)-timedelta(seconds=10)).isoformat(),)).fetchone()
             if not row:
                 return None
             db.execute("UPDATE production_runs SET status='running',updated_at=? WHERE id=?", (now(),row['id']))

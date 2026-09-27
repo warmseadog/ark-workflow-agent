@@ -26,7 +26,68 @@ def get_router(settings_getter, local_guard):
     def guarded(operation):
         try: return operation()
         except HTTPException: raise
-        except (ValueError,LookupError) as exc: raise HTTPException(422,str(exc)) from None
+        except LookupError as exc: raise HTTPException(404,str(exc)) from None
+        except ValueError as exc: raise HTTPException(422,str(exc)) from None
+
+    def library():
+        from .portrait_library import PortraitLibrary
+        return PortraitLibrary(settings_getter())
+
+    @router.get('/people')
+    def people(): return guarded(lambda: {'items': library().people()})
+
+    @router.post('/people/sync')
+    def sync_people():
+        def operation():
+            api,_=client(); lib=library()
+            for group in api.list_groups(): lib.add_person(group['Id'],group.get('Name',''))
+            return {'items':lib.people()}
+        return guarded(operation)
+
+    @router.post('/people/resolve')
+    def resolve_person(payload:dict):
+        def operation():
+            api,_=client()
+            group=api.get_group(payload.get('group_id'))
+            return library().add_person(group['Id'],group.get('Name',''))
+        return guarded(operation)
+
+    @router.put('/people/{ident}')
+    def rename_person(ident:str,payload:dict):
+        return guarded(lambda:library().rename(ident,payload.get('name')))
+
+    @router.get('/people/{ident}/thumbnail')
+    def thumbnail(ident:str):
+        from fastapi.responses import FileResponse
+        guarded(lambda:library().person(ident))
+        path=settings_getter().storage_dir/'portrait-thumbs'/(ident+'.jpg')
+        if not path.is_file(): raise HTTPException(404,'人物缩略图尚未生成。')
+        return FileResponse(path,media_type='image/jpeg',headers={'Cache-Control':'private, max-age=60'})
+
+    @router.post('/photos')
+    def create_photo(payload:dict):
+        def operation():
+            if not all(isinstance(payload.get(k),str) for k in ('person_id','asset_id')):
+                raise ValueError('请选择人物并上传照片。')
+            result=library().enqueue(payload['person_id'],payload['asset_id'])
+            from .production_worker import wake
+            wake(settings_getter())
+            return result
+        return guarded(operation)
+
+    @router.get('/photos')
+    def photos(ids:str=''):
+        def operation():
+            keys=list(dict.fromkeys(ids.split(','))) if ids else []
+            if len(keys)>20 or any(not re.fullmatch(r'[a-f0-9]{32}',key) for key in keys):
+                raise ValueError('照片查询参数不正确。')
+            lib=library()
+            return {'items':[lib.get_photo(key) for key in keys]}
+        return guarded(operation)
+
+    @router.post('/photos/{ident}/retry')
+    def retry_photo(ident:str):
+        return guarded(lambda:library().retry(ident))
 
     @router.get('/config')
     def config():

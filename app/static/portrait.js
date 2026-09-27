@@ -68,7 +68,7 @@
     if (!config?.has_credentials) {
       message('assets-status', '请先展开“连接设置”，保存有真人素材访问权限的 AK/SK，再刷新。', true); return;
     }
-    message('assets-status', '正在查询官方已授权人物…');
+    message('assets-status', '正在查询已有授权照片…');
     const data = await request('assets');
     const items = (data.items || []).filter(item => item.status === 'Active' && item.asset_type === 'Image');
     for (const item of items) {
@@ -89,7 +89,7 @@
       }));
       row.append(info, button); byId('assets').append(row);
     }
-    message('assets-status', items.length ? `找到 ${items.length} 张可用授权图片。选择后将替换主参考图。` : '暂未找到可用人物。请确认官方认证已完成、素材已生效，且当前账号与项目正确，再点击刷新。');
+    message('assets-status', items.length ? `找到 ${items.length} 张可用授权图片。选择后将替换主参考图。` : '还没有可用照片。已认证人物会显示在页面人物选择中，可关闭弹窗直接上传照片。');
   }
   async function startAutomatic(force = false) {
     const previous = activeVerification;
@@ -130,7 +130,8 @@
         message('invite-status', result.message, ['failed','expired'].includes(result.status));
         if (result.status === 'verified') {
           rememberRequest(null); clearQR(); message('invite-status', result.message);
-          await loadAssets(); return;
+          window.dispatchEvent(new CustomEvent('portrait-verified', {detail:result}));
+          message('assets-status', '人物已添加。关闭弹窗后直接上传照片，系统会自动校验。'); return;
         }
         if (['failed','expired','cancelled'].includes(result.status)) { rememberRequest(null); clearQR(); return; }
       } catch (error) {

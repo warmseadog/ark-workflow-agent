@@ -3,11 +3,33 @@ from dataclasses import asdict
 from pathlib import Path
 from . import portrait_service
 
+class PortraitPending(Exception):
+    pass
+
+
 OFFICIAL_BASE='https://ark.cn-beijing.volces.com/api/v3'
 
 
 def prepare(settings, store, draft, generation):
+    if draft.get('person_id'):
+        from .portrait_library import PortraitLibrary
+        lib=PortraitLibrary(settings)
+        person=lib.person(draft['person_id'],private=True)
+        if generation.protocol!='ark' or generation.base_url.rstrip('/')!=OFFICIAL_BASE:
+            raise ValueError('已认证人物仅支持火山官方模型接口。')
+        uploads={ident:lib.enqueue(person['id'],ident)['id'] for ident in draft['face_asset_ids']}
+        return {'config':asdict(lib.config),'person_id':person['id'],'group_id':person['group_id'],
+                'uploads':uploads,'bindings':{}}
     bindings={ident:store.portrait_binding(ident) for ident in draft['face_asset_ids']}
+    if draft.get('person_id'):
+        from .portrait_library import PortraitLibrary
+        lib=PortraitLibrary(settings)
+        person=lib.person(draft['person_id'],private=True)
+        if generation.protocol!='ark' or generation.base_url.rstrip('/')!=OFFICIAL_BASE:
+            raise ValueError('已认证人物仅支持火山官方模型接口。')
+        uploads={ident:lib.enqueue(person['id'],ident)['id'] for ident in draft['face_asset_ids']}
+        return {'config':asdict(lib.config),'person_id':person['id'],'group_id':person['group_id'],
+                'uploads':uploads,'bindings':{}}
     bindings={ident:value for ident,value in bindings.items() if value}
     if not bindings:return None
     if generation.protocol!='ark' or generation.base_url.rstrip('/')!=OFFICIAL_BASE:
@@ -27,6 +49,33 @@ def verify(snapshot, store):
     config=portrait_service.PortraitConfig(**snapshot['config'])
     api=portrait_service.ArkPortraitClient(config)
     image_uris={}
+    if snapshot.get('uploads'):
+        from types import SimpleNamespace
+        from .portrait_library import PortraitLibrary, validate_photo
+        import time
+        lib=PortraitLibrary(SimpleNamespace(storage_dir=store.storage))
+        if portrait_service.fingerprint(config)!=lib.account:
+            raise ValueError('真人账号或项目已变更，请重新选择人物和照片。')
+        waiting=False
+        for ident,job_id in snapshot['uploads'].items():
+            photo=lib.get_photo(job_id,private=True)
+            if photo['person_id']!=snapshot['person_id']:
+                raise ValueError('任务照片与所选人物不匹配。')
+            if photo['status']=='failed': raise ValueError(photo['message'])
+            if photo['status']!='active':
+                if photo['status']=='uncertain': raise ValueError('照片提交结果待确认，请在人物照片处查看状态后重新提交。')
+                if time.time()-photo['created']>1800:
+                    raise ValueError('官方照片校验仍未完成，请待照片可用后重新提交视频。')
+                waiting=True
+        if waiting: raise PortraitPending('等待人物照片校验，可继续准备其他视频')
+        for ident,job_id in snapshot['uploads'].items():
+            photo=lib.get_photo(job_id,private=True)
+            asset=store.get_asset(ident,private=True)
+            path=validate_photo(SimpleNamespace(storage_dir=store.storage),asset)
+            if asset['sha256']!=photo['sha256']: raise ValueError('照片内容与校验记录不一致。')
+            remote=api.get_asset(photo['remote_id'])
+            if remote['group_id']!=snapshot['group_id']: raise ValueError('照片授权人物发生变化。')
+            image_uris[str(path)]='asset://'+photo['remote_id']
     for ident,binding in snapshot['bindings'].items():
         remote=api.get_asset(binding['remote_asset_id'])
         if any(remote[k]!=binding[k] for k in ('remote_asset_id','group_id','project')):
