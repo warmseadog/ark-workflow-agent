@@ -166,3 +166,18 @@ Python 3.11、虚拟环境、FFmpeg 和缺少的 libGL 动态库均位于新项�
 - 验证：312pytest通过；新联动1440/390、原流程1440/390浏览器回归通过；独立审查发现的光标、复制保存和正文保留问题均已修复并复查。
 - 公网1440/390验证当前草稿可见提示词与服务端保存一致、4份素材不变、历史任务快照不变，无JS错误/横向溢出；匿名401、原网站200。原服务PID18654与Nginx指纹不变，新服务active、NRestarts0。
 - 未提交新的模型生成任务。
+
+
+## 2026-09-27 六类配饰、常驻场景与虚拟人物库
+
+- 功能提交 e26beff，官方素材下载域名修复 3a781b0。当前 release 为 /opt/ark-video-workflow/releases/20260927-accessories-virtual；上一版 20260927-prompt-sync 保留。仅部署代码，备份位于 data/backups/before-accessories-virtual/，含 production.db、local-preferences.db、portrait-sessions.db。
+- 衣服参考的更多搭配为包包、帽子、手表、鞋子、项链、眼镜。场景始终展开但可选；草稿恢复、停用保留、任务快照、动态图片编号和 9 张上限均已接入。
+- 虚拟人物以 AIGC 与真人 LivenessFace 分开管理，接入官方创建、TOS 上传、状态查询、已有素材导入；后台展示配置、连通状态与实际生成成功记录，照片可用不等于出片成功。
+- 331 项 pytest 通过；测试环境及真实云端 1440/390 浏览器验证通过，无 JS 错误、移动端无横向溢出。匿名 API 401；服务数据目录 uid998，业务目录0700、cache0755。原 director-prompt-h5 PID18654 未变。
+- 首次发布前发现用户任务 b1171d2b78674832bf4cbf63f773800b 正在运行，停止部署，待其于北京时间22:14成功后才发布。该成功任务不是新虚拟人物库验收。
+- 实测人物“虚拟人物 · 当前参考角色”，本地ID 15d808a1a89237c488e4ae2dde6f5a92；官方组 group-20260927221559-mv8zc；官方素材 asset-20260927221602-f78sd。官方查询确认 AIGC / Active / default / Image。
+- 独立复制草稿“虚拟人物库接入验收 · 4秒”，原用户草稿未替换。首次 run ce9db0f26f8b493e87756588b1f5a46d；间隔约6分钟后重试 run 59c14e466afc4524ad03073e2bafc85a。两次均在 submitting 阶段 HTTP400，provider_task_id 为空，模型未受理生成。
+- 两次错误均为 InvalidParameter: The parameter `content[1].image_url.url` specified in the request is not valid: The specified asset asset-20260927221602-f78sd is not found.
+- 首次 Request ID：021790518651843640844006c495b97e3327b5d9afec85689114b；第二次：021790518941161efca7158d8a072a352f4e6ec3154e35a91d054。
+- 用户确认 AK/SK 与模型 API Key 为同一账号。官方文档说明 API Key 按资源项目隔离；项目不一致目前仅为待验证假设，不能据此断言根因。项目核对来源：https://docs.volcengine.com/docs/ark/manage-api-keys?lang=zh 。实际出片验收未通过，不应标记已保证生成。
+- 自动审批拒绝了 ListApiKeys 账号关联诊断，该命令没有执行；不继续探查密钥列表。后续只核对已知素材状态、非敏感配置和用户提供的项目名称。

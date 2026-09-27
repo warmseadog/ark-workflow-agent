@@ -25,22 +25,22 @@
 ## Task 1: Accessories and scene (root)
 Files: production_router/store/worker, video_provider, reference_prompt/media, production.js/css/templates and tests.
 Interfaces: draft fields {kind}_asset_ids and {kind}_enabled; kinds bag/hat/watch/shoes/necklace/glasses. VideoProvider.generate(..., accessories: dict[str,list[Path]]|None=None). Single manifest order face1,clothing1,remaining faces/clothes,hairstyle,scene,accessories in listed order.
-- [ ] Write failing API/provider tests for category validation, snapshot persistence and counted enabled references, precise role errors.
-- [ ] Implement durable fields and worker/provider forwarding, role rules.
-- [ ] Implement controls, previews, toggles, live count and restore; make scene noncollapsible.
-- [ ] Run targeted and browser checks.
+- [x] Write failing API/provider tests for category validation, snapshot persistence and counted enabled references, precise role errors.
+- [x] Implement durable fields and worker/provider forwarding, role rules.
+- [x] Implement controls, previews, toggles, live count and restore; make scene noncollapsible.
+- [x] Run targeted and browser checks.
 
 ## Task 2: Virtual library (one delegated implementer)
 Files owned: portrait_service/library/generation/router, portrait-people.js, new virtual JS/CSS/templates, tests/test_virtual_library.py. Do not edit root-owned files; report tiny integration changes needed.
 Interfaces: existing person_id stays; people add person_type AIGC/LivenessFace. /api/portrait/people supports virtual create/sync; photos existing workflow accepts AIGC by explicit type. Production router continues calling PortraitLibrary.person, prepare/verify. UI integration through portraitPeople and portrait-person-changed event. Additional UI mount dynamically or separate include, no production.js edits.
-- [ ] Write failing tests proving virtual and real types segregate and AIGC request/URI validation.
-- [ ] Implement official AIGC group create/list/get/asset upload with entitlement errors, local durable state and existing TOS.
-- [ ] Implement virtual library creation/selection/rename/sync/photos, usable and generated-success distinction; import Asset ID only when verified official metadata accessible, explain any unsupported public API.
-- [ ] Add backend config/status exposure and frontend admin section via separate mount; root adds includes if needed.
-- [ ] Run relevant regression tests; report actual account limitations.
+- [x] Write failing tests proving virtual and real types segregate and AIGC request/URI validation.
+- [x] Implement official AIGC group create/list/get/asset upload with entitlement errors, local durable state and existing TOS.
+- [x] Implement virtual library creation/selection/rename/sync/photos, usable and generated-success distinction; import Asset ID only when verified official metadata accessible, explain any unsupported public API.
+- [x] Add backend config/status exposure and frontend admin section via separate mount; root adds includes if needed.
+- [x] Run relevant regression tests; report actual account limitations.
 
 ## Task 3: Integration and release (root with fresh review)
-- [ ] Run full pytest; browser upload/draft/selection/responsive checks.
-- [ ] Fresh code review of diff; fix material findings.
-- [ ] Read-only production readiness check, package code only, safe service rollout if idle, verify health and UI.
-- [ ] Official permissions check and smallest permitted generation validation using selected usable virtual asset; do not assert completion if privileges/content block it.
+- [x] Run full pytest; browser upload/draft/selection/responsive checks.
+- [x] Fresh code review of diff; fix material findings.
+- [x] Read-only production readiness check, package code only, safe service rollout if idle, verify health and UI.
+- [ ] Official permissions and upload verified; generation acceptance remains blocked: Active AIGC asset is rejected as not found by the model. See deployment record for both attempts and Request IDs.
