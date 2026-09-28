@@ -181,3 +181,69 @@ Python 3.11、虚拟环境、FFmpeg 和缺少的 libGL 动态库均位于新项�
 - 首次 Request ID：021790518651843640844006c495b97e3327b5d9afec85689114b；第二次：021790518941161efca7158d8a072a352f4e6ec3154e35a91d054。
 - 用户确认 AK/SK 与模型 API Key 为同一账号。官方文档说明 API Key 按资源项目隔离；项目不一致目前仅为待验证假设，不能据此断言根因。项目核对来源：https://docs.volcengine.com/docs/ark/manage-api-keys?lang=zh 。实际出片验收未通过，不应标记已保证生成。
 - 自动审批拒绝了 ListApiKeys 账号关联诊断，该命令没有执行；不继续探查密钥列表。后续只核对已知素材状态、非敏感配置和用户提供的项目名称。
+
+
+## 2026-09-28 虚拟人物库交互简化
+
+- 已定向更新当前 release 的 virtual-library.js、virtual-library.css 及 production/studio/admin_settings 三个模板。发布前确认服务器文件与本地 HEAD 内容一致（仅换行符差异），没有覆盖其他页面改动。
+- 默认显示人物、可用照片状态、当前素材项目；创建、已有素材导入及 ID 说明按需展开。“同步官方 AIGC 素材组”改为“读取云端人物列表”，明确只读取名单；照片需单独导入。
+- 旧文件备份：/opt/ark-video-workflow/code-backups/20260928T052634Z-virtual-library-simple。资源版本 20260928-simple-2。
+- 桌面 1440 / 手机 390 浏览器流程通过，覆盖创建、选择、上传、Active、列表同步不重复创建、照片导入及后台检查；导入弹窗无横向溢出。
+- 服务器实际返回的首页、后台模板及两份静态资源验证通过，静态资源字节与本地一致。服务 active，PID 220850 未变；无需重启。未修改人物、任务、凭据或存储配置，未提交生成任务。本次未通过已登录公网浏览器复验。
+
+
+## 2026-09-28 虚拟人物直接管理
+
+- 已发布 /opt/ark-video-workflow/releases/20260928T053725Z-virtual-management，上一版本 /opt/ark-video-workflow/releases/20260927-accessories-virtual 保留；数据库备份 /opt/ark-video-workflow/data/backups/before-virtual-management-20260928T053725Z/production.db（0600）。
+- 顶部常驻新增人物按钮；人物卡片直接提供使用、添加照片、改名、移除。上传在弹窗内完成，并显示检查进度，检查通过后自动启用使用；使用会再次通过官方导入校验再加载到制作台。
+- 移除为当前账号连接下的本地隐藏，需要卡片内二次确认；不删除人物、照片、云端组或历史任务。新增 portrait_hidden_people 表保存移除状态，普通刷新和云端名单同步不会恢复，用户可从已移除人物恢复。
+- API 新增 DELETE /api/portrait/people/{ident}、POST /api/portrait/people/{ident}/restore、GET /api/portrait/people/{ident}/reference。移除/恢复仅支持 AIGC 并按当前账号连接隔离。
+- 当前应用 tests 目录 333 项测试通过；根目录直接 pytest 被已有 video-production-module/tests/conftest.py 副本引发的 ImportPathMismatchError 阻断，未改动该独立副本。1440/390 浏览器流程覆盖新增、改名、弹窗直接上传、检查完成、使用、刷新、取消移除、确认移除、同步保持移除、恢复与官方导入；无 JS 错误与横向溢出。
+- 发布前生成队列与照片队列均为空；只重启 ark-video-workflow.service。服务器首页、后台、静态文件字节与三个新接口的 OpenAPI 校验通过；已有 5 位人物的 ID、名称、可用照片数一致。未操作现有人物移除/改名，未提交付费生成；原 director-prompt-h5 PID 18654 保持不变。
+
+
+## 2026-09-28 人物选择框加宽
+
+- 选择入口占满人物参考栏，下拉面板独立于窄栏：桌面 420px，手机最大屏宽减 24px，自动贴合视口并控制高度，人物列表独立滚动。
+- 常驻搜索框、真人/虚拟人物切换；每项仅名称、照片状态及已选标记。去掉生成历史长说明；虚拟页签提供虚拟管理入口，不显示真人认证入口。
+- 1440/390 人物选择浏览器回归与虚拟人物管理浏览器回归全部通过，含搜索、页签入口、宽度/越界检查、选择、改名、上传、移除恢复。
+- 发布五个前端/模板文件，备份 /opt/ark-video-workflow/code-backups/20260928T054430Z-person-picker，静态版本 20260928-picker-1。服务器首页与静态内容验证一致，服务 PID 255571 不变，无重启、无业务数据变更。
+
+## 2026-09-28 人物管理迁入后台与指定素材导入
+
+- 发布版本 `/opt/ark-video-workflow/releases/20260928T061218Z-backend-people`；前版本 `/opt/ark-video-workflow/releases/20260928T053725Z-virtual-management` 保留，数据库备份 `/opt/ark-video-workflow/data/backups/before-backend-people-20260928T061218Z/production.db`（0600）。首次发布因将官方编号数等同于去重照片数导致校验失败，已自动回退；确认去重原因后重新发布通过。
+- 后台新增 `/admin/settings#people` 人物库：真人/虚拟分类、按 Asset ID 导入并命名、照片添加、改名、本地移除与恢复，连接参数折叠展示。制作页仅选择人物、按名称搜索和后台入口；点击已有可用照片的人物会再次核实并加载照片。有可用照片的人物优先展示。
+- 真人与虚拟人物均可读取当前账号下的可用参考照片、本地移除和恢复，云端素材及历史任务保留。配置仍按当前账号与项目隔离。
+- 使用服务器现有 `FANGZHOU-AI` 凭据逐项 GetAssetGroup/GetAsset 核查，导入用户指定的 5 组 11 个 Asset ID。yoyo 3 个编号对应 2 张不同图片（7x5kr 与 c5nds 内容相同）；番茄虚拟人像库、yoyo生图素材、yoyo-真人头像、番茄-真人头像各 2 张。11 个编号绑定全部存在，人物列表按图片内容去重共 10 张。导入前备份 `/opt/ark-video-workflow/data/backups/before-named-people-import-20260928T060813Z/production.db`。
+- 应用测试 334 项通过；1440/390 浏览器验证后台新增、改名、上传、移除/恢复、按类型与编号导入真人及虚拟照片、制作页按名称选用、草稿恢复和任务隔离，无 JS 错误。服务器前后台页面、10 个发布文件、5 组人物及参考照片接口验证通过。
+- 发布前确认生成与照片处理队列空闲，只重启 ark-video-workflow.service；director-prompt-h5.service PID 未变。未新建云端素材、未迁移项目、未提交视频生成，Active 不视为已核实模型生成权限或真人授权用途。
+
+## 2026-09-28 先选人物，再选照片
+
+- 发布 `/opt/ark-video-workflow/releases/20260928T071742Z-person-photos`，上一版本 `/opt/ark-video-workflow/releases/20260928T061218Z-backend-people`；备份 `/opt/ark-video-workflow/data/backups/before-person-photos-20260928T071742Z/production.db`（0600），发布前生成与照片队列均空闲。
+- 制作页选择人物后展示该人物的照片缩略图，点击“使用这张”才更新草稿；已选人物下常驻“选照片”。选择框取消不会更换人物或参考图。同一人物换主图保留其他不同参考图；切换人物时移除旧人物参考图。
+- 照片面板可直接上传新照片，复用既有队列自动入库检查。未通过检查的照片不可选；处理中可关闭，下次打开继续查看；相同图片内容复用既有记录。提供刷新和失败/待确认后的重新检查。配置、编号导入和人物管理仍在后台。
+- 新增 GET /api/portrait/people/{ident}/photos，仅查询当前凭据范围下此人物的本地照片记录，返回本地预览路径及状态，不向前端暴露私有文件路径或云端签名地址。选用时继续通过官方接口核实照片。
+- 336 项应用测试通过。1440/390 浏览器验证挑选不同照片、取消、草稿恢复、官方校验失败保留原图、上传/等待检查/重开/复用、重复上传去重、跨人物清理旧参考图；后台管理回归及制作任务快照、延迟上传隔离回归通过，无 JS 错误或横向溢出。
+- 服务器首页、新静态资源及 5 组照片列表发布后验证通过，共更新 9 个文件；仅重启 ark-video-workflow.service，其他服务未改变。线上未上传新素材、未改动现有草稿、未提交生成任务。
+
+## 2026-09-28 发型参考图独立人脸打码
+
+- 发布 `/opt/ark-video-workflow/releases/20260928T073002Z-hairstyle-mask`，保留前版 `/opt/ark-video-workflow/releases/20260928T071742Z-person-photos`，数据库备份 `/opt/ark-video-workflow/data/backups/before-hairstyle-mask-20260928T073002Z/production.db`（0600）。发布前任务与照片队列空闲，仅重启当前工作流服务。
+- 发型参考图默认始终执行脸部马赛克：mask_scale=1.0、threshold=0.2，与视频 1.4 的参数独立。使用已有 CenterFace/OpenCV 检测器，椭圆范围内打码以减少对周围头发覆盖；允许折叠调整倍数与检测阈值。
+- 新增 hairstyle_mask 草稿/任务快照字段，无数据库表迁移；旧草稿缺省仍按 1.0/0.2 处理。上传、替换、调整参数后自动预览，原图保留，缓存键包含原图哈希、参数与处理版本。生成使用同一份处理后的 PNG；检测/处理异常会阻断提交，无原图回退。未检出人脸明确提示用户检查预览。
+- 新增 POST /api/production/hairstyle/preview 与 GET /api/production/hairstyle/preview/{key}，限制输入类型、参数、图片尺寸及缓存文件名；仅返回本地预览 URL，不暴露源文件路径。
+- 343 项测试通过；桌面/手机验证自动预览、1.0 独立默认、微调、禁用/重启用和刷新恢复；发型/场景提示词联动与快照回归通过。像素测试验证默认脸框外和椭圆角落保持不变，缓存按参数分离，源图未改，处理失败不会提交原图。
+- 使用线上服务实际环境加载检测器成功。发布后用服务器最近一张已有发型图调用预览，检出 1 张人脸，返回有效 PNG，参数 1.0/0.2，源文件哈希未变。未提交视频生成任务。
+
+
+### 2026-09-28 人物视频参考
+
+- 发布目录：`/opt/ark-video-workflow/releases/20260928T081635Z-person-video`。
+- 回滚目录：`/opt/ark-video-workflow/releases/20260928T073002Z-hairstyle-mask`。
+- 数据库备份：`/opt/ark-video-workflow/data/backups/before-person-video-20260928T081635Z/production.db`。
+- 人物参考支持图片／视频切换。视频按所选人物入库，官方 Active 后可选；上传检查、复用、预览、草稿保存／恢复、任务详情均支持。仅移除本次选择时保留库内视频。
+- 接入当前官方 Ark Seedance 2.0：MP4/MOV、2–15 秒、单段 50 MB 内，动作与人物视频总时长不超过 15 秒。人物视频使用 `AssetType=Video` 及 `asset://` 引用作为 Video2；动作视频为 Video1，继续打码。人物视频不打码；衣服与可选图片编号随模式调整。
+- 人物素材新增 `kind` 字段与 `video_count`，保留照片默认行为。视频模式只校验／提交视频身份参考，不提交草稿内保留的闲置人物照片。
+- 验证：350 项 pytest 通过；1440/390 浏览器人物视频与原照片流程通过；服务器健康、静态文件、5 组原人物资料核查通过；服务环境读取 3 秒 H.264 视频成功、无效视频上传返回 422。
+- 官方素材服务在本地测试中使用模拟响应；本次上线未创建云端视频资产、未提交付费生成任务。首次真实人物视频的官方一致性检查和生成效果须以用户实际上传后的返回为准。

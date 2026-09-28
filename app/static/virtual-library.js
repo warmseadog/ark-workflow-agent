@@ -8,15 +8,15 @@
     if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : '虚拟库操作未完成');
     return data;
   }
-  const admin = document.getElementById('section-overview');
+  const admin = document.getElementById('section-people');
   if (admin) {
     const card = document.createElement('div'); card.className = 'card';
-    card.innerHTML = `<h3>官方人物库 · AIGC 虚拟人物</h3>
-      <p>与真人库共用当前项目 AK/SK。虚拟人物无需本人活体认证；上传照片仍需通过官方检查。</p>
-      <p data-status role="status">读取配置中…</p><p data-counts></p><p data-history></p><p data-failures></p><button type="button" class="secondary" data-test>只读检查 AIGC 权限</button>
+    card.innerHTML = `<h3>素材库连接</h3>
+      <p>真人与虚拟人物共用此连接。项目名称须与官方素材所属项目一致。</p>
+      <p data-status role="status">读取配置中…</p>
       <details><summary>人物库连接设置</summary>
       <form data-config><label>项目名称<input name="project_name" maxlength="128" required autocomplete="off"></label>
-      <label><input name="use_storage_credentials" type="checkbox">明确使用已保存的 TOS AK/SK</label>
+      <label><input name="use_storage_credentials" type="checkbox">使用对象存储中已保存的 AK/SK</label>
       <label>Access Key<input name="access_key" type="password" autocomplete="new-password" placeholder="留空保留现有值"></label>
       <label>Secret Key<input name="secret_key" type="password" autocomplete="new-password" placeholder="留空保留现有值"></label>
       <button type="submit" class="primary">保存人物库连接</button></form></details>`;
@@ -24,20 +24,10 @@
     const status = card.querySelector('[data-status]'), form = card.querySelector('form');
     async function refresh() {
       const [data,config] = await Promise.all([request('virtual/status'),request('config')]);
-      status.textContent = `项目 ${data.project_name} · AK/SK ${data.ready ? '已配置' : '未配置'} · TOS ${data.tos_ready ? '已配置' : '未配置'}。权限尚需只读检查；创建、生成权限以官方实际响应为准。`;
-      const counts = data.photo_counts || {};
-      card.querySelector('[data-counts]').textContent = `本地 AIGC 素材组 ${data.people_count} · 可用照片 ${counts.active || 0} · 处理中 ${(counts.queued || 0) + (counts.uploading || 0) + (counts.submitting || 0) + (counts.processing || 0)} · 失败 ${counts.failed || 0} · 结果待确认 ${counts.uncertain || 0}`;
-      const last = data.last_success;
-      card.querySelector('[data-history]').textContent = last ? `最近成功：${new Date(last.time).toLocaleString()} · ${last.model || '未记录模型'}${last.mode === 'mock' ? '（模拟任务）' : ''}` : '尚无虚拟人物生成成功记录。';
-      card.querySelector('[data-failures]').textContent = (data.recent_failures || []).map(item => item.name + '：' + item.message).join('；');
+      status.textContent = `当前项目：${data.project_name} · ${data.ready ? '连接配置已保存' : '尚未配置密钥'}`;
       form.elements.project_name.value = config.project_name;
       form.elements.use_storage_credentials.checked = config.use_storage_credentials;
     }
-    card.querySelector('[data-test]').addEventListener('click',async event => {
-      const button = event.currentTarget; button.disabled = true;
-      try { status.textContent = '正在只读查询官方 AIGC 素材组…'; status.textContent = (await request('virtual/test','POST',{})).message; }
-      catch (error) { status.textContent = error.message; } finally { button.disabled = false; }
-    });
     form.addEventListener('submit',async event => {
       event.preventDefault(); const button = form.querySelector('button'); button.disabled = true;
       try {
@@ -49,84 +39,195 @@
     });
     refresh().catch(error => { status.textContent = error.message; });
   }
-  const picker = document.getElementById('person-picker');
-  if (!picker || !window.portraitPeople) return;
-  const open = document.createElement('button'); open.type = 'button'; open.className = 'secondary virtual-library-open'; open.textContent = '管理虚拟人物库';
-  picker.insertAdjacentElement('afterend',open);
+  if (!admin) return;
+  let people = [], libraryType = 'AIGC';
+  window.portraitPeople = {
+    get items() { return people; }, selected:null,
+    async refresh() {
+      people = ((await request('people')).items || []).sort((a,b) => Number(b.photo_count > 0)-Number(a.photo_count > 0));
+      const real = people.filter(p => p.person_type === 'LivenessFace');
+      const virtual = people.filter(p => p.person_type === 'AIGC');
+      admin.querySelector('[data-library-counts]').textContent = `真人 ${real.length} 位 · 虚拟人物 ${virtual.length} 位 · 可用照片 ${people.reduce((n,p) => n + p.photo_count,0)} 张`;
+    }
+  };
+  window.portraitPeople.refresh().catch(() => { admin.querySelector('[data-library-counts]').textContent = '人物读取失败，请打开管理重试。'; });
+  window.addEventListener('portrait-verified',() => refresh().catch(error => { status.textContent = error.message; }));
+  const open = document.getElementById('manage-people');
   const dialog = document.createElement('dialog'); dialog.className = 'portrait-dialog virtual-library-dialog';
   dialog.setAttribute('aria-labelledby','virtual-library-title');
-  dialog.innerHTML = `<div class="portrait-heading"><div><p class="eyebrow">OFFICIAL AIGC LIBRARY</p><h2 id="virtual-library-title">虚拟人物库</h2></div><button type="button" data-close aria-label="关闭虚拟人物库">×</button></div>
-    <p>管理当前账号与项目的官方 AIGC 素材组（也可能包含商品等非人物图片）。创建人物后，选中它并在制作台上传照片；照片通过官方检查后才能使用。</p>
-    <p class="portrait-small">“照片可用”和“已成功生成”分别记录。官方公用素材仅能在当前凭据可读取并核实类型、项目与状态时导入。</p>
+  dialog.innerHTML = `<div class="portrait-heading"><h2 id="virtual-library-title">人物与照片</h2><button type="button" data-close aria-label="关闭人物与照片">×</button></div>
+    <p class="virtual-intro">导入或添加照片后，回制作页按名字选择。移除只影响本工作台。</p>
+    <div class="person-library-tabs" role="group" aria-label="管理人物类型"><button type="button" data-library-type="AIGC" aria-pressed="true">虚拟人物</button><button type="button" data-library-type="LivenessFace" aria-pressed="false">真人</button></div>
+    <div class="virtual-toolbar"><button type="button" class="primary" data-new aria-expanded="false" aria-controls="virtual-create-panel">＋ 新增虚拟人物</button><button type="button" class="secondary" data-show-import>从云端导入</button></div>
+    <form id="virtual-create-panel" data-create class="virtual-create" hidden><label for="virtual-person-name">新人物叫什么？</label><input id="virtual-person-name" name="name" maxlength="60" required placeholder="例如：短发女模特"><div class="virtual-form-actions"><button class="primary" type="submit">新增</button><button type="button" class="secondary" data-cancel-create>取消</button></div></form>
     <p data-status role="status" aria-live="polite"></p>
-    <section class="portrait-section"><h3>私有虚拟人物</h3>
-      <form data-create class="virtual-create"><label for="virtual-person-name">人物名称</label><input id="virtual-person-name" name="name" maxlength="60" required placeholder="例如：短发女模特"><button class="primary" type="submit">创建官方虚拟人物</button></form>
-      <div class="portrait-actions"><button type="button" class="secondary" data-sync>同步官方 AIGC 素材组</button><button type="button" class="secondary" data-check>只读检查权限</button></div>
-      <div data-people class="virtual-people"></div><div data-pending class="portrait-small"></div>
-    </section>
-    <section class="portrait-section"><h3>导入已有官方照片</h3>
-      <p>填写官方 Asset ID，或读取当前项目可用照片。导入前会重新核实 AIGC 类型、账号可访问性、项目和 Active 状态。</p>
-      <form data-import class="virtual-create"><label for="virtual-asset-id">官方 Asset ID</label><input id="virtual-asset-id" name="asset" required maxlength="120" placeholder="asset-…"><button type="submit" class="secondary">核实并导入</button></form>
-      <button type="button" class="secondary" data-assets>读取官方可用照片</button><div data-asset-list class="virtual-people"></div>
-    </section>`;
+    <div data-people class="virtual-people"></div><div data-pending class="portrait-small"></div>
+    <details class="virtual-disclosure" data-more><summary>从云端导入已有素材</summary>
+      <p>按照片编号逐张导入，不需要读取整个云端列表。类型必须与上方所选分类一致。</p>
+      <button type="button" class="secondary" data-assets>查看云端可用照片</button><div data-asset-list class="virtual-people"></div>
+      <form data-import class="virtual-create"><label for="virtual-asset-id">照片编号（Asset ID）</label><input id="virtual-asset-id" name="asset" required maxlength="120" placeholder="asset-…"><label for="import-person-name">人物名称（可选）</label><input id="import-person-name" name="name" maxlength="60" placeholder="例如：yoyo-真人头像"><button type="submit" class="secondary">核实并导入</button></form>
+      <details class="virtual-disclosure"><summary>只找回人物名单</summary><p>读取当前账号、项目已有的素材组。不会上传或导入照片，名单也可能含商品素材。</p><button type="button" class="secondary" data-sync>读取云端人物列表</button></details>
+    </details>
+    <details class="virtual-disclosure" data-recycle><summary>已移除人物 <span data-removed-count></span></summary><p>这里只从工作台列表移除，云端素材与历史任务保留。恢复后可继续使用。</p><div data-removed-list class="virtual-people"></div></details>
+    <details class="virtual-disclosure virtual-help"><summary>使用帮助与连接信息</summary>
+      <p>虚拟人物可在这里新增；真人需先完成官方授权，或导入已有授权照片。</p>
+      <p>Asset ID 是单张云端照片的编号，仅按编号导入时需要。人物组编号由系统处理，日常无需填写。</p>
+      <p>“照片可用”表示官方状态为 Active；实际生成权限、真人授权范围仍以官方校验为准。</p>
+      <p data-project></p>
+    </details>`;
   document.body.append(dialog);
   const status = dialog.querySelector('[data-status]'), createForm = dialog.querySelector('[data-create]');
-  let working = false, createRequest = null;
+  let working = false, createRequest = null, pollTimer = null, hasPending = false, watchedPhoto = null;
+  function action(label, name, handler, className = 'secondary') {
+    const button = document.createElement('button'); button.type = 'button'; button.className = className;
+    button.textContent = label; button.dataset.action = name; button.disabled = working;
+    button.addEventListener('click',handler); return button;
+  }
   function renderPeople() {
-    const list = dialog.querySelector('[data-people]'); list.replaceChildren();
-    const people = window.portraitPeople.items.filter(person => person.person_type === 'AIGC');
+    const list = dialog.querySelector('[data-people]'); list.replaceChildren(); hasPending = false;
+    const people = window.portraitPeople.items.filter(person => person.person_type === libraryType);
     for (const person of people) {
-      const row = document.createElement('div'); row.className = 'virtual-person';
-      const text = document.createElement('span');
-      text.textContent = `${person.name} · ${person.photo_count ? person.photo_count + ' 张可用照片' : '待上传照片'} · ${person.generated_count ? '已成功生成 ' + person.generated_count + ' 次' : '尚无生成成功记录'}`;
-      const select = document.createElement('button'); select.type = 'button'; select.className = 'secondary'; select.textContent = '选择';
-      select.addEventListener('click',() => { window.portraitPeople.choose(person.id); dialog.close(); });
-      if (person.thumbnail_url) { const image = document.createElement('img'); image.src = person.thumbnail_url; image.alt = person.name; image.loading = 'lazy'; row.append(image); }
-      row.append(text,select); list.append(row);
+      const row = document.createElement('div'); row.className = 'virtual-person'; row.dataset.personId = person.id;
+      const main = document.createElement('div'); main.className = 'virtual-person-main';
+      if (person.thumbnail_url) { const image = document.createElement('img'); image.src = person.thumbnail_url; image.alt = ''; image.loading = 'lazy'; main.append(image); }
+      const text = document.createElement('div'); text.className = 'virtual-person-info';
+      const name = document.createElement('strong'); name.textContent = person.name;
+      const counts = person.photo_counts || {};
+      const pending = ['queued','uploading','submitting','processing','uncertain'].reduce((n,key) => n + (counts[key] || 0),0);
+      hasPending ||= pending > 0;
+      const state = document.createElement('small'); state.className = person.photo_count ? 'virtual-ready' : '';
+      state.textContent = [person.photo_count ? `${person.photo_count} 张照片可用` : pending ? '' : '还没有可用照片', pending ? `${pending} 张正在检查` : '', counts.failed ? `${counts.failed} 张检查失败，可重新添加` : ''].filter(Boolean).join(' · ');
+      text.append(name,state); main.append(text); row.append(main);
+      const actions = document.createElement('div'); actions.className = 'virtual-person-actions';
+      const upload = document.createElement('input'); upload.type = 'file'; upload.accept = '.png,.jpg,.jpeg,.webp'; upload.hidden = true;
+      upload.setAttribute('aria-label','给'+person.name+'添加照片'); upload.dataset.photoUpload = '';
+      upload.addEventListener('change',() => {
+        const file = upload.files[0]; if (!file) return;
+        run(async () => {
+          status.textContent = '正在为“'+person.name+'”上传照片…';
+          const body = new FormData(); body.append('file',file); body.append('kind','face');
+          const response = await fetch('/api/production/assets',{method:'POST',body});
+          const asset = await response.json();
+          if (!response.ok) throw new Error(typeof asset.detail === 'string' ? asset.detail : '照片上传失败，请重试。');
+          let job = await request('photos','POST',{person_id:person.id,asset_id:asset.id});
+          if (job.status === 'failed') job = await request('photos/'+job.id+'/retry','POST',{});
+          watchedPhoto = ['active','failed'].includes(job.status) ? null : {id:job.id,name:person.name};
+          await refresh();
+          status.textContent = job.status === 'active' ? '这张照片已可用，返回制作页按名称选择。' : job.status === 'uncertain' ? job.message : '照片已添加，正在检查。通过后可在制作页选用。';
+        }); upload.value = '';
+      });
+      const addPhoto = action('添加照片','upload',() => upload.click());
+      const editor = document.createElement('form'); editor.className = 'virtual-row-editor'; editor.dataset.editor = ''; editor.hidden = true;
+      const nameLabel = document.createElement('label'); nameLabel.textContent = '人物名称';
+      const nameInput = document.createElement('input'); nameInput.name = 'name'; nameInput.value = person.name; nameInput.required = true; nameInput.maxLength = 60; nameLabel.append(nameInput);
+      const save = document.createElement('button'); save.type = 'submit'; save.className = 'primary'; save.textContent = '保存'; save.dataset.action = 'save-name';
+      editor.append(nameLabel,save,action('取消','cancel-name',() => { editor.hidden = true; }));
+      editor.addEventListener('submit',event => { event.preventDefault(); run(async () => {
+        await request('people/'+person.id,'PUT',{name:nameInput.value.trim()}); await refresh(); status.textContent = '人物名称已保存。';
+      }); });
+      const confirmation = document.createElement('div'); confirmation.className = 'virtual-row-editor'; confirmation.dataset.editor = ''; confirmation.hidden = true;
+      const warning = document.createElement('p'); warning.textContent = '从工作台移除“'+person.name+'”？云端素材与历史任务会保留，可在下方“已移除人物”中恢复。';
+      confirmation.append(warning,action('确认移除','confirm-remove',() => run(async () => {
+        await request('people/'+person.id,'DELETE');
+        if (window.portraitPeople.selected === person.id) window.portraitPeople.choose(null);
+        await refresh(); status.textContent = '已从工作台移除，可在“已移除人物”中恢复。';
+      }),'virtual-danger'),action('取消','cancel-remove',() => { confirmation.hidden = true; }));
+      actions.append(addPhoto,action('改名','rename',() => { confirmation.hidden = true; editor.hidden = false; nameInput.focus(); nameInput.select(); }),action('移除','remove',() => { editor.hidden = true; confirmation.hidden = false; }));
+      row.append(actions,upload,editor,confirmation); list.append(row);
     }
-    if (!people.length) list.textContent = '当前项目尚无虚拟人物。可以创建或同步官方已有素材组。';
+    if (!people.length) { const empty = document.createElement('p'); empty.className = 'virtual-empty'; empty.textContent = '此分类暂无人物。已有官方照片请点击“从云端导入”。'; list.append(empty); }
+  }
+  function schedulePoll() {
+    clearTimeout(pollTimer);
+    if (!dialog.open || !hasPending) return;
+    pollTimer = setTimeout(async () => {
+      if (!working && !dialog.querySelector('[data-editor]:not([hidden])') && createForm.hidden) {
+        try { await refresh(); } catch (_) { /* Preserve the last list on transient read failures. */ }
+      }
+      schedulePoll();
+    },5000);
   }
   async function refresh() {
-    await window.portraitPeople.refresh(); renderPeople();
-    const data = await request('virtual/status');
-    const pending = data.requests.filter(item => item.status !== 'ready');
-    dialog.querySelector('[data-pending]').textContent = pending.map(item => item.message).join('；');
+    const [,data,removed,photoState] = await Promise.all([window.portraitPeople.refresh(),request('virtual/status'),request('people?removed=true'),watchedPhoto ? request('photos?ids='+encodeURIComponent(watchedPhoto.id)) : Promise.resolve(null)]);
+    renderPeople();
+    const completedPhoto = photoState?.items?.[0];
+    if (watchedPhoto && completedPhoto && ['active','failed'].includes(completedPhoto.status)) {
+      status.textContent = completedPhoto.status === 'active' ? '“'+watchedPhoto.name+'”的照片已通过检查，可在制作页选用。' : completedPhoto.message;
+      status.dataset.error = String(completedPhoto.status === 'failed'); watchedPhoto = null;
+    }
+    dialog.querySelector('[data-project]').textContent = data.ready ? `当前素材项目：${data.project_name}` : '尚未配置素材库连接，请先在后台配置。';
+    dialog.querySelector('[data-pending]').textContent = data.requests.filter(item => item.status !== 'ready').map(item => item.message).join('；');
+    const list = dialog.querySelector('[data-removed-list]'); list.replaceChildren();
+    const items = removed.items.filter(person => person.person_type === libraryType);
+    dialog.querySelector('[data-removed-count]').textContent = items.length ? `（${items.length}）` : '';
+    for (const person of items) {
+      const row = document.createElement('div'); row.className = 'virtual-removed-row';
+      const label = document.createElement('span'); label.textContent = person.name;
+      row.append(label,action('恢复','restore',() => run(async () => { await request('people/'+person.id+'/restore','POST',{}); await refresh(); status.textContent = '人物已恢复，可以继续使用。'; })));
+      list.append(row);
+    }
+    if (!items.length) list.textContent = '没有已移除的人物。';
+    schedulePoll();
   }
   async function run(operation) {
     if (working) return; working = true;
     dialog.querySelectorAll('button:not([data-close])').forEach(button => { button.disabled = true; });
-    status.textContent = '正在处理…';
-    try { await operation(); } catch (error) { status.textContent = error.message; }
-    finally { working = false; dialog.querySelectorAll('button').forEach(button => { button.disabled = false; }); }
+    status.textContent = '正在处理…'; status.dataset.error = 'false';
+    try { await operation(); } catch (error) { status.textContent = error.message; status.dataset.error = 'true'; }
+    finally {
+      working = false;
+      dialog.querySelectorAll('button').forEach(button => { button.disabled = button.dataset.needsPhoto === 'true'; });
+      schedulePoll();
+    }
   }
-  open.addEventListener('click',() => { dialog.showModal(); run(async () => { await refresh(); status.textContent = '选择虚拟人物后，在制作台添加照片；人物备注可在选择器中修改。'; }); });
+  function showCreate(show) {
+    createForm.hidden = !show; dialog.querySelector('[data-new]').setAttribute('aria-expanded',String(show));
+    if (show) createForm.elements.name.focus();
+  }
+  open.addEventListener('click',() => { dialog.showModal(); run(async () => { await refresh(); status.textContent = ''; }); });
   dialog.querySelector('[data-close]').addEventListener('click',() => dialog.close());
+  dialog.addEventListener('close',() => clearTimeout(pollTimer));
+  dialog.querySelector('[data-new]').addEventListener('click',() => showCreate(createForm.hidden));
+  dialog.querySelector('[data-cancel-create]').addEventListener('click',() => showCreate(false));
+  dialog.querySelector('[data-show-import]').addEventListener('click',() => { const details = dialog.querySelector('[data-more]'); details.open = true; details.querySelector('summary').focus(); details.scrollIntoView({block:'nearest'}); });
   createForm.addEventListener('submit',event => {
     event.preventDefault();
     run(async () => {
-      const name = createForm.elements.name.value.trim();
-      if (!name) throw new Error('请填写虚拟人物名称。');
+      const name = createForm.elements.name.value.trim(); if (!name) throw new Error('请填写人物名称。');
       if (!createRequest || createRequest.name !== name) createRequest = {name,request_id:crypto.randomUUID()};
       const data = await request('people','POST',{...createRequest,person_type:'AIGC'});
       await refresh(); status.textContent = data.message;
-      if (data.status === 'ready') { createForm.reset(); createRequest = null; }
+      if (data.status === 'ready') { createForm.reset(); createRequest = null; showCreate(false); status.textContent = '人物已新增。点击它旁边的“添加照片”即可入库。'; }
     });
   });
   dialog.querySelector('[data-sync]').addEventListener('click',() => run(async () => {
-    await request('people/sync','POST',{person_type:'AIGC'}); await refresh(); status.textContent = '官方 AIGC 素材组已同步；素材组也可能包含商品等非人物图片，请按用途选择。创建结果待确认的记录不会自动重复提交。';
+    status.textContent = '正在读取云端人物列表…';
+    await request('people/sync','POST',{person_type:libraryType}); await refresh(); status.textContent = '人物列表已更新。已有照片请从云端导入；新照片请点击人物旁的“添加照片”。已移除人物需手动恢复。';
   }));
-  dialog.querySelector('[data-check]').addEventListener('click',() => run(async () => { status.textContent = (await request('virtual/test','POST',{})).message; }));
-  async function importAsset(id) {
-    const asset = await request('import','POST',{remote_asset_id:id,person_type:'AIGC'});
-    await window.productionPortraits.importAsset(asset); await refresh(); status.textContent = '已核实官方虚拟照片并设为主参考图。'; dialog.close();
+  async function importAsset(id, name = '') {
+    const asset = await request('import','POST',{remote_asset_id:id,person_type:libraryType});
+    const person = await request('people/resolve','POST',{group_id:asset.portrait.group_id,person_type:libraryType});
+    if (name) await request('people/'+person.id,'PUT',{name});
+    await request('people/'+person.id+'/restore','POST',{});
+    await refresh(); status.textContent = '照片已导入。返回制作页，按人物名称选择即可使用。';
   }
-  dialog.querySelector('[data-import]').addEventListener('submit',event => { event.preventDefault(); run(() => importAsset(event.currentTarget.elements.asset.value.trim())); });
+  dialog.querySelectorAll('[data-library-type]').forEach(button => button.addEventListener('click',() => {
+    libraryType = button.dataset.libraryType; showCreate(false);
+    dialog.querySelector('[data-new]').hidden = libraryType !== 'AIGC';
+    dialog.querySelectorAll('[data-library-type]').forEach(tab => tab.setAttribute('aria-pressed',String(tab === button)));
+    dialog.querySelector('[data-asset-list]').replaceChildren(); status.textContent = '';
+    dialog.querySelector('[data-import]').reset(); run(async () => { await refresh(); status.textContent = ''; });
+  }));
+  dialog.querySelector('[data-import]').addEventListener('submit',event => {
+    event.preventDefault(); const form = event.currentTarget;
+    run(() => importAsset(form.elements.asset.value.trim(),form.elements.name.value.trim()));
+  });
   dialog.querySelector('[data-assets]').addEventListener('click',() => run(async () => {
-    const data = await request('assets?person_type=AIGC'); const list = dialog.querySelector('[data-asset-list]'); list.replaceChildren();
+    status.textContent = '正在读取云端可用照片…';
+    const data = await request('assets?person_type='+libraryType); const list = dialog.querySelector('[data-asset-list]'); list.replaceChildren();
     for (const asset of data.items) {
-      const button = document.createElement('button'); button.type = 'button'; button.className = 'person-option';
-      button.textContent = `${asset.name || asset.id} · 官方可用`; button.addEventListener('click',() => run(() => importAsset(asset.id))); list.append(button);
+      const button = action(`${asset.name || asset.id} · 导入`,'import-asset',() => run(() => importAsset(asset.id)),'person-option'); list.append(button);
     }
-    status.textContent = data.items.length ? '选择照片后会再次核实并导入。' : '当前项目无可读取的官方 AIGC 可用照片；未返回素材不代表已开通公用库权限。';
+    status.textContent = data.items.length ? '选择照片后会核实并保存到人物库。' : '没有找到可用照片，请检查账号、素材项目或照片状态。';
   }));
 })();

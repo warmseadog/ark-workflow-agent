@@ -5,7 +5,8 @@
   <title>方舟 · 后台配置</title>
   <link rel="stylesheet" href="/static/model-settings.css?v=20260927">
   <link rel="stylesheet" href="/static/admin-settings.css?v=20260927">
-  <link rel="stylesheet" href="/static/virtual-library.css?v=20260927-1">
+  <link rel="stylesheet" href="/static/portrait.css?v=20260928-backend-1">
+  <link rel="stylesheet" href="/static/virtual-library.css?v=20260928-backend-1">
 </head>
 <body>
   <aside class="sidebar">
@@ -15,6 +16,7 @@
       <a href="#overview" data-section="overview"><span>◫</span> 配置概览</a>
       <a href="#model" data-section="model"><span>◇</span> 视频模型</a>
       <a href="#tikhub" data-section="tikhub"><span>↗</span> 链接解析 <small>TikHub</small></a>
+      <a href="#people" data-section="people"><span>♙</span> 人物库</a>
       <a href="#storage" data-section="storage"><span>▱</span> 对象存储 <small>TOS</small></a>
       <a href="#prompts" data-section="prompts"><span>≡</span> 提示词模板</a>
       <a href="#redaction" data-section="redaction"><span>▦</span> 打码参数</a>
@@ -37,6 +39,10 @@
         </div>
         <div class="card"><p class="eyebrow">YOUR WORKFLOW</p><h3>从参考视频到生成结果</h3><div class="workflow"><span>链接 / 本地视频</span><i>→</i><span>本地打码</span><i>→</i><span>TOS / 公网地址</span><i>→</i><span>视频模型</span></div><p class="hint">启用 TOS 后，火山方舟读取带有效期的打码视频链接。其他服务商继续使用各自的素材上传方式。</p><p id="overview-attention" class="notice"></p></div>
         <div class="card compact"><h3>配置生效方式</h3><p>模型、TikHub 和 TOS 保存后用于新任务。正在生成的任务保留提交时的配置。打码参数沿用当前浏览器的设置。</p></div>
+      </section>
+      <section id="section-people" class="section" hidden>
+        <div class="section-title"><div><h2>人物库</h2><p>在这里添加和管理人物，制作页直接按名字选用。</p></div></div>
+        <div class="card" id="people-management"><h3>人物与照片</h3><p data-library-counts class="hint">正在读取…</p><div class="actions"><button type="button" class="primary" id="manage-people">管理人物与照片</button><button type="button" class="secondary" data-portrait-open="invite">新增真人授权</button></div><p class="hint">已有官方照片：打开管理 → 选择真人或虚拟人物 → 按照片编号导入。</p></div>
       </section>
       <section id="section-model" class="section" hidden>
         <div class="section-title"><div><h2>视频模型</h2><p>与制作页的视频模型设置同步。</p></div><span id="model-service-status" class="badge"></span></div>
@@ -94,8 +100,10 @@
       <footer>方舟 · 配置中心 <span>配置按分区独立保存</span></footer>
     </div>
   </main>
+  {% include "portrait_panel.html" %}
   <script src="/static/model-settings.js?v=20260927"></script>
   <script src="/static/admin-settings.js?v=20260927"></script>
-  <script src="/static/virtual-library.js?v=20260927-1"></script>
+  <script src="/static/virtual-library.js?v=20260928-backend-1"></script>
+  <script src="/static/portrait.js?v=20260928-backend-1"></script>
 </body>
 </html>

@@ -159,3 +159,16 @@ def test_generated_prompt_block_does_not_consume_user_prompt_budget(client):
     assert result.status_code==200,result.text
     assert result.json()['prompt']==user+block
     assert client.put('/api/production/drafts/'+draft['id'],json={'revision':result.json()['revision'],'prompt':'a'*10001}).status_code==422
+
+
+def test_hairstyle_mask_is_separate_validated_and_frozen(client):
+    draft=complete_draft(client)
+    assert draft['hairstyle_mask']=={'mask_scale':1.0,'threshold':0.2}
+    r=client.put('/api/production/drafts/'+draft['id'],json={'revision':draft['revision'],'hairstyle_mask':{'mask_scale':1.05,'threshold':0.15}})
+    assert r.status_code==200
+    saved=r.json()
+    run=client.post('/api/production/runs',json={'draft_id':saved['id'],'revision':saved['revision'],'idempotency_key':'hair-mask-config'}).json()
+    assert run['snapshot']['hairstyle_mask']=={'mask_scale':1.05,'threshold':0.15}
+    assert run['snapshot']['mask']['mask_scale']==1.4
+    for bad in [{'mask_scale':0}, {'mask_scale':3}, {'threshold':0}, {'mask_mode':'face_hair_all'}, {'mask_scale':True}]:
+        assert client.put('/api/production/drafts/'+saved['id'],json={'revision':saved['revision'],'hairstyle_mask':bad}).status_code==422

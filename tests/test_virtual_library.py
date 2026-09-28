@@ -210,3 +210,84 @@ def test_mock_success_not_counted_as_generated(settings):
             db.execute("INSERT INTO production_runs (id,draft_id,revision,idempotency_key,snapshot,private,status,stage,message,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (mode,'draft',1,mode,json.dumps({'person_id':person['id'],'model':{'mode':mode}}),'{}','succeeded','complete','','now','now'))
     assert lib.person(person['id'])['generated_count']==1
+
+
+@pytest.mark.parametrize('person_type', ['AIGC','LivenessFace'])
+def test_remove_virtual_person_is_durable_reversible_and_preserves_photos(settings, monkeypatch, person_type):
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(main, 'settings', settings)
+    monkeypatch.setattr(service.ArkPortraitClient, 'list_groups', lambda self: [
+        {'Id': 'group-v', 'Name': 'Cloud name', 'GroupType': 'AIGC', 'ProjectName': 'default'}])
+    lib = PortraitLibrary(settings)
+    person = lib.add_person('group-v', 'Keep my name', person_type)
+    asset_id, path = local_photo(lib)
+    job = lib.enqueue(person['id'], asset_id)
+    lib.update(job['id'], status='active', remote_id='asset-existing')
+    client = TestClient(main.app)
+    url = '/api/portrait/people/' + person['id']
+    assert client.get(url + '/reference').json() == {'remote_asset_id': 'asset-existing'}
+    assert client.delete(url).status_code == 200
+    assert client.get('/api/portrait/people').json()['items'] == []
+    assert client.get('/api/portrait/virtual/status').json()['people_count'] == 0
+    assert client.post('/api/portrait/people/sync', json={'person_type':person_type}).json()['items'] == []
+    assert PortraitLibrary(settings).people() == []
+    assert path.is_file() and lib.get_photo(job['id'])['status'] == 'active'
+    removed = client.get('/api/portrait/people?removed=true').json()['items']
+    assert [p['id'] for p in removed] == [person['id']]
+    assert client.post(url + '/restore', json={}).status_code == 200
+    restored = client.get('/api/portrait/people').json()['items']
+    assert len(restored) == 1 and restored[0]['name'] == 'Keep my name'
+    assert restored[0]['photo_count'] == 1
+
+
+def test_virtual_management_rejects_other_accounts_real_people_and_pending_reference(settings, monkeypatch):
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(main, 'settings', settings)
+    lib = PortraitLibrary(settings)
+    person = lib.add_person('group-v', 'Virtual', 'AIGC')
+    real = lib.add_person('group-r', 'Real')
+    client = TestClient(main.app)
+    url = '/api/portrait/people/' + person['id']
+    assert client.get(url + '/reference').status_code == 422
+    assert client.get('/api/portrait/people/' + real['id'] + '/reference').status_code == 422
+    service.save_config(settings, {'access_key':'other', 'secret_key':'other'})
+    assert client.delete(url).status_code == 404
+    assert client.post(url + '/restore', json={}).status_code == 404
+    assert client.get(url + '/reference').status_code == 404
+    assert client.get('/api/portrait/people?removed=true').json()['items'] == []
+
+
+@pytest.mark.parametrize('person_type', ['AIGC', 'LivenessFace'])
+def test_person_photo_gallery_is_local_scoped_and_includes_processing(settings, monkeypatch, person_type):
+    from fastapi.testclient import TestClient
+    from PIL import Image
+    import hashlib
+    monkeypatch.setattr(main, 'settings', settings)
+    monkeypatch.setattr(service.ArkPortraitClient, '_request', lambda *args: pytest.fail('Gallery must not query cloud'))
+    lib = PortraitLibrary(settings)
+    person = lib.add_person('group-gallery', 'Gallery', person_type)
+    other = lib.add_person('group-other', 'Other', person_type)
+    expected = []
+    for index, state in enumerate(['active', 'processing', 'failed']):
+        path = settings.storage_dir / 'assets' / ('gallery-' + str(index) + '.png')
+        path.parent.mkdir(exist_ok=True)
+        Image.new('RGB', (400,400), ['red','blue','green'][index]).save(path)
+        asset = lib.store.add_asset('gallery'+str(index), path.name, 'face', path, path.stat().st_size, 'image/png', hashlib.sha256(path.read_bytes()).hexdigest())
+        job = lib.enqueue(person['id'], asset['id'])
+        lib.update(job['id'], status=state, remote_id='asset-gallery'+str(index))
+        expected.append(job['id'])
+    other_job = lib.enqueue(other['id'], 'gallery0')
+    client = TestClient(main.app)
+    url = '/api/portrait/people/' + person['id'] + '/photos'
+    response = client.get(url)
+    assert response.status_code == 200
+    items = response.json()['items']
+    assert {p['id'] for p in items} == set(expected)
+    assert other_job['id'] not in {p['id'] for p in items}
+    assert {p['status'] for p in items} == {'active','processing','failed'}
+    for photo in items:
+        assert photo['url'].startswith('/api/production/assets/')
+        assert set(photo) == {'id','asset_id','name','kind','url','status','message','remote_asset_id'}
+        assert photo['remote_asset_id'] == ('asset-gallery0' if photo['status']=='active' else None)
+    service.save_config(settings, {'access_key':'different', 'secret_key':'different'})
+    assert client.get(url).status_code == 404

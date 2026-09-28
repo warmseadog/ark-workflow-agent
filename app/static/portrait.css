@@ -57,3 +57,55 @@
 .person-bar button:not(.person-option), #person-name-save { border:0; background:transparent; padding:5px 0; color:var(--accent,#bb352b); font:inherit; cursor:pointer; }
 #person-photo-status[data-error=true] { color:#a8342a; }
 .person-bar [hidden] { display:none; }
+
+/* A viewport-bounded picker, independent of the narrow reference-image column. */
+.person-bar{flex-wrap:wrap}
+.person-bar .person-picker{flex:1 1 100%;width:100%}
+.person-picker > summary{min-height:42px;box-sizing:border-box;padding:10px 12px;font-size:13px;border-radius:6px}
+.person-picker > summary::-webkit-details-marker{display:none}
+.person-bar > .virtual-library-open{margin:0 0 0 auto}
+.person-picker .person-menu{position:fixed;z-index:80;right:auto;box-sizing:border-box;display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:10px;box-shadow:0 12px 36px #0003;overflow:auto;overscroll-behavior:contain}
+.person-menu-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-shrink:0;font-size:16px}
+.person-bar #person-menu-close{padding:0 8px;font-size:24px;line-height:1;color:var(--muted,#666)}
+.person-menu .person-library-tabs{margin:0;flex-shrink:0}
+.person-bar .person-library-tabs button{padding:9px 12px;border-radius:6px;background:#eee9df;color:var(--muted,#666);font-size:13px}
+.person-bar .person-library-tabs button[aria-pressed=true]{background:#b9362f;color:#fff}
+.person-menu #person-search{height:38px;flex-shrink:0;background:#fff;border-radius:6px}
+.person-menu #person-options{max-height:none;min-height:70px;overflow:auto;flex:1 1 auto;overscroll-behavior:contain}
+.person-menu .person-option{box-sizing:border-box;padding:12px;gap:10px;border-radius:6px;min-height:62px}
+.person-menu .person-option:hover{background:#f0ece4}
+.person-option-info{flex:1;min-width:0;overflow-wrap:anywhere}
+.person-option-info strong{display:block;font-size:14px;font-weight:550;line-height:1.5}
+.person-menu .person-option small{font-size:12px;line-height:1.5;margin-top:3px}
+.person-menu .person-option img{width:38px;height:38px;flex-shrink:0;border-radius:6px}
+.person-selected-label{flex-shrink:0;font-size:11px;color:#a8312a}
+.person-menu .person-ordinary{min-height:40px;margin-top:6px;font-size:12px;color:var(--muted,#666);border-top:1px solid var(--hair,#d8d0c3);border-radius:0}
+.person-menu .person-menu-actions{flex-shrink:0;gap:16px;margin:0;padding-top:10px}
+.person-bar .person-menu-actions button{font-size:12px;line-height:1.6}
+.person-menu #person-rename{flex-shrink:0}
+.person-empty{padding:12px;color:var(--muted,#666);line-height:1.7}
+.person-picker :is(button,input,summary):focus-visible{outline:2px solid var(--accent,#b9362f);outline-offset:2px}
+
+.person-library-tabs{display:flex;gap:8px;margin-bottom:10px}.person-library-tabs button{flex:1;padding:8px;border:1px solid #d7dce3;border-radius:7px;background:#fff;color:#475569}.person-library-tabs button[aria-pressed=true]{background:#edf4ff;border-color:#4c78dc;color:#245ac2;font-weight:600}.virtual-person img{width:48px;height:48px;object-fit:cover;border-radius:8px}.virtual-person span{flex:1}
+.person-menu-actions a{color:var(--accent,#b73930);padding:8px 0;text-decoration:none}
+
+/* A compact editor entry, with a roomy photo picker on desktop and mobile. */
+#person-photos-open{flex-shrink:0;padding:9px 12px;font-size:12px;white-space:nowrap}
+#person-photos-hint{margin:0 0 10px;font-size:11px;line-height:1.6}
+.person-photos-dialog{width:min(760px,calc(100vw - 24px));border-radius:12px;padding:24px}
+.person-photos-dialog .portrait-heading{align-items:flex-start}
+.person-photos-dialog [data-photo-close]{border:0;background:transparent;font-size:24px;padding:0 8px;cursor:pointer;color:inherit}
+.person-photos-toolbar{display:flex;gap:10px;margin-top:18px}
+.person-photos-toolbar button{padding:10px 14px}
+.person-photo-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:18px}
+.person-photo-card{display:flex;flex-direction:column;gap:9px;min-width:0;padding:10px;border:1px solid var(--hair,#ddd);border-radius:9px;background:#fff}
+.person-photo-card img{width:100%;aspect-ratio:4/5;object-fit:contain;background:#f0ede7;border-radius:5px}
+.person-photo-name{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.person-photo-card small{font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.person-photo-card .photo-ready{color:#26734d}.person-photo-card .photo-pending{color:#986315}
+.person-photo-card button{padding:10px 8px;font-size:12px;border-radius:5px;cursor:pointer}
+.person-photo-card [data-photo-use]{margin-top:auto}
+.person-photo-card button:disabled{cursor:default;opacity:.45}
+.person-photos-empty{grid-column:1/-1;background:#eee9df;border-radius:8px;padding:20px;text-align:center}
+[data-photo-status]:empty{display:none}[data-photo-status][data-error=true]{color:#a8342a}
+@media(max-width:540px){.person-photos-dialog{padding:16px}.person-photo-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.person-photo-card{padding:8px}#person-photos-open{padding:9px 8px}}

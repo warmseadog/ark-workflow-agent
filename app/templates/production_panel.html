@@ -61,19 +61,23 @@
         </details>
       </article>
       <article class="asset-entry">
-        <div class="asset-heading"><span>03</span><h3>人物参考图</h3><small>脸部与身份</small></div>
+        <div class="asset-heading"><span>03</span><h3>人物参考</h3><small>脸部与身份</small></div>
+        <div class="person-media-tabs" role="group" aria-label="人物参考类型"><button type="button" data-person-media="image" aria-pressed="true">图片</button><button type="button" data-person-media="video" aria-pressed="false">视频</button></div>
         <div class="person-bar" id="person-bar">
           <details id="person-picker" class="person-picker">
             <summary aria-label="选择人物"><img id="person-avatar" alt="" hidden><span id="person-current">正在读取人物…</span><span aria-hidden="true">⌄</span></summary>
-            <div class="person-menu">
-              <input id="person-search" type="search" placeholder="搜索人物备注" aria-label="搜索已认证人物" hidden>
+            <div class="person-menu" aria-label="人物选择面板">
+              <div class="person-menu-heading"><strong>选择人物</strong><button type="button" id="person-menu-close" aria-label="关闭人物选择">×</button></div>
+              <input id="person-search" type="search" placeholder="搜索人物名称" aria-label="搜索人物名称">
               <div id="person-options"></div>
-              <div class="person-menu-actions"><button type="button" data-portrait-open="invite">＋ 添加人物</button><button type="button" id="person-sync">同步人物</button><button type="button" id="person-rename-toggle" hidden>修改备注</button></div>
-              <div id="person-rename" hidden><input id="person-name" maxlength="60" aria-label="人物备注"><button type="button" id="person-name-save">保存备注</button></div>
+              <div class="person-menu-actions"><a href="/admin/settings#people">管理人物库 ↗</a></div>
             </div>
           </details>
-          <button type="button" id="person-add-first" data-portrait-open="invite" hidden>添加人物</button>
+          <button type="button" id="person-photos-open" class="secondary" hidden>选照片</button>
+          <a id="person-add-first" href="/admin/settings#people" hidden>添加人物 ↗</a>
         </div>
+        <p id="person-photos-hint" class="field-hint">先选人物，再选照片；新照片会自动入库检查。</p>
+        <div id="person-image-panel">
         <div class="asset-picker" id="face-picker">
           <span class="asset-empty"><b>＋</b><strong>上传人物参考图</strong><small>支持选择多张图片</small></span>
           <span class="asset-thumbnails" id="face-reference-preview"></span>
@@ -81,7 +85,16 @@
         </div>
         <div class="asset-footer"><span id="face-file-name">清晰正脸、光线自然</span><button type="button" data-add-images="face" data-asset-edit>＋ 添加</button></div>
         <p id="person-photo-status" class="field-hint" role="status" aria-live="polite">上传照片后自动校验，可继续准备其他素材。</p>
-        <div class="portrait-entry"><button type="button" id="person-photo-retry" hidden>重试校验</button><button type="button" data-portrait-open="assets">已有授权照片</button></div>
+        <div class="portrait-entry"><button type="button" id="person-photo-retry" hidden>重试校验</button></div>
+        </div>
+        <div id="person-video-panel" hidden>
+          <button type="button" class="person-video-empty" id="person-video-choose">＋ 选择或上传人物视频</button>
+          <video id="person-video-preview" controls playsinline preload="metadata" hidden></video>
+          <div class="asset-footer"><span id="person-video-name">先选人物，再上传视频</span><button type="button" id="person-video-remove" hidden>移除</button></div>
+          <p class="field-hint">仅参考人物身份；支持 MP4 / MOV，2–15 秒、50 MB 内。建议使用 2–5 秒的清晰单人视频。</p>
+          <p id="person-video-status" class="field-hint" role="status">新视频自动入库检查，通过后可选。</p>
+          <p id="person-video-duration" class="field-hint" role="status">动作视频 + 人物视频，合计不超过 15 秒。</p>
+        </div>
         <details class="hairstyle-references" id="hairstyle-references">
           <summary>发型参考 <span id="hairstyle-reference-state">可选</span></summary>
           <div class="optional-reference-body"><div class="asset-picker" id="hairstyle-picker">
@@ -91,8 +104,17 @@
           </div>
           <div class="asset-footer"><span id="hairstyle-file-name">未设置</span></div>
           <label class="optional-enable"><input id="hairstyle-enabled" type="checkbox"> 使用发型参考图</label>
-            <p class="field-hint">只参考发型和发色，人物身份仍使用上方人物图。不上传则沿用人物图发型。</p>
-            <p class="field-hint">建议使用不含可识别人脸的发型图片；含真人脸的图片仍需符合模型的授权要求。</p>
+            <p class="field-hint">只参考发型和发色，人物身份仍使用上方人物参考。不上传则沿用人物参考的发型。</p>
+            <div id="hairstyle-mask-panel" hidden>
+              <p class="field-hint">自动遮挡人脸，尽量保留发型。生成使用下方打码图。</p>
+              <details class="hairstyle-mask-options"><summary>调整打码范围 <span id="hairstyle-mask-summary">1.0 倍</span></summary>
+                <div class="hairstyle-mask-fields"><label>遮罩倍数<input id="hairstyle-mask-scale" type="number" min="1" max="2" step="0.05" value="1"></label><label>检测阈值<input id="hairstyle-mask-threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.2"></label></div>
+                <p class="field-hint">默认 1.0 倍、阈值 0.2。脸部边缘没盖全可试 1.05；漏检人脸可试阈值 0.15。</p>
+              </details>
+              <p id="hairstyle-mask-status" class="field-hint" role="status" aria-live="polite"></p>
+              <img id="hairstyle-mask-preview" class="hairstyle-mask-preview" alt="发型参考图人脸打码预览" hidden>
+              <button type="button" id="hairstyle-mask-retry" class="secondary" hidden>重新预览</button>
+            </div>
           </div>
         </details>
       </article>
@@ -169,5 +191,3 @@
     <details class="flow-config" id="model-settings"><summary id="model-settings-toggle" aria-controls="model-settings-panel" aria-expanded="false">⚙ 视频模型设置</summary>{% include "model_settings_panel.html" %}</details>
   </div>
 </section>
-
-{% include "portrait_panel.html" %}

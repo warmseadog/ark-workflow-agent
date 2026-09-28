@@ -149,6 +149,9 @@ def test_optional_reference_snapshot_reaches_provider_only_when_enabled(setup,mo
     for kind in ('hairstyle','scene'):
         path=cfg.storage_dir/(kind+'.png');path.write_bytes(kind.encode())
         store.add_asset(kind,path.name,kind,path,path.stat().st_size,'image/png',hashlib.sha256(path.read_bytes()).hexdigest())
+    def redact(settings,asset,options):
+        output=cfg.storage_dir/'masked-hair.png';output.write_bytes(b'masked-hairstyle');return {'path':output}
+    monkeypatch.setattr(worker,'process_hairstyle',redact)
     draft=store.save_draft(draft['id'],draft['revision'],{'hairstyle_asset_ids':['hairstyle'],'scene_asset_ids':['scene'],
         'hairstyle_enabled':enabled,'scene_enabled':enabled,'scene_description':'frozen room'})
     private['generation']=asdict(GenerationConfig(mode='http',provider='ark',protocol='ark',api_key='fixture'))
@@ -161,7 +164,42 @@ def test_optional_reference_snapshot_reaches_provider_only_when_enabled(setup,mo
     worker.execute_run(cfg,store,store.claim_next())
     assert store.get_run(run['id'])['status']=='succeeded'
     refs=[base64.b64decode(x['image_url']['url'].split(',')[1]) for x in sent[0]['content'] if x['type']=='image_url']
-    assert refs==([b'face',b'clothes',b'hairstyle',b'scene'] if enabled else [b'face',b'clothes'])
+    assert refs==([b'face',b'clothes',b'masked-hairstyle',b'scene'] if enabled else [b'face',b'clothes'])
     text=sent[0]['content'][0]['text']
     assert ('frozen room' in text)==enabled
     assert 'edited later' not in text
+
+
+def test_hairstyle_is_redacted_independently_before_model_submission(setup,monkeypatch):
+    cfg,store,draft,private=setup
+    path=cfg.storage_dir/'hair.png';path.write_bytes(b'original-hair')
+    store.add_asset('hair','hair.png','hairstyle',path,13,'image/png','hairhash')
+    draft=store.save_draft(draft['id'],draft['revision'],{'hairstyle_asset_ids':['hair'],'hairstyle_enabled':True,'mask':{'mask_scale':1.4}})
+    seen=[]
+    def redact(settings,asset,values):
+        seen.append(values)
+        output=cfg.storage_dir/'redacted-hair.png';output.write_bytes(b'masked-hair')
+        return {'path':output}
+    monkeypatch.setattr(worker,'process_hairstyle',redact,raising=False)
+    def generate(self,video,faces,clothes,prompt,output,**kwargs):
+        assert kwargs['hairstyles'][0].read_bytes()==b'masked-hair'
+        output.write_bytes(b'result')
+    monkeypatch.setattr(worker.VideoProvider,'generate',generate)
+    run=store.create_run(draft['id'],draft['revision'],'hair-redacted',private)
+    worker.execute_run(cfg,store,store.claim_next())
+    assert store.get_run(run['id'])['status']=='succeeded'
+    assert seen==[{'mask_scale':1.0,'threshold':0.2}]
+    assert path.read_bytes()==b'original-hair'
+
+
+def test_failed_hairstyle_mask_never_sends_original_to_provider(setup,monkeypatch):
+    cfg,store,draft,private=setup
+    path=cfg.storage_dir/'hair.png';path.write_bytes(b'original')
+    store.add_asset('hair','hair.png','hairstyle',path,8,'image/png','hash')
+    draft=store.save_draft(draft['id'],draft['revision'],{'hairstyle_asset_ids':['hair'],'hairstyle_enabled':True})
+    def failed(*args):raise ValueError('mask failed')
+    monkeypatch.setattr(worker,'process_hairstyle',failed)
+    monkeypatch.setattr(worker.VideoProvider,'generate',lambda *args,**kwargs:pytest.fail('Must not submit unmasked reference'))
+    run=store.create_run(draft['id'],draft['revision'],'hair-mask-failure',private)
+    worker.execute_run(cfg,store,store.claim_next())
+    assert store.get_run(run['id'])['status']=='failed'

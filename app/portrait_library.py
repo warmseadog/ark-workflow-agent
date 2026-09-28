@@ -16,6 +16,9 @@ _process_lock = threading.Lock()
 
 
 def validate_photo(settings, asset, *, require_upload_dimensions=True):
+    if asset['kind']=='person_video':
+        from .person_video import validate_asset
+        return validate_asset(settings,asset)
     from PIL import Image
     path = Path(asset['path']).resolve()
     if asset['kind'] != 'face' or not path.is_relative_to((settings.storage_dir/'assets').resolve()) or not path.is_file():
@@ -66,6 +69,8 @@ class PortraitLibrary:
                 CREATE TABLE IF NOT EXISTS portrait_people (
                     id TEXT PRIMARY KEY, account TEXT NOT NULL, group_id TEXT NOT NULL,
                     name TEXT NOT NULL, created REAL NOT NULL, UNIQUE(account,group_id));
+                CREATE TABLE IF NOT EXISTS portrait_hidden_people (
+                    person_id TEXT PRIMARY KEY, account TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS portrait_photos (
                     id TEXT PRIMARY KEY, account TEXT NOT NULL, person_id TEXT NOT NULL,
                     asset_id TEXT NOT NULL, sha256 TEXT NOT NULL, status TEXT NOT NULL,
@@ -84,7 +89,8 @@ class PortraitLibrary:
                 status TEXT NOT NULL, person_id TEXT, message TEXT NOT NULL,
                 PRIMARY KEY(account,request_id))""")
 
-    def api(self, person_type):
+    def api(self, person_type, asset_type='Image'):
+        if asset_type=='Video': return service.ArkPortraitClient(self.config,person_type=person_type,asset_type='Video')
         return (service.ArkPortraitClient(self.config) if person_type == 'LivenessFace'
                 else service.ArkPortraitClient(self.config, person_type=person_type))
 
@@ -130,9 +136,9 @@ class PortraitLibrary:
 
     def virtual_status(self):
         with self.store.connection() as db:
-            people=db.execute("SELECT id FROM portrait_people WHERE account=? AND person_type='AIGC'",(self.account,)).fetchall()
-            counts=db.execute("SELECT ph.status,count(*) AS count FROM portrait_photos ph JOIN portrait_people pe ON pe.id=ph.person_id WHERE ph.account=? AND pe.person_type='AIGC' GROUP BY ph.status",(self.account,)).fetchall()
-            failures=db.execute("SELECT pe.name,ph.message,ph.created FROM portrait_photos ph JOIN portrait_people pe ON pe.id=ph.person_id WHERE ph.account=? AND pe.person_type='AIGC' AND ph.status IN ('failed','uncertain') ORDER BY ph.created DESC LIMIT 5",(self.account,)).fetchall()
+            people=db.execute("SELECT id FROM portrait_people WHERE account=? AND person_type='AIGC' AND id NOT IN (SELECT person_id FROM portrait_hidden_people WHERE account=?)",(self.account,self.account)).fetchall()
+            counts=db.execute("SELECT ph.status,count(*) AS count FROM portrait_photos ph JOIN portrait_people pe ON pe.id=ph.person_id WHERE ph.account=? AND pe.person_type='AIGC' AND pe.id NOT IN (SELECT person_id FROM portrait_hidden_people) GROUP BY ph.status",(self.account,)).fetchall()
+            failures=db.execute("SELECT pe.name,ph.message,ph.created FROM portrait_photos ph JOIN portrait_people pe ON pe.id=ph.person_id WHERE ph.account=? AND pe.person_type='AIGC' AND pe.id NOT IN (SELECT person_id FROM portrait_hidden_people) AND ph.status IN ('failed','uncertain') ORDER BY ph.created DESC LIMIT 5",(self.account,)).fetchall()
             runs=db.execute("SELECT snapshot,updated_at FROM production_runs WHERE status='succeeded' ORDER BY updated_at DESC").fetchall()
         ids={row['id'] for row in people}
         last=None
@@ -178,22 +184,70 @@ class PortraitLibrary:
             row = db.execute('SELECT * FROM portrait_people WHERE id=? AND account=?',(ident,self.account)).fetchone()
             if not row: raise LookupError('所选人物不可用，请重新选择或认证。')
             value = dict(row)
-            value['photo_count'] = db.execute("SELECT count(*) FROM portrait_photos WHERE person_id=? AND status='active'",(ident,)).fetchone()[0]
+            value['photo_counts'] = {r['status']: r['count'] for r in db.execute('SELECT status,count(*) AS count FROM portrait_photos WHERE person_id=? AND account=? GROUP BY status',(ident,self.account))}
+            counts = dict(db.execute("SELECT a.kind,count(*) FROM portrait_photos ph JOIN production_assets a ON a.id=ph.asset_id WHERE ph.person_id=? AND ph.status='active' GROUP BY a.kind",(ident,)).fetchall())
+            value['photo_count'] = counts.get('face',0)
+            value['video_count'] = counts.get('person_video',0)
         if not private: value.pop('account'); value.pop('group_id')
         value['verified'] = value['person_type']=='LivenessFace'
-        value['usable'] = value['photo_count']>0
+        value['usable'] = value['photo_count']+value['video_count']>0
         with self.store.connection() as db:
             value['generated_count']=db.execute("SELECT count(*) FROM production_runs WHERE status='succeeded' AND COALESCE(json_extract(snapshot,'$.model.mode'),'')!='mock' AND json_extract(snapshot,'$.person_id')=?",(ident,)).fetchone()[0]
         thumb = self.settings.storage_dir/'portrait-thumbs'/(ident+'.jpg')
         value['thumbnail_url'] = '/api/portrait/people/'+ident+'/thumbnail' if thumb.is_file() else None
         return value
 
-    def people(self):
+    def people(self, removed=False):
         if not self.config.ready: return []
         self.import_verified()
         with self.store.connection() as db:
-            ids = [x[0] for x in db.execute('SELECT id FROM portrait_people WHERE account=? ORDER BY created',(self.account,))]
+            membership = 'IN' if removed else 'NOT IN'
+            ids = [x[0] for x in db.execute(f'SELECT id FROM portrait_people WHERE account=? AND id {membership} (SELECT person_id FROM portrait_hidden_people WHERE account=?) ORDER BY created',(self.account,self.account))]
         return [self.person(ident) for ident in ids]
+
+    def set_removed(self, ident, removed):
+        person = self.person(ident)
+        with self.store.connection() as db:
+            if removed:
+                db.execute('INSERT OR IGNORE INTO portrait_hidden_people VALUES (?,?)',(ident,self.account))
+            else:
+                db.execute('DELETE FROM portrait_hidden_people WHERE person_id=? AND account=?',(ident,self.account))
+        return {'id':ident,'removed':removed}
+
+    def photos_for_person(self, ident):
+        self.person(ident)
+        with self.store.connection() as db:
+            rows = db.execute("""SELECT ph.id,ph.asset_id,a.name,a.kind,ph.status,ph.message,ph.remote_id
+                FROM portrait_photos ph JOIN production_assets a ON a.id=ph.asset_id
+                WHERE ph.person_id=? AND ph.account=? ORDER BY ph.created DESC,ph.id""",
+                (ident,self.account)).fetchall()
+        return [{'id':row['id'],'asset_id':row['asset_id'],'name':row['name'],'kind':row['kind'],
+                 'url':'/api/production/assets/'+row['asset_id']+'/file',
+                 'status':row['status'],'message':row['message'],
+                 'remote_asset_id':row['remote_id'] if row['status']=='active' else None}
+                for row in rows]
+
+    def use_video(self, ident):
+        job=self.get_photo(ident,private=True)
+        if job['status']!='active' or not job['remote_id']:
+            raise ValueError('人物视频仍未通过官方检查，请稍后刷新。')
+        person=self.person(job['person_id'],private=True)
+        asset=self.store.get_asset(job['asset_id'],private=True)
+        if asset['kind']!='person_video': raise ValueError('请选择人物视频。')
+        validate_photo(self.settings,asset)
+        remote=self.api(person['person_type'],'Video').get_asset(job['remote_id'])
+        if remote['group_id']!=person['group_id']:
+            raise ValueError('视频与所选人物不匹配，请重新选择。')
+        self.store.bind_portrait(asset['id'],remote,self.account)
+        return {**self.store.get_asset(asset['id']),'person_type':person['person_type']}
+
+    def reference(self, ident):
+        person = self.person(ident)
+        with self.store.connection() as db:
+            photo = db.execute("SELECT ph.remote_id FROM portrait_photos ph JOIN production_assets a ON a.id=ph.asset_id WHERE ph.person_id=? AND ph.account=? AND ph.status='active' AND ph.remote_id IS NOT NULL AND a.kind='face' ORDER BY ph.checked DESC,ph.created DESC LIMIT 1",(ident,self.account)).fetchone()
+        if not photo:
+            raise ValueError('还没有可用照片，请先添加照片并等待检查通过。')
+        return {'remote_asset_id':photo['remote_id']}
 
     def rename(self, ident, name):
         self.person(ident)
@@ -281,7 +335,8 @@ class PortraitLibrary:
             if not row: return
             job=dict(row); ident=job['id']
             person=self.person(job['person_id'],private=True)
-            api=self.api(person['person_type'])
+            asset=self.store.get_asset(job['asset_id'],private=True)
+            api=self.api(person['person_type'],'Video' if asset['kind']=='person_video' else 'Image')
             group=person['group_id']
             try:
                 if job['status']=='queued':
@@ -320,6 +375,9 @@ class PortraitLibrary:
                 elif current['status'] in {'processing','uncertain'}:
                     self.update(ident,message=safe,next_check=time.time()+30)
                 else: self.update(ident,status='failed',message=safe)
+            if asset['kind']=='person_video':
+                current=self.get_photo(ident,private=True)
+                self.update(ident,message=current['message'].replace('照片','视频'))
         finally: _process_lock.release()
 
     def thumbnail(self, job):

@@ -159,9 +159,11 @@ def _identifier(value, prefix):
 
 
 class ArkPortraitClient:
-    def __init__(self, config, person_type='LivenessFace'):
+    def __init__(self, config, person_type='LivenessFace', asset_type='Image'):
         if person_type not in {'LivenessFace', 'AIGC'}:
             raise PortraitError('不支持的人物类型。')
+        if asset_type not in {'Image','Video'}: raise PortraitError('不支持的素材类型。')
+        self.asset_type = asset_type
         self.config = config
         self.person_type = person_type
 
@@ -252,7 +254,7 @@ class ArkPortraitClient:
 
     def create_asset(self, group_id, url, name):
         result = self._request('CreateAsset', {'GroupId': group_id, 'URL': url, 'Name': name,
-                                               'AssetType': 'Image', 'ProjectName': self.config.project_name})
+                                               'AssetType': self.asset_type, 'ProjectName': self.config.project_name})
         ident = result.get('Id')
         if not _identifier(ident, 'asset'): raise PortraitError('创建照片结果待确认，请稍后查看状态。')
         return ident
@@ -262,27 +264,27 @@ class ArkPortraitClient:
                                             'ProjectName': self.config.project_name, 'MaxResults': 100})
         for item in result.get('Items', []):
             if (item.get('Name') == name and item.get('GroupId') == group_id
-                    and item.get('ProjectName') == self.config.project_name and item.get('AssetType') == 'Image'
+                    and item.get('ProjectName') == self.config.project_name and item.get('AssetType') == self.asset_type
                     and _identifier(item.get('Id'), 'asset')):
                 return item['Id']
         return None
 
     def asset_state(self, asset_id, group_id):
         item = self._request('GetAsset', {'Id': asset_id, 'ProjectName': self.config.project_name})
-        if (item.get('Id') != asset_id or item.get('GroupId') != group_id or item.get('AssetType') != 'Image'
+        if (item.get('Id') != asset_id or item.get('GroupId') != group_id or item.get('AssetType') != self.asset_type
                 or item.get('ProjectName') != self.config.project_name or item.get('Status') not in {'Active','Processing','Failed'}):
             raise PortraitError('照片与所选人物或项目不匹配，请重新选择。')
         error = item.get('Error') or {}
         return {'status': item['Status'], 'error_code': error.get('Code', '') if isinstance(error, dict) else ''}
 
     def _normalize(self, item):
-        if (not isinstance(item, dict) or item.get('Status') != 'Active' or item.get('AssetType') != 'Image'
+        if (not isinstance(item, dict) or item.get('Status') != 'Active' or item.get('AssetType') != self.asset_type
                 or item.get('ProjectName') != self.config.project_name or not _identifier(item.get('Id'), 'asset')
                 or not _identifier(item.get('GroupId'), 'group')):
-            raise PortraitError('素材不可用：必须是当前项目中已就绪的人物图片素材。')
+            raise PortraitError('素材不可用：必须是当前项目中已就绪且类型匹配的人物素材。')
         return {'remote_asset_id': item['Id'], 'name': str(item.get('Name', ''))[:128],
                 'group_id': item['GroupId'], 'project': item['ProjectName'], 'status': 'Active',
-                'asset_type': 'Image', 'person_type': self.person_type, 'url': item.get('URL', '')}
+                'asset_type': self.asset_type, 'person_type': self.person_type, 'url': item.get('URL', '')}
 
     def list_assets(self):
         items, tokens, seen_ids = [], set(), set()

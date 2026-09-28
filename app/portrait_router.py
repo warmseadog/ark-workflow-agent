@@ -34,7 +34,7 @@ def get_router(settings_getter, local_guard):
         return PortraitLibrary(settings_getter())
 
     @router.get('/people')
-    def people(): return guarded(lambda: {'items': library().people()})
+    def people(removed:bool=False): return guarded(lambda: {'items': library().people(removed=removed)})
 
     @router.post('/people')
     def create_person(payload:dict):
@@ -82,6 +82,22 @@ def get_router(settings_getter, local_guard):
     def rename_person(ident:str,payload:dict):
         return guarded(lambda:library().rename(ident,payload.get('name')))
 
+    @router.delete('/people/{ident}')
+    def remove_person(ident:str):
+        return guarded(lambda:library().set_removed(ident,True))
+
+    @router.post('/people/{ident}/restore')
+    def restore_person(ident:str):
+        return guarded(lambda:library().set_removed(ident,False))
+
+    @router.get('/people/{ident}/photos')
+    def person_photos(ident:str):
+        return guarded(lambda: {'items':library().photos_for_person(ident)})
+
+    @router.get('/people/{ident}/reference')
+    def person_reference(ident:str):
+        return guarded(lambda:library().reference(ident))
+
     @router.get('/people/{ident}/thumbnail')
     def thumbnail(ident:str):
         from fastapi.responses import FileResponse
@@ -100,6 +116,10 @@ def get_router(settings_getter, local_guard):
             wake(settings_getter())
             return result
         return guarded(operation)
+
+    @router.post('/photos/{ident}/use')
+    def use_video(ident:str):
+        return guarded(lambda:library().use_video(ident))
 
     @router.get('/photos')
     def photos(ids:str=''):

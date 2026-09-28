@@ -127,6 +127,7 @@ class VideoProvider:
                  on_result: Callable[[str], None] | None = None,
                  resume_task_id: str | None = None, resume_result_url: str | None = None,
                  image_asset_uris: dict[str, str] | None = None,
+                 person_video: Path | None = None, person_video_uri: str | None = None,
                  hairstyles: list[Path] | None = None, scenes: list[Path] | None = None,
                  scene_description: str = '', accessories: dict[str, list[Path]] | None = None,
                  reference_roles: dict[int, str] | None = None) -> dict:
@@ -143,6 +144,13 @@ class VideoProvider:
                 return self._poll(resume_task_id, output, on_result)
         if resume_task_id is not None:
             return self._poll(resume_task_id, output, on_result)
+        if person_video is not None:
+            if faces or self.config.protocol!='ark' or self.config.base_url.rstrip('/')!='https://ark.cn-beijing.volces.com/api/v3' or not isinstance(person_video_uri,str) or not re.fullmatch(r'asset://asset-[A-Za-z0-9-]{1,114}',person_video_uri):
+                raise ProviderError('人物视频需使用火山官方已入库素材，且不能同时传入人物图片。',error_kind='configuration')
+            from .person_video import validate_pair
+            validate_pair(video,person_video)
+        elif person_video_uri is not None:
+            raise ProviderError('人物视频与授权编号不匹配。',error_kind='configuration')
         image_asset_uris = image_asset_uris or {}
         if image_asset_uris:
             if self.config.protocol != 'ark' or self.config.base_url.rstrip('/') != 'https://ark.cn-beijing.volces.com/api/v3':
@@ -165,6 +173,7 @@ class VideoProvider:
         references += [(p,label) for kind,label in ACCESSORY_LABELS.items() for p in accessories.get(kind,[])]
         self._content_roles = {i: f'第 {i} 张{kind}参考图' for i,(_,kind) in enumerate(references,1)}
         self._content_roles[len(references)+1] = '参考视频'
+        if person_video is not None:self._content_roles[len(references)+2] = '人物参考视频'
         if self.config.protocol != 'adapter':
             if len(references) > 9:
                 raise ProviderError('人物、衣服、发型、场景和配饰参考图合计最多 9 张，请删除部分图片后重试。')
@@ -174,6 +183,8 @@ class VideoProvider:
                 raise ProviderError('参考图片总大小过大，请压缩图片后重试。')
         from .reference_prompt import strip_reference_rules
         prompt = strip_reference_rules(prompt)
+        if person_video is not None:
+            prompt = prompt.replace('@Image1人物参考图','@Video2人物参考视频').replace('@Image2衣服参考图','@Image1衣服参考图').replace('@Image2服装参考图','@Image1服装参考图')
         mapping = '；'.join(f'@Image{i}（图片{i}）为{kind}参考图' for i, (_, kind) in enumerate(references, 1))
         # Existing saved templates may still contain the original scene instruction.
         # Normalize the built-in phrases only; preserve custom text and give roles explicit priority.
@@ -186,6 +197,9 @@ class VideoProvider:
         accessory_rules = ''.join(ACCESSORY_LABELS[k]+'参考：'+ACCESSORY_RULES[k]+'仅采用该配饰，不引入图中人物或背景。' for k in ACCESSORY_LABELS if accessories.get(k))
         hair_rule = '发型沿用主人物参考图。' if not hairstyles else '发型以发型参考图为准，参考发长、轮廓、刘海、卷曲程度和发色；人物身份、五官和脸型仍以主人物参考图为准，不使用发型图的人脸或身份。'
         structured = f'@Video1（视频1）为动作与镜头参考视频，保留其动作、镜头和节奏。{mapping}。主参考确定人物身份和服装，补充参考用于细节，保持全片一致。用户要求：{prompt.strip()}。素材分工（涉及场景或发型的冲突要求以此为准）：{scene_rule}{hair_rule}{accessory_rules}'
+        if person_video is not None:
+            structured=structured.replace('主人物参考图','人物参考视频 @Video2')
+            structured+='人物身份分工优先：@Video2（视频2）仅提供人物脸部身份与外貌；@Video1 仅提供动作、镜头与节奏，不采用视频2的动作、服装、背景、声音或台词。衣服以衣服参考图为准。'
         self.progress('正在上传参考素材', 65)
         if self.config.protocol == 'toapis':
             with video.open('rb') as source:
@@ -205,6 +219,8 @@ class VideoProvider:
             content = [{'type': 'text', 'text': structured}]
             content.extend({'type': 'image_url', 'image_url': {'url': image_asset_uris[str(p)] if str(p) in image_asset_uris else self._data_url(p)}, 'role': 'reference_image'} for p, _ in references)
             content.append({'type': 'video_url', 'video_url': {'url': video_url}, 'role': 'reference_video'})
+            if person_video is not None:
+                content.append({'type':'video_url','video_url':{'url':person_video_uri},'role':'reference_video'})
             endpoint = '/contents/generations/tasks'
             submitted = self._request('POST', endpoint, json={'model': self.config.model, 'content': content,
                 'duration': self.config.duration, 'resolution': self.config.resolution, 'ratio': 'adaptive'})

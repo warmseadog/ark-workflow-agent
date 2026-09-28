@@ -13,7 +13,8 @@ ACCESSORY_RULES = {
 
 def snapshot_content_roles(snapshot):
     """Rebuild the original content indices for recovery, without touching media."""
-    faces = len(snapshot.get('face_asset_ids', []))
+    from .person_video import is_video
+    faces = 0 if is_video(snapshot) else len(snapshot.get('face_asset_ids', []))
     clothes = len(snapshot.get('clothing_asset_ids', []))
     labels = (['人物'] if faces else []) + (['衣服'] if clothes else [])
     labels += ['人物补充'] * max(0, faces-1) + ['衣服补充'] * max(0, clothes-1)
@@ -23,4 +24,5 @@ def snapshot_content_roles(snapshot):
             labels += [label] * len(snapshot.get(kind+'_asset_ids', []))
     roles = {i: f'第 {i} 张{label}参考图' for i,label in enumerate(labels,1)}
     roles[len(labels)+1] = '参考视频'
+    if is_video(snapshot):roles[len(labels)+2] = '人物参考视频'
     return roles

@@ -10,6 +10,21 @@
     button.addEventListener('click',() => { personType = type; render(); }); tabs.append(button);
   }
   el('search').before(tabs);
+  const menu = picker.querySelector('.person-menu');
+  function positionMenu() {
+    if (!picker.open) return;
+    const rect = picker.querySelector('summary').getBoundingClientRect();
+    const width = Math.min(420,window.innerWidth-24), height = Math.min(520,window.innerHeight-24);
+    const below = window.innerHeight-rect.bottom-20, above = rect.top-20;
+    const available = below >= Math.min(340,height) ? Math.min(height,below) : above >= Math.min(340,height) ? Math.min(height,above) : height;
+    const top = below >= Math.min(340,height) ? rect.bottom+8 : above >= Math.min(340,height) ? rect.top-available-8 : Math.max(12,(window.innerHeight-available)/2);
+    menu.style.width = width+'px'; menu.style.maxHeight = available+'px';
+    menu.style.left = Math.max(12,Math.min(rect.left,window.innerWidth-width-12))+'px'; menu.style.top = top+'px';
+  }
+  picker.addEventListener('toggle',positionMenu);
+  window.addEventListener('resize',positionMenu);
+  window.addEventListener('scroll',positionMenu,true);
+  el('menu-close').addEventListener('click',() => { picker.open = false; picker.querySelector('summary').focus(); });
   async function request(path, method = 'GET', body) {
     const response = await fetch('/api/portrait/' + path, {method,
       headers: body === undefined ? {} : {'Content-Type':'application/json'},
@@ -20,61 +35,61 @@
   }
   function render() {
     const person = people.find(x => x.id === selected);
-    el('current').textContent = person ? person.name + (person.person_type === 'AIGC' ? ' · 虚拟人物' : ' · 已认证') : selected ? '原人物不可用，请重新选择' : '选择人物';
+    el('current').textContent = person ? person.name + (person.person_type === 'AIGC' ? ' · 虚拟人物' : ' · 真人') : selected ? '原人物不可用，请重新选择' : '选择人物';
     el('avatar').hidden = !person?.thumbnail_url;
     if (person?.thumbnail_url) el('avatar').src = person.thumbnail_url;
     el('add-first').hidden = people.length > 0;
-    el('search').hidden = people.length < 8;
-    el('rename-toggle').hidden = !person;
+    el('search').hidden = false;
+    el('current').title = el('current').textContent;
+    el('photos-open').disabled = locked;
+    el('photos-open').hidden = !person;
+    const videoMode = window.productionPortraits?.referenceMode === 'video';
+    el('photos-open').textContent = videoMode ? '选视频' : '选照片';
+    el('photos-hint').textContent = videoMode ? (person ? '可选择已入库视频，也可上传这个人的新视频。' : '先选人物，再选视频；新视频会自动入库检查。') : person ? '可换选已入库照片，也可上传这个人的新照片。' : '先选人物，再选照片；新照片会自动入库检查。';
     tabs.querySelectorAll('button').forEach(button => { button.setAttribute('aria-pressed',String(button.dataset.personType === personType)); button.disabled = locked; });
     const query = el('search').value.trim().toLowerCase();
     el('options').replaceChildren();
-    for (const item of people.filter(x => (x.person_type || 'LivenessFace') === personType && x.name.toLowerCase().includes(query))) {
+    const matches = people.filter(x => (x.person_type || 'LivenessFace') === personType && x.name.toLowerCase().includes(query));
+    for (const item of matches) {
       const button = document.createElement('button'); button.type = 'button';
       button.className = 'person-option'; button.dataset.personId = item.id;
       button.disabled = locked; button.setAttribute('aria-pressed', String(item.id === selected));
       if (item.thumbnail_url) { const img = document.createElement('img'); img.src = item.thumbnail_url; img.alt = ''; img.loading = 'lazy'; button.append(img); }
-      const info = document.createElement('span'); info.textContent = item.name;
-      const note = document.createElement('small'); note.textContent = (item.person_type === 'AIGC' ? '虚拟人物' : '已认证真人') + (item.photo_count ? ' · 有可用照片' : ' · 可上传第一张照片') + (item.generated_count ? ' · 已成功生成 ' + item.generated_count + ' 次' : ' · 尚无生成成功记录');
+      const info = document.createElement('span'); info.className = 'person-option-info';
+      const name = document.createElement('strong'); name.textContent = item.name; info.append(name);
+      const note = document.createElement('small'); note.textContent = [item.photo_count ? `${item.photo_count} 张照片` : '', item.video_count ? `${item.video_count} 段视频` : ''].filter(Boolean).join(' · ') || '暂无可用素材';
       info.append(note); button.append(info);
-      button.addEventListener('click', () => choose(item.id)); el('options').append(button);
+      if (item.id === selected) { const badge = document.createElement('span'); badge.className = 'person-selected-label'; badge.textContent = '已选'; button.append(badge); }
+      button.addEventListener('click', () => selectPhoto(item)); el('options').append(button);
     }
     const ordinary = document.createElement('button'); ordinary.type = 'button'; ordinary.className = 'person-option';
-    ordinary.textContent = '普通参考图（不使用真人授权）'; ordinary.disabled = locked;
+    ordinary.textContent = '不选人物，仅用参考图'; ordinary.classList.add('person-ordinary'); ordinary.disabled = locked; ordinary.hidden = videoMode;
     ordinary.addEventListener('click', () => choose(null)); el('options').append(ordinary);
-    if (!people.length) { const note = document.createElement('p'); note.textContent = '添加人物后，上传照片即可自动校验。'; el('options').append(note); }
+    if (!matches.length) { const note = document.createElement('p'); note.className = 'person-empty'; note.textContent = query ? /^asset-/i.test(query) ? '这里按名称搜索；照片编号请到后台人物库导入。' : '没有找到这个人物，请换个名称搜索。' : '暂无人物，请到后台人物库添加。'; el('options').prepend(note); }
+    positionMenu();
   }
+  function selectPhoto(person) {
+    if (locked) return;
+    picker.open = false;
+    window.portraitPhotos.open(person);
+  }
+  el('photos-open').addEventListener('click',() => {
+    const person = people.find(item => item.id === selected);
+    if (person) selectPhoto(person);
+    else { picker.open = true; el('search').focus(); }
+  });
   function choose(id, notify = true) {
     if (locked && notify) return;
     selected = id || null;
     const person = people.find(item => item.id === selected); if (person) personType = person.person_type || 'LivenessFace';
     render(); picker.open = false;
-    el('rename').hidden = true;
     if (notify) window.dispatchEvent(new CustomEvent('portrait-person-changed', {detail:{id:selected}}));
   }
   async function refresh(sync = false) {
     const data = await request(sync ? 'people/sync' : 'people', sync ? 'POST' : 'GET', sync ? {person_type:personType} : undefined);
-    people = data.items || []; render(); return people;
+    people = (data.items || []).sort((a,b) => Number(b.photo_count > 0 || b.video_count > 0)-Number(a.photo_count > 0 || a.video_count > 0)); render(); return people;
   }
   el('search').addEventListener('input',render);
-  el('sync').addEventListener('click',async () => {
-    el('sync').disabled = true;
-    try { await refresh(true); if (!selected && people.length === 1) choose(people[0].id); }
-    catch (error) { window.toast?.(error.message); }
-    finally { el('sync').disabled = false; }
-  });
-  el('rename-toggle').addEventListener('click',() => {
-    const person = people.find(x => x.id === selected); if (!person) return;
-    el('name').value = person.name; el('rename').hidden = false; el('name').focus();
-  });
-  el('name-save').addEventListener('click',async () => {
-    const id = selected; el('name-save').disabled = true;
-    try {
-      const person = await request('people/'+id,'PUT',{name:el('name').value});
-      people = people.map(x => x.id === id ? person : x); render(); el('rename').hidden = true;
-    } catch (error) { window.toast?.(error.message); }
-    finally { el('name-save').disabled = false; }
-  });
   picker.addEventListener('keydown',event => { if (event.key === 'Escape') { picker.open = false; picker.querySelector('summary').focus(); } });
   document.addEventListener('click',event => { if (!picker.contains(event.target)) picker.open = false; });
   window.addEventListener('portrait-verified', async event => {

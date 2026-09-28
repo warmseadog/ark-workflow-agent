@@ -171,3 +171,15 @@
 .accessory-card .optional-enable { font-size:10px; gap:3px; }
 .accessory-references > .field-hint { font-size:10px; line-height:1.7; color:var(--muted); }
 .scene-references .asset-heading small { display:block; }
+
+.hairstyle-mask-options{border-top:1px solid var(--hair,#ddd);padding-top:8px;margin-top:12px}.hairstyle-mask-options summary{font-size:11px;cursor:pointer}.hairstyle-mask-options summary span{color:var(--muted,#666);margin-left:8px}.hairstyle-mask-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.hairstyle-mask-fields label{font-size:11px;min-width:0}.hairstyle-mask-fields input{width:100%;box-sizing:border-box;min-width:0;padding:8px}.hairstyle-mask-preview{display:block;width:100%;max-height:320px;object-fit:contain;background:#eee9df;border:1px solid var(--hair,#ddd);border-radius:5px}.hairstyle-mask-preview[hidden]{display:none}#hairstyle-mask-status[data-error=true]{color:#a8342a}
+
+/* Person identity can come from one verified video or the existing photo set. */
+.person-media-tabs { display:flex; gap:4px; padding:4px; margin-bottom:12px; background:#eeeae4; border-radius:6px; }
+.person-media-tabs button { flex:1; padding:8px 12px; border:0; background:transparent; border-radius:4px; }
+.person-media-tabs button[aria-pressed="true"] { background:#fff; color:#aa3932; font-weight:600; box-shadow:0 1px 3px #0001; }
+#person-video-preview { width:100%; max-height:300px; background:#1b1b1b; border-radius:5px; margin-top:10px; }
+.person-video-empty { width:100%; min-height:72px; padding:12px; border:1px dashed #c6b9ab; background:transparent; }
+#person-video-panel .asset-footer span { min-width:0; overflow-wrap:anywhere; }
+#person-video-duration[data-error="true"] { color:#b53e37; font-weight:600; }
+.person-photo-card video { width:100%; height:190px; object-fit:contain; background:#222; border-radius:5px; }

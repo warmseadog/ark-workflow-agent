@@ -13,6 +13,7 @@ from .generation_settings import GenerationConfig
 from .storage_settings import StorageConfig, upload_redacted_video
 from .reference_media import publish_video
 from .media import BlurOptions, run_deface
+from .hairstyle_mask import process_hairstyle
 from .video_provider import VideoProvider, ProviderError
 from .reference_roles import ACCESSORY_LABELS, snapshot_content_roles
 
@@ -48,17 +49,28 @@ def execute_run(settings, store, run):
         if not provider_id and not result_url:
             if private.get('portrait'):
                 from .portrait_generation import verify, PortraitPending
-                store.update_run(ident,stage='authorizing',message='正在核实人物照片',progress=2)
+                store.update_run(ident,stage='authorizing',message='正在核实人物素材',progress=2)
                 try: image_asset_uris=verify(private['portrait'],store)
                 except PortraitPending as pending:
                     store.update_run(ident,status='queued',stage='authorizing',message=str(pending),progress=2)
                     return
             source = store.get_asset(snapshot['source_asset_id'], private=True)
-            faces = [Path(store.get_asset(x, private=True)['path']) for x in snapshot['face_asset_ids']]
+            from .person_video import is_video, validate_pair
+            faces = [] if is_video(snapshot) else [Path(store.get_asset(x, private=True)['path']) for x in snapshot['face_asset_ids']]
+            if is_video(snapshot):
+                person_path=Path(store.get_asset(snapshot['person_video_asset_id'],private=True)['path'])
+                validate_pair(Path(source['path']),person_path)
+                person_uri=image_asset_uris.pop(str(person_path),None)
+                if not person_uri:raise ValueError('人物视频尚未通过官方检查，请重新选择。')
+                extra_references.update(person_video=person_path,person_video_uri=person_uri)
             clothes = [Path(store.get_asset(x, private=True)['path']) for x in snapshot['clothing_asset_ids']]
             for kind, argument in [('hairstyle','hairstyles'),('scene','scenes')]:
                 if snapshot.get(kind+'_enabled',False):
-                    extra_references[argument] = [Path(store.get_asset(x,private=True)['path']) for x in snapshot.get(kind+'_asset_ids',[])]
+                    assets = [store.get_asset(x,private=True) for x in snapshot.get(kind+'_asset_ids',[])]
+                    if kind=='hairstyle':
+                        store.update_run(ident,stage='preprocess',message='正在处理发型参考图人脸打码',progress=4)
+                        extra_references[argument] = [process_hairstyle(settings,asset,snapshot.get('hairstyle_mask',{}))['path'] for asset in assets]
+                    else: extra_references[argument] = [Path(asset['path']) for asset in assets]
             accessories = {kind: [Path(store.get_asset(x,private=True)['path']) for x in snapshot.get(kind+'_asset_ids',[])]
                            for kind in ACCESSORY_LABELS if snapshot.get(kind+'_enabled',False)}
             if accessories: extra_references['accessories'] = accessories

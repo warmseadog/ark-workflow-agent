@@ -78,18 +78,16 @@
       const description = document.createElement('small'); description.textContent = `官方可用 · ${item.id}`;
       info.append(title, description);
       const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary';
-      button.dataset.portraitImport = item.id; button.textContent = '设为主人物';
+      button.dataset.portraitImport = item.id; button.textContent = '导入人物库';
       button.addEventListener('click', () => run('assets-status', async () => {
         message('assets-status', '正在导入官方人物图片…');
         const asset = await request('import', 'POST', {remote_asset_id: item.id});
-        if (!window.productionPortraits) throw new Error('编辑器尚未就绪，请关闭弹窗并刷新页面。');
-        const importingSession = session;
-        await window.productionPortraits.importAsset(asset, {signal: sessionController.signal});
-        if (dialog.open && importingSession === session) dialog.close();
+        window.dispatchEvent(new CustomEvent('portrait-verified'));
+        message('assets-status', '照片已导入人物库，返回制作页按名称选择。');
       }));
       row.append(info, button); byId('assets').append(row);
     }
-    message('assets-status', items.length ? `找到 ${items.length} 张可用授权图片。选择后将替换主参考图。` : '还没有可用照片。已认证人物会显示在页面人物选择中，可关闭弹窗直接上传照片。');
+    message('assets-status', items.length ? `找到 ${items.length} 张可用授权图片。选择后将保存到人物库。` : '还没有可用照片。已认证人物会显示在页面人物选择中，可在后台人物库添加照片。');
   }
   async function startAutomatic(force = false) {
     const previous = activeVerification;
