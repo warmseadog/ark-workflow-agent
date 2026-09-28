@@ -1,6 +1,6 @@
 # 虚拟人物自动入库与生成
 
-2026-09-28，本地实现。配套设计见 [设计方案](superpowers/specs/2026-09-28-auto-virtual-person-design.md)，执行记录见 [实施计划](superpowers/plans/2026-09-28-auto-virtual-person.md)。
+2026-09-28，已合并主目录并发布服务器。配套设计见 [设计方案](superpowers/specs/2026-09-28-auto-virtual-person-design.md)，执行记录见 [实施计划](superpowers/plans/2026-09-28-auto-virtual-person.md)，发布详情见 [部署记录](ecs-deployment.md)。
 
 ## 用户流程
 
@@ -46,4 +46,6 @@
 
 最终验证结果记录在实施计划的执行记录中。测试采用临时数据库、本地媒体和受控服务响应，未使用生产凭据或提交付费视频任务。
 
-当前改动位于独立本地分支 `codex/auto-virtual-person`，未部署。项目历史部署记录曾出现 AIGC 素材已 Active 但模型仍返回素材不可用，因此本地流程测试不能替代当前账号的真实出片验收。正式验收需在目标环境确认模型、项目和素材权限，并验证一条真实生成链路。
+功能提交 `8e1f5d4` 已合并至主目录 `main`，并按用户授权发布到服务器版本 `/opt/ark-video-workflow/releases/20260928T101614Z-auto-virtual-person`。刷新页面后，新建草稿默认使用自动虚拟人物模式；已有草稿仍按原有策略恢复。
+
+发布后确认服务、页面和静态文件、新接口、数据库增量迁移正常，既有人物、任务快照和素材保留。人物服务、TOS 和官方模型的公开配置均显示就绪。本次未发起付费生成。项目历史部署记录曾出现 AIGC 素材已 Active 但模型仍返回素材不可用，因此上线检查不能替代当前账号的真实出片验收。
