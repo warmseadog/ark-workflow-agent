@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse
 from .production_store import ProductionStore, Conflict
 from . import generation_settings, storage_settings, admin_settings, media, production_worker
@@ -262,12 +262,20 @@ def get_router(settings_getter, local_guard):
                          error_kind='material_rejected' if 'may contain real person' in (job.error or '') else None,
                          request_id=None,provider_task_id=None,can_delete=job.status not in {'running','queued'})
             if value['error_kind']=='material_rejected': value['message']='人物参考图未通过模型检查，请复制为草稿后修改。'
+            value['name']=store().run_name(value['id'],value['name'])
             result.append(value)
         return result
 
     @router.get('/runs')
-    def list_runs():
+    def list_runs(page:int | None=Query(None,ge=1),page_size:int=Query(10,ge=1,le=50)):
         def operation():
+            if page is not None:
+                result=store().page_runs(page,page_size,legacy_runs())
+                for item in result['items']:
+                    if not item['legacy']:
+                        path=settings_getter().storage_dir/'outputs'/(item['id']+'.mp4')
+                        item['download_url']='/api/production/runs/'+item['id']+'/download' if item['status']=='succeeded' and path.is_file() else None
+                return result
             items=[decorate_run(x) for x in store().list_runs()]+legacy_runs()
             return {'items':sorted(items,key=lambda x:x['created_at'],reverse=True)}
         return guarded(operation)
@@ -281,6 +289,16 @@ def get_router(settings_getter, local_guard):
                 if value is None: raise LookupError('找不到任务。')
                 return value
             return decorate_run(store().get_run(ident))
+        return guarded(operation)
+
+    @router.put('/runs/{ident}/name')
+    def rename_run(ident:str,payload:dict):
+        def operation():
+            store().require_visible(ident)
+            if ident.startswith('legacy-'):
+                from .jobs import store as jobs
+                if not jobs.get(ident[7:]):raise LookupError('找不到任务。')
+            return store().rename_run(ident,payload.get('name'))
         return guarded(operation)
 
     @router.delete('/runs/{ident}')
@@ -329,9 +347,20 @@ def get_router(settings_getter, local_guard):
             else:
                 old=store().get_run(ident)['snapshot']
                 values={k:v for k,v in old.items() if k in _DRAFT_FIELDS}
-                values['name']=values.get('name','视频')+' 副本'
+                values['name']=store().get_run(ident)['name']+' 副本'
             return decorate_draft(store().create_draft(values))
         return guarded(operation)
+
+    @router.get('/runs/{ident}/playback')
+    def playback_status(ident:str):
+        from .playback import status
+        return guarded(lambda:status(settings_getter(),ident))
+
+    @router.get('/runs/{ident}/playback/{quality}')
+    def playback_file(ident:str,quality:str):
+        from .playback import media_path
+        path=guarded(lambda:media_path(settings_getter(),ident,quality))
+        return FileResponse(path,media_type='video/mp4',headers={'Cache-Control':'private, max-age=86400'})
 
     @router.get('/runs/{ident}/{kind}')
     def run_file(ident: str,kind: str):
@@ -341,6 +370,8 @@ def get_router(settings_getter, local_guard):
         elif kind=='download' and run['status']=='succeeded': path=settings_getter().storage_dir/'outputs'/(run['id']+'.mp4')
         else: raise HTTPException(404,'视频尚未就绪。')
         if not path.is_file(): raise HTTPException(404,'视频文件不存在。')
-        return FileResponse(path,media_type='video/mp4')
+        import re
+        filename=re.sub(r'[\\/:*?"<>|]', '_',run['name']).strip(' .') or '视频'
+        return FileResponse(path,media_type='video/mp4',filename=filename+'.mp4' if kind=='download' else None,headers={'Cache-Control':'private, max-age=3600'})
 
     return router

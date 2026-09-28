@@ -162,12 +162,22 @@ class QueueManager:
         self.store.recover()
         from .portrait_library import PortraitLibrary
         PortraitLibrary(self.settings).recover()
+        with self.store.connection() as db:db.execute("UPDATE production_playbacks SET status='queued' WHERE status='processing'")
+        playback_thread=threading.Thread(target=self.playback_loop,daemon=True,name='playback-worker')
+        playback_thread.start();self.threads.append(playback_thread)
         thread = threading.Thread(target=self.portrait_loop, daemon=True, name="portrait-worker")
         thread.start(); self.threads.append(thread)
         for _ in range(2):
             thread = threading.Thread(target=self.loop, daemon=True, name='production-worker')
             thread.start(); self.threads.append(thread)
         return True
+
+    def playback_loop(self):
+        from .playback import process_one
+        while not self.stop.is_set():
+            try:process_one(self.settings)
+            except Exception:pass
+            self.stop.wait(3)
 
     def portrait_loop(self):
         from .portrait_library import PortraitLibrary

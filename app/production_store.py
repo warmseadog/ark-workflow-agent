@@ -8,6 +8,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 
+def default_name(person='视频'):
+    return (person[:80] or '视频') + '-' + datetime.now(timezone(timedelta(hours=8))).strftime('%m%d-%H%M%S')
+
+
 def now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -23,6 +27,8 @@ class ProductionStore:
         self.path = self.storage / 'production.db'
         with self.connection() as db:
             db.executescript("""
+            CREATE TABLE IF NOT EXISTS production_playbacks (id TEXT PRIMARY KEY, status TEXT NOT NULL, signature TEXT NOT NULL, metadata TEXT, message TEXT NOT NULL, updated_at TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS production_run_names (id TEXT PRIMARY KEY, name TEXT NOT NULL, updated_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS production_portraits (
                 asset_id TEXT PRIMARY KEY, remote_asset_id TEXT NOT NULL,
                 group_id TEXT NOT NULL, project TEXT NOT NULL,
@@ -44,6 +50,7 @@ class ProductionStore:
                 message TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0,
                 error TEXT, error_kind TEXT, request_id TEXT, provider_task_id TEXT,
                 result_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS production_runs_order ON production_runs(created_at DESC,id DESC);
             """)
 
     @contextmanager
@@ -69,7 +76,7 @@ class ProductionStore:
 
     def create_draft(self, values):
         ident, stamp = uuid.uuid4().hex, now()
-        data = {'name': '未命名视频', 'source_asset_id': None, 'face_asset_ids': [],
+        data = {'name': default_name(), 'source_asset_id': None, 'face_asset_ids': [],
                 'person_reference_mode':'image','person_video_asset_id':None,
                 'clothing_asset_ids': [], 'hairstyle_asset_ids': [], 'scene_asset_ids': [],
                 **{kind+suffix: ([] if suffix=='_asset_ids' else False) for kind in ('bag','hat','watch','shoes','necklace','glasses') for suffix in ('_asset_ids','_enabled')},
@@ -152,13 +159,12 @@ class ProductionStore:
             db.execute('INSERT OR REPLACE INTO production_portraits VALUES (?,?,?,?,?,?,?)',
                 (ident,remote['remote_asset_id'],remote['group_id'],remote['project'],fingerprint,remote['status'],now()))
 
-    @staticmethod
-    def _run(row, private=False):
+    def _run(self, row, private=False):
         if row is None:
             raise LookupError('找不到生成任务。')
         value = dict(row)
         value['snapshot'] = json.loads(value['snapshot'])
-        value['name'] = value['snapshot'].get('name', '未命名视频')
+        value['name'] = self.run_name(value['id'],value['snapshot'].get('name', '未命名视频'))
         has_remote = bool(value['provider_task_id'] or value['result_url'])
         value['can_resume'] = value['status'] == 'needs_attention' and has_remote
         value['can_cancel'] = value['status'] == 'queued' and not has_remote
@@ -197,6 +203,51 @@ class ProductionStore:
                 (ident,draft_id,revision,key,json.dumps(draft,ensure_ascii=False),json.dumps(private,ensure_ascii=False),
                  'queued','queued','等待处理',stamp,stamp))
         return self.get_run(ident)
+
+    def run_name(self, ident, fallback):
+        with self.connection() as db:
+            row=db.execute('SELECT name FROM production_run_names WHERE id=?',(ident,)).fetchone()
+            return row['name'] if row else fallback
+
+    def rename_run(self, ident, name):
+        if not isinstance(name,str) or not 1<=len(name.strip())<=120 or any(ord(c)<32 or ord(c)==127 for c in name):
+            raise ValueError('任务名称请输入 1–120 个字符，不支持换行。')
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute('SELECT 1 FROM production_deleted_runs WHERE id=?',(ident,)).fetchone():
+                raise LookupError('任务已删除。')
+            if not ident.startswith('legacy-') and not db.execute('SELECT 1 FROM production_runs WHERE id=?',(ident,)).fetchone():
+                raise LookupError('找不到任务。')
+            db.execute('INSERT OR REPLACE INTO production_run_names VALUES (?,?,?)',(ident,name.strip(),now()))
+        return {'id':ident,'name':name.strip()}
+
+    def page_runs(self, page, page_size, legacy):
+        # Summaries are selected by SQLite before any snapshot/media decoration.
+        fields=['id','name','status','stage','message','progress','created_at','updated_at','error_kind','duration','download_url','has_remote','legacy']
+        with self.connection() as db:
+            db.execute('CREATE TEMP TABLE legacy_page (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
+            db.executemany('INSERT INTO legacy_page VALUES (?,?)',[(x['id'],json.dumps({k:x.get(k) for k in fields})) for x in legacy])
+            legacy_sql=','.join("json_extract(l.data,'$."+k+"') AS "+k for k in fields)
+            sql="""WITH combined AS (
+                SELECT id,json_extract(snapshot,'$.name') AS name,status,stage,message,progress,created_at,updated_at,error_kind,
+                json_extract(snapshot,'$.model.duration') AS duration,NULL AS download_url,
+                (provider_task_id IS NOT NULL OR result_url IS NOT NULL) AS has_remote,0 AS legacy
+                FROM production_runs
+                UNION ALL SELECT """+legacy_sql+""" FROM legacy_page l
+            ), visible AS (SELECT c.*,COALESCE(n.name,c.name) AS display_name FROM combined c
+                LEFT JOIN production_run_names n ON c.id=n.id
+                WHERE c.id NOT IN (SELECT id FROM production_deleted_runs)) """
+            count=db.execute(sql+"SELECT count(*) AS total,COALESCE(sum(status IN ('running','queued')),0) AS active FROM visible").fetchone()
+            pages=max(1,(count['total']+page_size-1)//page_size);page=min(page,pages)
+            rows=db.execute(sql+'SELECT * FROM visible ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?',(page_size,(page-1)*page_size)).fetchall()
+        result=[]
+        for row in rows:
+            item=dict(row);item['name']=item.pop('display_name');item['legacy']=bool(item['legacy']);remote=item.pop('has_remote')
+            item['can_resume']=not item['legacy'] and item['status']=='needs_attention' and bool(remote)
+            item['can_cancel']=not item['legacy'] and item['status']=='queued' and not remote
+            item['can_delete']=item['status']!='running' and (item['status']!='queued' or (not item['legacy'] and not remote))
+            result.append(item)
+        return {'items':result,'total':count['total'],'active_count':count['active'],'page':page,'pages':pages,'page_size':page_size}
 
     def list_runs(self):
         with self.connection() as db:

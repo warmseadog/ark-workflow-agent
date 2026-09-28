@@ -157,6 +157,8 @@
       <textarea id="generation-prompt" name="prompt" rows="4">保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图中的脸和身份；应用@Image2衣服参考图中的服装款式、颜色和材质，保持全片自然稳定。</textarea>
       <p class="field-hint">人物确定身份，衣服确定穿着；使用发型图时参考其发型，使用场景图时替换背景。下方“素材联动”段随上传、删除和启用状态自动更新，无需手动编辑编号；未设置时沿用人物图发型和原视频场景。全部参考图合计最多 9 张。</p>
     </details>
+    <div class="draft-task-title"><span>任务名称</span><strong id="draft-task-name">正在读取…</strong><button type="button" id="draft-name-edit" class="run-rename" aria-label="修改本次任务名称">✎</button></div>
+    <div id="draft-name-editor" class="draft-name-editor" hidden><input id="draft-name-input" maxlength="120" aria-label="本次任务名称"><button type="button" id="draft-name-save">保存</button><button type="button" id="draft-name-cancel">取消</button></div>
     <div class="generation-action"><p id="production-status" role="status" aria-live="polite">选择三类素材后即可生成</p><button class="primary" type="submit" id="studio-generate-submit" disabled>生成视频 →</button></div>
     <div id="save-notice" class="save-notice" hidden>
       <span id="draft-save-status" role="status" aria-live="polite">正在恢复内容…</span>
@@ -168,8 +170,11 @@
   <section class="production-runs" aria-labelledby="production-runs-heading">
     <div class="runs-heading"><h3 id="production-runs-heading">生成任务</h3><button type="button" class="secondary" id="runs-refresh">刷新任务</button></div>
     <p id="runs-status" role="status">正在读取任务…</p>
-    <div id="production-run-list"></div>
+    <div class="run-list-header" aria-hidden="true"><span>任务名称</span><span>创建时间</span><span>状态</span><span>时长</span><span>操作</span></div>
+    <div id="production-run-list" aria-label="生成任务列表"></div>
+    <nav id="runs-pagination" class="runs-pagination" aria-label="任务列表分页" hidden><span>每页 10 条</span><button type="button" id="runs-previous" disabled>上一页</button><span id="runs-page">1 / 1</span><button type="button" id="runs-next" disabled>下一页</button></nav>
   </section>
+  <dialog id="run-player-dialog" class="run-player-dialog" aria-labelledby="run-player-title"><div class="run-player-heading"><h3 id="run-player-title">视频播放</h3><button type="button" id="run-player-close" aria-label="关闭视频播放">×</button></div><video id="run-player-video" controls playsinline preload="metadata"></video><div class="run-player-tools"><div role="group" aria-label="播放画质"><button type="button" data-play-quality="smooth">流畅</button><button type="button" data-play-quality="original">原画</button></div><a id="run-player-download" class="secondary" download>下载原片</a></div><p id="run-player-status" role="status"></p></dialog>
   <div class="corner-settings">
     <details class="flow-config" id="redaction-settings">
       <summary aria-controls="redaction-settings-panel">⚙ 打码设置</summary>

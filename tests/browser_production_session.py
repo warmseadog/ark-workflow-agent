@@ -113,9 +113,11 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
                     if switches['lose_response']:
                         switches['lose_response']=False; route.abort(); return
                     route.fulfill(json=existing)
-                else: route.fulfill(json={'items':list(runs.values())})
+                else: route.fulfill(json={'items':[{**r,'can_cancel':r['status']=='queued','can_resume':bool(r.get('provider_task_id')),'can_delete':r['status'] not in ['running','queued']} for r in runs.values()]})
             elif path.startswith('/api/production/runs/') and req.method == 'DELETE':
                 rid = path.rsplit('/',1)[-1]; runs.pop(rid); route.fulfill(json={'id':rid,'deleted':True})
+            elif path.startswith('/api/production/runs/') and req.method=='GET' and path.rsplit('/',1)[-1] in runs:
+                route.fulfill(json=runs[path.rsplit('/',1)[-1]])
             elif path.endswith('/cancel'):
                 r = runs[path.split('/')[-2]]; r['status']='cancelled'; route.fulfill(json=r)
             elif path.endswith('/copy'):
@@ -253,7 +255,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
             expect(page.locator('[data-run-id]')).to_have_count(2)
             assert runs['r1']['snapshot']['scene_enabled'] is True
             assert runs['r2']['snapshot']['scene_enabled'] is False
-            page.locator('[data-run-id=r2] [data-run-action=details]').click()
+            page.locator('[data-run-id=r2] .run-menu > summary').click(); page.locator('[data-run-id=r2] [data-run-action=details]').click()
             expect(page.locator('[data-run-id=r2] .run-detail-assets figure')).to_have_count(5)
             expect(page.locator('[data-run-id=r2] [data-source-kind=scene]')).to_contain_text('未使用')
             if prompt_sync:
@@ -271,7 +273,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
             if prompt_sync:
                 # Copy an old snapshot that predates visible rules; immediate submission must freeze visible text.
                 runs['r1']['snapshot']['prompt']='old legacy prompt'
-                page.locator('[data-run-id=r1] [data-run-action=copy]').click()
+                page.locator('[data-run-id=r1] .run-menu > summary').click(); page.locator('[data-run-id=r1] [data-run-action=copy]').click()
                 expect(page.locator('#studio-generate-submit')).to_be_enabled()
                 visible=page.locator('#generation-prompt').input_value()
                 assert 'old legacy prompt' in visible and '@Image3 发型参考' in visible
@@ -279,7 +281,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
                 expect(page.locator('[data-run-id]')).to_have_count(3)
                 assert runs['r3']['snapshot']['prompt']==visible,'Copied snapshot lost displayed role block'
                 runs['r1']['snapshot'].update(hairstyle_asset_ids=[],scene_asset_ids=[],scene_description='',scene_enabled=False,prompt='plain old draft')
-                page.locator('[data-run-id=r1] [data-run-action=copy]').click()
+                page.locator('[data-run-id=r1] .run-menu > summary').click(); page.locator('[data-run-id=r1] [data-run-action=copy]').click()
                 expect(page.locator('#generation-prompt')).to_have_value('plain old draft')
                 expect(page.locator('#prompt-reference-status')).to_have_text('可选，展开编辑')
 
@@ -294,7 +296,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         expect(page.locator('[data-run-id]')).to_have_count(1)
         expect(page.locator('#generation-prompt')).to_be_enabled()
         first_card=page.locator('[data-run-id=r1]')
-        first_card.locator('[data-run-action=details]').click()
+        first_card.locator('.run-menu > summary').click(); first_card.locator('[data-run-action=details]').click()
         expect(first_card.locator('.run-detail-assets figure')).to_have_count(3)
         expect(first_card.locator('.run-detail-assets figcaption')).to_have_text(['参考视频','人物参考图','衣服参考图'])
         detail_text=first_card.locator('details').inner_text()
@@ -311,7 +313,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         preview_toggle.click()
         expect(first_card.locator('[data-redacted-preview]')).to_be_hidden()
         assert first_card.locator('[data-redacted-preview] video').evaluate('(el)=>el.paused')
-        first_card.locator('[data-run-action=details]').click()
+        first_card.locator('.run-menu > summary').click(); first_card.locator('[data-run-action=details]').click()
         assert runs['r1']['snapshot']['prompt'] == '任务 A 的提示词'
         assert isinstance(runs['r1']['snapshot']['mask']['mask_scale'], (int,float))
         expect(page.locator('.draft-toolbar')).to_have_count(0)
@@ -395,14 +397,14 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         page.locator('#runs-refresh').click()
         expect(page.locator('[data-run-id=r2]')).to_contain_text('sensitive content')
         expect(page.locator('[data-run-id=r2] [data-run-action=resume]')).to_have_count(0)
-        page.locator('[data-run-id=r2] [data-run-action=details]').click()
+        page.locator('[data-run-id=r2] .run-menu > summary').click(); page.locator('[data-run-id=r2] [data-run-action=details]').click()
         expect(page.locator('[data-run-id=r2] .run-error-detail')).to_contain_text('req-fixture')
-        page.locator('[data-run-id=r1] [data-run-action=cancel]').click()
+        page.locator('[data-run-id=r1] .run-menu > summary').click(); page.locator('[data-run-id=r1] [data-run-action=cancel]').click()
         expect(page.locator('[data-run-id=r1]')).to_contain_text('已取消')
         expect(page.locator('[data-run-id=r2] > details')).to_have_attribute('open','')
         page.locator('#runs-refresh').click()
         expect(page.locator('[data-run-id=r2] > details')).to_have_attribute('open','')
-        page.locator('[data-run-id=r2] [data-run-action=delete]').click()
+        page.locator('[data-run-id=r2] .run-menu > summary').click(); page.locator('[data-run-id=r2] [data-run-action=delete]').click()
         expect(page.locator('[data-run-id=r2]')).to_have_count(0)
         page.reload()
         expect(page.locator('#draft-save-status')).to_contain_text('已保存')
@@ -499,7 +501,7 @@ def integration():
                     page.locator('#studio-generate-submit').click()
                     expect(page.locator('[data-run-id]')).to_have_count(1)
                     expect(page.locator('#generation-prompt')).to_be_enabled()
-                    page.locator('[data-run-action=copy]').first.click()
+                    page.locator('.run-menu > summary').first.click(); page.locator('[data-run-action=copy]').first.click()
                     page.locator('#generation-prompt').fill('真实本地测试 B')
                     page.locator('#studio-generate-submit').click()
                     expect(page.locator('[data-run-id]')).to_have_count(2)
@@ -522,13 +524,13 @@ def integration():
                     page.screenshot(path=str(ROOT/'storage/durable-production-mobile.png'),full_page=True)
                     card=page.locator('[data-state=succeeded]').first
                     removed=card.get_attribute('data-run-id')
-                    card.locator('[data-run-action=details]').click()
+                    card.locator('.run-menu > summary').click(); card.locator('[data-run-action=details]').click()
                     expect(card.locator('.run-detail-assets figure')).to_have_count(3)
                     page.once('dialog', lambda dialog: dialog.dismiss())
-                    card.locator('[data-run-action=delete]').click()
+                    card.locator('.run-menu > summary').click(); card.locator('[data-run-action=delete]').click()
                     expect(page.locator('[data-run-id]')).to_have_count(2)
                     page.once('dialog', lambda dialog: dialog.accept())
-                    card.locator('[data-run-action=delete]').click()
+                    card.locator('.run-menu > summary').click(); card.locator('[data-run-action=delete]').click()
                     expect(page.locator('[data-run-id]')).to_have_count(1)
                     page.reload()
                     expect(page.locator('#draft-save-status')).to_contain_text('已保存')

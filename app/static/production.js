@@ -460,6 +460,7 @@
     status.textContent = '正在保存草稿并加入任务队列';
     try {
       if (!pendingSubmission) {
+        acceptTaskName();
         const saved = await flushDraft();
         pendingSubmission = {draft_id: saved.id, revision: saved.revision, idempotency_key: crypto.randomUUID()};
         // Persist before the request: a lost response must retry the identical submission.
@@ -500,7 +501,7 @@
   const modelForm = document.getElementById('model-settings-form');
   const publicModelFields = ['provider','protocol','mode','base_url','model','duration','fps','resolution','public_base_url'];
   const drafts = new Map(), runs = new Map();
-  let draft = null, dirtyVersion = 0, savedVersion = 0, saveTimer, savePromise = null, pendingSubmission = null;
+  let draft = null, draftName = null, dirtyVersion = 0, savedVersion = 0, saveTimer, savePromise = null, pendingSubmission = null;
   try { pendingSubmission = JSON.parse(localStorage.getItem(pendingKey) || 'null'); } catch (_) {}
   const templatesReady = new Promise(resolve => window.addEventListener('production-templates-ready', resolve, {once:true}));
   const modelsReady = new Promise(resolve => window.addEventListener('model-settings-loaded', resolve, {once:true}));
@@ -682,10 +683,14 @@
     const videoFile = source.files[0], faceFiles = [...imageFiles.face], clothingFiles = [...imageFiles.clothing];
     const extraFiles = Object.fromEntries(extraKinds.map(kind=>[kind,[...imageFiles[kind]]]));
     const selectedPerson = window.portraitPeople?.selected || null;
-    const values = {person_reference_mode:personMode,person_video_asset_id:personVideo?.id || null,person_id:selectedPerson, name:draft?.name || '未命名视频', prompt:generationForm.elements.namedItem('prompt').value, mask:maskValues(), model:publicModel()};
+    const values = {person_reference_mode:personMode,person_video_asset_id:personVideo?.id || null,person_id:selectedPerson, name:draftName || draft?.name || '未命名视频', prompt:generationForm.elements.namedItem('prompt').value, mask:maskValues(), model:publicModel()};
     for (const kind of extraKinds) values[kind+'_enabled'] = document.getElementById(kind+'-enabled').checked;
     values.scene_description = document.getElementById('scene-description').value;
     values.hairstyle_mask = hairMaskValues();
+    if (/^视频-\d{4}-\d{6}$/.test(values.name) && selectedPerson) {
+      const person=window.portraitPeople?.items.find(x=>x.id===selectedPerson);
+      if(person)values.name=person.name.slice(0,80)+values.name.slice(2);
+    }
     const [videoAsset, faces, clothes, extras] = await Promise.all([
       videoFile ? persistFile(videoFile,'video') : null,
       Promise.all(faceFiles.map(file => persistFile(file,'face'))),
@@ -701,11 +706,11 @@
     if (savedVersion === dirtyVersion) return draft;
     savePromise = (async () => {
       while (savedVersion !== dirtyVersion) {
-        const version = dirtyVersion, id = draft.id, revision = draft.revision;
+        const version = dirtyVersion, id = draft.id, revision = draft.revision, capturedName = draftName;
         showSave('正在保存…');
         const values = await captureDraft();
         const saved = await api('/drafts/' + encodeURIComponent(id), 'PUT', {...values, revision});
-        draft = saved; drafts.set(saved.id, saved); savedVersion = version;
+        draft = saved; if(draftName===capturedName)draftName=saved.name; drafts.set(saved.id, saved); savedVersion = version; syncTaskName();
         window.productionDraftModel = {...saved.model};
       }
       recoverDraft.hidden = true; showSave('已保存到本机'); return draft;
@@ -743,7 +748,7 @@
       document.getElementById('hairstyle-mask-threshold').value = item.hairstyle_mask?.threshold ?? 0.2;
       document.getElementById('hairstyle-references').open = false;
       document.getElementById('accessory-references').open = Object.keys(accessoryLabels).some(k=>imageFiles[k].length);
-      draft = item; drafts.set(item.id,item);
+      draft = item; draftName=item.name; drafts.set(item.id,item); syncTaskName();
       window.portraitPeople?.restore(item.person_id);
       generationForm.elements.namedItem('prompt').value = item.prompt ?? defaultPrompt;
       applyMask({...defaultMask,...item.mask}); savedMask = maskValues();
@@ -771,6 +776,13 @@
     } catch (error) { showSave(error.message, true); }
     finally { draftControls(false); lock(false); }
   }
+  const taskNameText=document.getElementById('draft-task-name'),taskNameInput=document.getElementById('draft-name-input'),taskNameEditor=document.getElementById('draft-name-editor');
+  function syncTaskName(){taskNameText.textContent=draftName||draft?.name||'视频任务';if(taskNameEditor.hidden)taskNameInput.value=draftName||draft?.name||'';}
+  document.getElementById('draft-name-edit').addEventListener('click',()=>{if(!sessionReady||busy)return;taskNameEditor.hidden=false;taskNameInput.value=draftName||draft.name;taskNameInput.focus();taskNameInput.select();});
+  function acceptTaskName(){if(taskNameEditor.hidden)return;const name=taskNameInput.value.trim();if(!name||name.length>120)throw new Error('任务名称请输入 1–120 个字符。');draftName=name;taskNameEditor.hidden=true;syncTaskName();changed();}
+  document.getElementById('draft-name-save').addEventListener('click',async()=>{try{acceptTaskName();await flushDraft();}catch(error){toast(error.message);}});
+  document.getElementById('draft-name-cancel').addEventListener('click',()=>{taskNameEditor.hidden=true;syncTaskName();});
+  taskNameInput.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();document.getElementById('draft-name-save').click();}if(event.key==='Escape'){event.preventDefault();document.getElementById('draft-name-cancel').click();}});
   retrySave.addEventListener('click', () => sessionReady ? flushDraft().catch(() => {}) : initialize());
   recoverDraft.addEventListener('click', async () => {
     if (busy) return;
@@ -797,161 +809,9 @@
     if (savedVersion !== dirtyVersion) { event.preventDefault(); event.returnValue = ''; }
   });
 
-  const locallyDeletedRuns = new Set();
-  const stateNames = {defaced:'预览已完成',queued:'排队中',running:'处理中',succeeded:'已完成',failed:'失败',cancelled:'已取消',needs_attention:'需要处理'};
-  const stageNames = {authorizing:'核实人物素材',preprocess:'处理参考视频',upload:'上传素材',submitting:'提交模型',generating:'模型生成',downloading:'下载结果'};
-  function node(tag, text, className) {
-    const element = document.createElement(tag); if (text) element.textContent = text;
-    if (className) element.className = className; return element;
-  }
-  function renderRuns() {
-    const list = document.getElementById('production-run-list');
-    // Retain existing video elements and open details across progress polls.
-    const retained = new Map([...list.children].map(card => [card.dataset.runId,card]));
-    for (const [id,card] of retained) if (!runs.has(id) || locallyDeletedRuns.has(id)) card.remove();
-    for (const item of [...runs.values()].sort((a,b) => String(b.created_at).localeCompare(String(a.created_at)))) {
-      if (locallyDeletedRuns.has(item.id)) continue;
-      const fingerprint = JSON.stringify(item);
-      let card = retained.get(item.id);
-      if (card?.dataset.version === fingerprint) { list.append(card); continue; }
-      const wasOpen = card?.querySelector('details')?.open;
-      const next = node('article', '', 'production-run'); next.dataset.runId = item.id; next.dataset.version = fingerprint; next.dataset.state = item.status;
-      const heading = node('div','','run-card-heading');
-      heading.append(node('h4', item.name || '视频任务'),node('span', (item.legacy ? '历史 · ' : '') + (stateNames[item.status] || item.status),'run-state'));
-      const problems = {
-        material_rejected: (item.error || item.message || '参考素材未通过检查，请查看错误详情。').split('。')[0]+'。',
-        submission_uncertain:'任务提交结果正在确认，请联系管理员核实，暂勿重复提交。',
-        query_unavailable:'暂时无法获取生成进度，可稍后点击“继续查询 / 下载”。',
-        download_failed:'视频已生成，但下载尚未完成，可点击“继续查询 / 下载”重试。',
-      };
-      const body = item.status === 'succeeded' ? '视频已生成，可以播放或下载。'
-        : problems[item.error_kind] || (['failed','needs_attention'].includes(item.status)
-          ? '本次任务未完成，请检查参考素材后重试；仍有问题可联系管理员。'
-          : item.status === 'cancelled' ? '任务已取消。' : stageNames[item.stage] || '等待处理');
-      next.append(heading, node('p',body,'run-message'));
-      if (['queued','running'].includes(item.status)) {
-        const progress = node('progress'); progress.max = 100; progress.value = item.progress || 0;
-        progress.setAttribute('aria-label',(stageNames[item.stage] || '任务进度') + ' ' + (item.progress || 0) + '%'); next.append(progress);
-      }
-      const actions = node('div','','run-actions');
-      const button = (action,label) => {
-        const b = node('button',label,'secondary'); b.type='button'; b.dataset.runAction=action;
-        b.addEventListener('click',async () => {
-          if (action === 'details') {
-            detail.open = !detail.open;
-            return;
-          }
-          if (action === 'delete') {
-            const note = item.status === 'needs_attention' ? '\n此操作不会取消服务商端可能仍在执行的任务。' : '';
-            if (!window.confirm('删除这条任务记录？草稿、素材和视频文件会保留。'+note)) return;
-            b.disabled = true;
-            try {
-              await api('/runs/'+encodeURIComponent(item.id),'DELETE');
-              locallyDeletedRuns.add(item.id); runs.delete(item.id); renderRuns();
-              document.getElementById('runs-status').textContent='任务已删除，草稿和素材已保留。';
-            } catch (error) { document.getElementById('runs-status').textContent=error.message; b.disabled=false; }
-            return;
-          }
-          if (action === 'copy') { await changeDraft(() => api('/runs/'+encodeURIComponent(item.id)+'/copy','POST',{})); return; }
-          b.disabled = true;
-          try { const updated = await api('/runs/'+encodeURIComponent(item.id)+'/'+action,'POST',{}); runs.set(updated.id,updated); renderRuns(); }
-          catch (error) { document.getElementById('runs-status').textContent=error.message; b.disabled=false; }
-        }); actions.append(b); return b;
-      };
-      const detailsButton = button('details', wasOpen ? '收起详情' : '查看详情');
-      detailsButton.setAttribute('aria-expanded',String(Boolean(wasOpen)));
-      button('copy','复制为草稿');
-      if (item.can_cancel ?? (item.status==='queued' && !item.legacy && !item.provider_task_id)) button('cancel','取消排队');
-      if (item.can_resume ?? (item.status==='needs_attention' && (item.provider_task_id || item.download_url))) button('resume','继续查询 / 下载');
-      const deleteButton = button('delete','删除任务');
-      deleteButton.classList.add('run-delete');
-      deleteButton.disabled = !(item.can_delete ?? !['running','queued'].includes(item.status));
-      if (deleteButton.disabled) deleteButton.title='任务正在处理，请等待结束后删除；未开始的任务可先取消排队。';
-      if (item.download_url) {
-        const link=node('a','下载视频 ↓','secondary');link.href=item.download_url;link.setAttribute('download',''); actions.append(link);
-        const video=node('video');video.src=item.download_url;video.controls=true;video.preload='none';video.playsInline=true;next.append(video);
-      }
-      next.append(actions);
-      const detail=node('details');detail.open=Boolean(wasOpen);detail.append(node('summary','任务详情'));
-      detail.id = 'run-details-'+item.id;
-      detailsButton.setAttribute('aria-controls',detail.id);
-      detail.addEventListener('toggle',() => {
-        detailsButton.textContent = detail.open ? '收起详情' : '查看详情';
-        detailsButton.setAttribute('aria-expanded',String(detail.open));
-      });
-      const created = new Date(item.created_at);
-      if (!Number.isNaN(created.getTime())) {
-        detail.append(node('p','创建于 '+created.toLocaleString('zh-CN',{hour12:false}),'run-created'));
-      }
-      const materials = node('div','','run-detail-assets');
-      const assets = item.snapshot?.assets || [];
-      for (const [kind,label] of [['video','动作参考视频'],['person_video','人物参考视频'],['face','人物参考图'],['clothing','衣服参考图'],['hairstyle','发型参考图'],['scene','场景参考图'],...Object.entries(accessoryLabels).map(([kind,label])=>[kind,label+'参考图'])]) {
-        const sources=assets.filter(asset=>asset.kind===kind);
-        if (kind==='person_video' && !sources.length) continue;
-        if (extraKinds.includes(kind) && !sources.length && !(kind==='scene' && item.snapshot?.scene_description)) continue;
-        const figure=node('figure'); figure.dataset.sourceKind=kind;
-        const unused=(extraKinds.includes(kind) && !item.snapshot?.[kind+'_enabled']) || (kind==='face' && item.snapshot?.person_reference_mode==='video') || (kind==='person_video' && item.snapshot?.person_reference_mode!=='video');
-        figure.append(node('figcaption',label+(unused?' · 未使用':'')));
-        if (kind==='scene' && item.snapshot?.scene_description) figure.append(node('p',item.snapshot.scene_description,'field-hint'));
-        if (!sources.length) figure.append(node('p','这条历史任务未保留原始素材','run-source-empty'));
-        for (const asset of sources) {
-          const media=node(['video','person_video'].includes(kind) ? 'video' : 'img'); media.dataset.sourceUrl=asset.url;
-          if (['video','person_video'].includes(kind)) { media.controls=true;media.preload='none';media.playsInline=true; }
-          else { media.alt=label;media.loading='lazy';media.decoding='async'; }
-          media.addEventListener('error',()=>{
-            media.hidden=true;
-            figure.append(node('p','素材暂时无法加载，请稍后刷新重试。','run-source-empty'));
-          },{once:true});
-          figure.append(media);
-        }
-        materials.append(figure);
-      }
-      detail.append(materials);
-      const loadSources=()=>{
-        if (!detail.open) return;
-        materials.querySelectorAll('[data-source-url]').forEach(media=>{
-          media.src=media.dataset.sourceUrl; delete media.dataset.sourceUrl;
-        });
-      };
-      detail.addEventListener('toggle',loadSources); loadSources();
-      if (item.defaced_url) {
-        const previous=card?.querySelector('[data-redacted-preview]');
-        const previewOpen=Boolean(wasOpen && previous && !previous.hidden);
-        const toggle=node('button',previewOpen ? '收起打码预览' : '预览打码效果','secondary run-redacted-toggle');
-        toggle.type='button';toggle.dataset.runAction='preview-redacted';
-        const panel=node('div','','run-redacted-preview');panel.dataset.redactedPreview='';panel.hidden=!previewOpen;
-        panel.id='run-redacted-'+item.id;toggle.setAttribute('aria-controls',panel.id);
-        toggle.setAttribute('aria-expanded',String(previewOpen));
-        const video=previous?.querySelector('video') || node('video');
-        video.controls=true;video.preload='none';video.playsInline=true;
-        video.setAttribute('aria-label','打码后视频预览');
-        panel.append(video);
-        const setPreview=open=>{
-          panel.hidden=!open;toggle.setAttribute('aria-expanded',String(open));
-          toggle.textContent=open ? '收起打码预览' : '预览打码效果';
-          if (open) { video.preload='metadata'; if (video.getAttribute('src')!==item.defaced_url) video.src=item.defaced_url; }
-          else video.pause();
-        };
-        toggle.addEventListener('click',()=>setPreview(panel.hidden));
-        detail.addEventListener('toggle',()=>{if (!detail.open) setPreview(false);});
-        detail.append(toggle,panel);
-      }
-      if (item.error) {
-        const diagnostic=node('details','','run-error-detail'); diagnostic.append(node('summary','错误详情'));
-        diagnostic.append(node('p',item.error));
-        if (item.request_id) diagnostic.append(node('p','Request ID：'+item.request_id));
-        detail.append(diagnostic);
-      }
-      next.append(detail);
-      if (card) card.replaceWith(next); list.append(next);
-    }
-    document.getElementById('runs-status').textContent = runs.size ? '任务独立执行，刷新页面后仍可查看进度和结果。' : '还没有生成任务。提交后会在这里显示进度。';
-  }
-  async function refreshRuns() {
-    try { const data=await api('/runs'); runs.clear(); (data.items || []).forEach(item=>runs.set(item.id,item)); renderRuns(); }
-    catch (error) { document.getElementById('runs-status').textContent='任务读取失败：'+error.message; }
-  }
-  document.getElementById('runs-refresh').addEventListener('click',refreshRuns);
+  const runList=window.createProductionRuns({api,changeDraft,accessoryLabels});
+  function renderRuns(){runList.submitted();}
+  function refreshRuns(){return runList.refresh();}
   async function initialize() {
     lock(true); draftControls(true);
     try {
@@ -961,11 +821,15 @@
       const selected = drafts.get(requested) || data.items?.[0];
       const item = selected ? await api('/drafts/'+encodeURIComponent(selected.id)) : await api('/drafts','POST',{});
       await restoreDraft(item); sessionReady=true;
+      if (/^未命名视频(?: 副本)*$/.test(draft.name)) {
+        const stamp=new Date().toLocaleString('sv-SE',{timeZone:'Asia/Shanghai'}).replace(/\D/g,'').slice(4);
+        draftName='视频-'+stamp.slice(0,4)+'-'+stamp.slice(4);syncTaskName();changed();
+      }
       if ((item.person_id || null) !== (window.portraitPeople?.selected || null) || item.prompt !== generationForm.elements.namedItem('prompt').value) changed();
       if (pendingSubmission) status.textContent='上次提交结果尚未确认，点击确认可安全恢复。';
     } catch (error) { showSave('恢复失败：'+error.message,true); }
     finally { draftControls(false); lock(false); }
   }
-  initialize(); refreshRuns(); setInterval(() => { if (!document.hidden) refreshRuns(); },5000);
+  initialize(); refreshRuns();
 
 })();
