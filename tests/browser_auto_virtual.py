@@ -17,6 +17,7 @@ import imageio_ffmpeg
 from jinja2 import Environment, FileSystemLoader
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
+from tests.browser_model_fixture import options as model_options
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -85,8 +86,8 @@ def check(width=1440, sole_real=False, legacy=False, bound=False):
                     route.fulfill(json=assets['official-real'])
                 elif path == '/api/portrait/people/resolve':
                     route.fulfill(json=person)
-                elif path == '/api/model-settings':
-                    route.fulfill(json={'config': dict(CONFIG, has_api_key=False, status='demo'), 'presets': {'ark': {'models': []}}})
+                elif path == '/api/production/model-options':
+                    route.fulfill(json=model_options(CONFIG))
                 elif path == '/api/prompt-templates':
                     route.fulfill(json={'items': []})
                 elif path == '/api/link-settings':
@@ -167,7 +168,7 @@ def check(width=1440, sole_real=False, legacy=False, bound=False):
             ]:
                 page.locator(selector).set_input_files({'name': name, 'mimeType': mime, 'buffer': content})
             expect(page.locator('#draft-save-status')).to_contain_text('已保存')
-            assert drafts['d1'].get('person_input_policy') == ('existing_person' if bound else 'legacy_raw' if legacy else 'auto_virtual')
+            assert drafts['d1'].get('person_input_policy') == 'auto_virtual'
             assert not [c for c in calls if c[1] == '/api/portrait/photos'], 'Local upload must not enqueue portraits'
             page.locator('#studio-generate-submit').click()
             expect(page.locator('[data-run-id]')).to_have_count(1)
@@ -175,8 +176,8 @@ def check(width=1440, sole_real=False, legacy=False, bound=False):
             if legacy:
                 browser.close()
                 if bound:
-                    assert runs['r1']['snapshot']['assets'][1]['portrait']['remote_asset_id'] == 'asset-bound'
-                print(f'PASS legacy draft {width}: bound={bound}, original path preserved, sole real not selected')
+                    assert not any(a.get('portrait') for a in runs['r1']['snapshot']['assets'])
+                print(f'PASS legacy draft {width}: bound={bound}, original restore preserved, local replacement detaches old bindings')
                 return
             expect(page.locator('[data-run-id=r1]')).to_contain_text('人物素材处理中')
             page.reload()
@@ -231,11 +232,13 @@ def check(width=1440, sole_real=False, legacy=False, bound=False):
             assert page.evaluate('productionPortraits.inputPolicy') == 'auto_virtual'
             assert sum(method == 'GET' and path == '/api/portrait/people' for method, path, _ in calls) == people_reads + 2
             page.locator('[data-person-type=LivenessFace]').click()
-            page.locator('#person-menu-close').click()
+            page.locator('[data-photo-close]').click()
+            page.wait_for_timeout(100)
+            after_close_reads = sum(method == 'GET' and path == '/api/portrait/people' for method, path, _ in calls)
             page.locator('#runs-refresh').click()
             expect(row).to_contain_text('入库结果待确认')
             page.wait_for_timeout(100)
-            assert sum(method == 'GET' and path == '/api/portrait/people' for method, path, _ in calls) == people_reads + 2
+            assert sum(method == 'GET' and path == '/api/portrait/people' for method, path, _ in calls) == after_close_reads
             row.locator('.run-menu > summary').click()
             row.locator('[data-run-action=retry-preparation]').click()
             expect(row).to_contain_text('继续检查原人物素材')
@@ -243,9 +246,9 @@ def check(width=1440, sole_real=False, legacy=False, bound=False):
             if sole_real:
                 # A real library choice retains its server type; a late photo query cannot
                 # overwrite the automatic-source status after the user switches back.
-                page.locator('[data-person-media=image]').click()
                 switches['hold_photo_query'] = True
                 page.locator('#person-picker > summary').click()
+                page.locator('[data-person-type=LivenessFace]').click()
                 page.locator('[data-person-id=real-1]').click()
                 page.locator('[data-photo-use]').click()
                 expect(page.locator('#person-photos-dialog')).not_to_be_visible()
@@ -258,13 +261,14 @@ def check(width=1440, sole_real=False, legacy=False, bound=False):
                         break
                     page.wait_for_timeout(100)
                 assert photo_queries
-                page.locator('#person-auto-virtual').click()
+                page.locator('#face-reference-preview button[aria-label="移除第 1 张图片"]').click()
                 photo_queries.pop().fulfill(status=503, json={'detail': 'late query error'})
                 page.wait_for_timeout(100)
-                expect(page.locator('#person-photo-status')).to_contain_text('虚拟人物')
+                expect(page.locator('#person-photo-status')).to_contain_text('自动准备')
                 # The same guard applies to a local image upload that finishes after switching.
                 switches['hold_photo_query'] = False
                 page.locator('#person-picker > summary').click()
+                page.locator('[data-person-type=LivenessFace]').click()
                 page.locator('[data-person-id=real-1]').click()
                 page.locator('[data-photo-use]').click()
                 expect(page.locator('#person-photos-dialog')).not_to_be_visible()
@@ -276,7 +280,7 @@ def check(width=1440, sole_real=False, legacy=False, bound=False):
                     page.wait_for_timeout(50)
                 assert held
                 count = sum(method == 'POST' and path == '/api/portrait/photos' for method, path, _ in calls)
-                page.locator('#person-auto-virtual').click()
+                page.locator('#face-reference-preview button[aria-label="移除第 1 张图片"]').click()
                 route, asset = held.pop()
                 route.fulfill(json=asset)
                 expect(page.locator('#draft-save-status')).to_contain_text('已保存')
@@ -313,7 +317,7 @@ def integration():
     from dataclasses import replace
     from unittest.mock import patch
     from fastapi.testclient import TestClient
-    from app import main, portrait_library, portrait_service, production_worker, storage_settings
+    from app import main, portrait_library, portrait_service, production_worker, storage_settings, jobs
     from app.production_store import ProductionStore
 
     with TemporaryDirectory(prefix='auto-virtual-api-') as tmp:
@@ -327,7 +331,7 @@ def integration():
                         '-pix_fmt', 'yuv420p', str(clip)], check=True, capture_output=True)
         image = io.BytesIO()
         Image.new('RGB', (400, 400), '#b29eac').save(image, format='PNG')
-        with patch.object(main, 'settings', settings), patch.object(production_worker, 'wake', lambda *_: None), \
+        with patch.object(main, 'settings', settings), patch.object(jobs, 'store', jobs.JobStore()), patch.object(production_worker, 'wake', lambda *_: None), \
                 patch.object(portrait_service.ArkPortraitClient, '_request', side_effect=AssertionError('No official calls before committed run')):
             client = TestClient(main.app, base_url='http://127.0.0.1:18759')
             store = ProductionStore(Path(tmp))

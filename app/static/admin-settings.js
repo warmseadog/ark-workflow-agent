@@ -2,6 +2,7 @@
   'use strict';
   const byId = id => document.getElementById(id);
   const tos = byId('tos-form'), tik = byId('tikhub-form'), prompts = byId('prompt-form');
+  const redaction = byId('redaction-form');
   let overview = null, templates = [], promptBaseline = '', templateId = '';
   function note(id, text, error = false) {
     const node = byId(id); node.textContent = text; node.dataset.error = String(error); node.hidden = !text;
@@ -38,15 +39,34 @@
       dt.textContent = label; dd.textContent = String(value ?? '—'); row.append(dt, dd); node.append(row);
     }
   }
-  function renderBrowserMask() {
-    const names = {mask_mode:'处理区域', blur_style:'打码样式', mask_scale:'遮罩扩大倍数', mosaic_size:'马赛克颗粒', threshold:'检测阈值', keep_audio:'保留音频', robust_tracking:'稳定跟踪', detection_size:'检测尺寸', blur_shape:'遮罩形状'};
-    const labels = {face:'仅人脸', face_hair_primary:'主人脸与头发', hair_primary:'主人物头发', face_hair_all:'所有人物脸与头发', mosaic:'马赛克', blur:'高斯模糊', solid:'黑色遮挡', ellipse:'椭圆', rect:'矩形'};
-    try {
-      const values = JSON.parse(localStorage.getItem('studio-redaction-settings') || '{}');
-      const rows = Object.entries(names).filter(([key]) => values[key] !== undefined).map(([key,label]) => [label, typeof values[key] === 'boolean' ? (values[key] ? '是' : '否') : (labels[values[key]] || values[key])]);
-      info('redaction-browser', rows.length ? rows : [['保存状态','此浏览器尚未保存打码参数，制作页将使用页面默认值。']]);
-    } catch (_) { info('redaction-browser', [['读取状态','浏览器参数无法读取，请到制作页重新保存。']]); }
+  function fillRedaction(config) {
+    for (const [name, value] of Object.entries(config)) {
+      const input = redaction.elements.namedItem(name);
+      if (!input) continue;
+      if (input.type === 'checkbox') input.checked = value;
+      else input.value = value ?? '';
+    }
+    redactionLimits();
   }
+  function redactionLimits() {
+    const hair = redaction.elements.mask_mode.value !== 'face';
+    for (const option of redaction.elements.blur_style.options) option.disabled = hair && option.value !== 'mosaic';
+    if (hair) redaction.elements.blur_style.value = 'mosaic';
+  }
+  redaction.elements.mask_mode.addEventListener('change', redactionLimits);
+  redaction.addEventListener('submit', event => {
+    event.preventDefault();
+    const values = {};
+    redaction.querySelectorAll('input,select').forEach(input => {
+      values[input.name] = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.name === 'detection_size' ? (input.value ? Number(input.value) : null) : input.value;
+    });
+    operate(redaction, 'redaction-status', '正在保存…', async () => {
+      const data = await request('/api/redaction-settings', 'PUT', values);
+      fillRedaction(data.config);
+      note('redaction-status', '打码设置已保存，新建草稿自动使用；已有草稿和任务保持原参数。');
+      await refreshOverview();
+    });
+  });
   async function refreshOverview() {
     try {
       overview = await request('/api/admin/overview');
@@ -59,7 +79,7 @@
       byId('overview-attention').textContent = model.generation_message || (model.mode === 'mock' ? '当前为演示模式。需要真实生成时，请在视频模型中切换运行模式。' : '生成所需配置已填写，可测试连接后开始制作。');
       info('system-info', [['访问范围',system.access],['存储目录',system.storage_dir],['上传大小上限',system.max_upload_mb + ' MB'],['模型轮询间隔',system.seedance_poll_seconds + ' 秒'],['通用下载 Cookie',system.cookie_configured ? '已配置' : '未配置'],['配置生效','服务配置保存后用于新任务']]);
       info('redaction-defaults', [['打码样式',redaction.blur_style],['马赛克颗粒',redaction.mosaic_size],['遮罩扩大倍数',redaction.mask_scale]]);
-      renderBrowserMask(); note('page-error','');
+      note('page-error','');
     } catch (error) { note('page-error',error.message,true); }
   }
   byId('refresh-overview').addEventListener('click',refreshOverview);
@@ -167,7 +187,7 @@
     if (!templateId || !confirm('确认删除此提示词模板？')) return;
     operate(prompts,'prompt-status','正在删除…',async () => { await request('/api/prompt-templates/' + encodeURIComponent(templateId),'DELETE'); await loadTemplates(); note('prompt-status','模板已删除。'); });
   });
-  window.addEventListener('storage',renderBrowserMask);
+  request('/api/redaction-settings').then(data => { fillRedaction(data.config); redaction.querySelector('fieldset').disabled=false; }).catch(error=>note('redaction-status',error.message,true));
   request('/api/storage-settings').then(data => { fillTos(data.config); tos.querySelector('fieldset').disabled=false; }).catch(error=>note('tos-status',error.message,true));
   request('/api/link-settings').then(data => { fillTik(data); tik.querySelector('fieldset').disabled=false; }).catch(error=>note('tikhub-status',error.message,true));
   loadTemplates().then(()=>prompts.querySelector('fieldset').disabled=false).catch(error=>note('prompt-status',error.message,true));

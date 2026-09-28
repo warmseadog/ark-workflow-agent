@@ -15,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 from . import local_preferences, media
-from . import admin_settings, storage_settings
+from . import admin_settings, storage_settings, redaction_settings
 from .video_links import LABELS, platform_for_url
 
 from .config import settings
@@ -176,6 +176,23 @@ def get_model_settings(request: Request):
     return {'config': admin_settings.public_model(settings), 'presets': PRESETS}
 
 
+@app.get('/api/model-catalog')
+def get_model_catalog(request: Request):
+    _local_config_request(request)
+    from .model_catalog import catalog
+    return catalog(settings)
+
+
+@app.put('/api/model-catalog')
+def put_model_catalog(request: Request, payload: dict):
+    _local_config_request(request)
+    from .model_catalog import save_catalog
+    try:
+        return save_catalog(settings, payload)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
 @app.put('/api/model-settings')
 def put_model_settings(request: Request, payload: dict):
     _local_config_request(request)
@@ -204,6 +221,23 @@ def admin_overview(request: Request):
 def get_storage_settings(request: Request):
     _local_config_request(request)
     return {'config': storage_settings.load_config(settings).public()}
+
+
+@app.get('/api/redaction-settings')
+def get_redaction_settings(request: Request):
+    _local_config_request(request)
+    return {'config': redaction_settings.load_config(settings)}
+
+
+@app.put('/api/redaction-settings')
+def put_redaction_settings(request: Request, payload: dict):
+    _local_config_request(request)
+    try:
+        return {'config': redaction_settings.save_config(settings, payload)}
+    except (ValueError, TypeError):
+        raise HTTPException(422, '打码参数无效，请检查数值范围；头发遮挡仅支持马赛克。') from None
+    except OSError:
+        raise HTTPException(500, '无法保存打码设置，请检查存储目录权限。') from None
 
 
 @app.put('/api/storage-settings')

@@ -1,14 +1,16 @@
-/* Choose a photo before changing the editor; uploads stay in this person's library. */
+/* Browse people and their media in one dialog. Library writes live in the admin. */
 (() => {
   if (!document.getElementById('person-picker')) return;
   const dialog = document.createElement('dialog');
   dialog.id = 'person-photos-dialog'; dialog.className = 'portrait-dialog person-photos-dialog';
   dialog.setAttribute('aria-labelledby','person-photos-title');
-  dialog.innerHTML = `<div class="portrait-heading"><div><p class="eyebrow">选择人物照片</p><h2 id="person-photos-title"></h2></div><button type="button" data-photo-close aria-label="关闭照片选择">×</button></div>
-    <p data-photo-intro>点击照片下方“使用这张”，设为本次主参考图。</p>
-    <div class="person-photos-toolbar"><button type="button" class="secondary" data-photo-upload>＋ 上传新照片</button><button type="button" class="secondary" data-photo-refresh>刷新</button><input type="file" accept=".png,.jpg,.jpeg,.webp" data-photo-file hidden aria-label="上传这个人的新照片"></div>
-    <p class="portrait-small" data-photo-help>新照片自动入库检查，通过后可选；已入库照片下次直接使用。</p>
-    <p data-photo-status role="status" aria-live="polite"></p><div class="person-photo-grid" data-photo-grid></div>`;
+  dialog.innerHTML = `<div class="portrait-heading"><div><p class="eyebrow">人物库</p><h2 id="person-photos-title">选择人物</h2></div><button type="button" data-photo-close aria-label="关闭人物选择">×</button></div>
+    <div data-photo-library></div>
+    <div data-photo-detail hidden><div class="person-photos-toolbar"><button type="button" class="secondary" data-photo-back>返回人物列表</button><button type="button" class="secondary" data-photo-refresh>刷新</button></div>
+    <p data-photo-intro>选择照片，设为本次主参考图。</p>
+    <div class="person-photo-grid" data-photo-grid></div>
+    <p class="portrait-small">需要给这个人物补充素材？<a href="/admin/settings#people" data-photo-manage>到后台管理人物库 ↗</a></p></div>
+    <p data-photo-status role="status" aria-live="polite"></p>`;
   document.body.append(dialog);
   const find = name => dialog.querySelector('[data-photo-'+name+']');
   let mode = 'image', person = null, working = false, generation = 0, timer = null, photos = [];
@@ -19,7 +21,7 @@
   }
   function schedule() {
     clearTimeout(timer);
-    if (dialog.open && photos.some(p => !['active','failed'].includes(p.status))) {
+    if (dialog.open && person && photos.some(p => !['active','failed'].includes(p.status))) {
       timer = setTimeout(async () => {
         if (!working) { try { await refresh(); } catch (_) { find('status').textContent = '照片状态暂时读取失败，可点击“刷新”重试。'; } }
         schedule();
@@ -29,7 +31,7 @@
   async function refresh() {
     const token = generation, target = person.id;
     const data = await request('people/'+target+'/photos');
-    if (!dialog.open || generation !== token) return;
+    if (!dialog.open || generation !== token || person?.id !== target) return;
     photos = (data.items || []).filter(photo => mode === 'video' ? photo.kind === 'person_video' : photo.kind !== 'person_video'); render(); schedule();
   }
   function render() {
@@ -59,7 +61,7 @@
       }
       grid.append(card);
     }
-    if (!photos.length) { const empty = document.createElement('p'); empty.className = 'person-photos-empty'; empty.textContent = mode === 'video' ? '这个人还没有视频。上传一段新视频，检查通过后即可使用。' : '这个人还没有照片。点击“上传新照片”，检查通过后即可使用。'; grid.append(empty); }
+    if (!photos.length) { const empty = document.createElement('p'); empty.className = 'person-photos-empty'; empty.textContent = mode === 'video' ? '暂无人物视频，可到后台添加，或返回选择其他人物。' : '暂无人物照片，可到后台添加，或返回选择其他人物。'; grid.append(empty); }
     setWorking(working);
   }
   async function run(operation) {
@@ -73,34 +75,30 @@
   dialog.addEventListener('cancel',event => { if (working) event.preventDefault(); });
   dialog.addEventListener('close',() => { generation++; clearTimeout(timer); window.portraitPeople.refresh().catch(() => {}); });
   find('refresh').addEventListener('click',() => run(refresh));
-  find('upload').addEventListener('click',() => find('file').click());
-  find('file').addEventListener('change',() => {
-    const file = find('file').files[0]; if (!file) return;
-    run(async () => {
-      find('status').textContent = '正在上传并入库…';
-      const body = new FormData(); body.append('file',file); body.append('kind',mode === 'video' ? 'person_video' : 'face');
-      const response = await fetch('/api/production/assets',{method:'POST',body});
-      const asset = await response.json();
-      if (!response.ok) throw new Error(typeof asset.detail === 'string' ? asset.detail : '照片上传失败，请重试。');
-      const job = await request('photos','POST',{person_id:person.id,asset_id:asset.id});
-      await refresh();
-      find('status').textContent = job.status === 'active' ? '这张照片已入库，可以直接选择。' : job.status === 'failed' ? job.message : '照片已添加，检查通过后“使用这张”会自动亮起。可以先关闭，下次从“选照片”继续。';
-    }); find('file').value = '';
-  });
+  function openLibrary() {
+    if (working) return;
+    person = null; photos = []; generation++; clearTimeout(timer);
+    mode = window.productionPortraits?.referenceMode || 'image';
+    find('library').hidden = false; find('detail').hidden = true;
+    document.getElementById('person-photos-title').textContent = '选择人物';
+    dialog.querySelector('.eyebrow').textContent = '人物库';
+    find('status').textContent = '';
+    if (!dialog.open) dialog.showModal();
+    document.getElementById('person-search').focus();
+  }
+  find('back').addEventListener('click',openLibrary);
   window.portraitPhotos = {
+    openLibrary,
     open(selected) {
-      if (dialog.open) return;
+      if (working) return;
       mode = window.productionPortraits?.referenceMode || 'image';
-      person = selected; photos = []; generation++;
+      person = selected; photos = []; generation++; clearTimeout(timer);
+      find('library').hidden = true; find('detail').hidden = false;
       const videoMode = mode === 'video';
       dialog.querySelector('.eyebrow').textContent = videoMode ? '选择人物视频' : '选择人物照片';
       find('intro').textContent = videoMode ? '点击“使用这段”，设为本次人物身份参考。' : '点击照片下方“使用这张”，设为本次主参考图。';
-      find('help').textContent = videoMode ? 'MP4 / MOV，2–15 秒、50 MB 内；清晰单人视频。新视频自动入库检查，通过后可选。' : '新照片自动入库检查，通过后可选；已入库照片下次直接使用。';
-      find('upload').textContent = videoMode ? '＋ 上传新视频' : '＋ 上传新照片';
-      find('file').accept = videoMode ? '.mp4,.mov' : '.png,.jpg,.jpeg,.webp';
-      find('file').setAttribute('aria-label',videoMode ? '上传这个人的新视频' : '上传这个人的新照片');
       document.getElementById('person-photos-title').textContent = selected.name;
-      find('grid').replaceChildren(); dialog.showModal();
+      find('grid').replaceChildren(); if (!dialog.open) dialog.showModal();
       run(async () => { find('status').textContent = '正在读取照片…'; await refresh(); find('status').textContent = ''; });
     }
   };

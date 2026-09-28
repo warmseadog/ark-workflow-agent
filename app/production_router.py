@@ -9,10 +9,11 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse
 from .production_store import ProductionStore, Conflict
-from . import generation_settings, storage_settings, admin_settings, media, production_worker
+from . import generation_settings, storage_settings, admin_settings, media, production_worker, redaction_settings
 from .media_errors import MediaPipelineError
 from .person_video import is_video, person_ids, validate_file, validate_pair
 from .reference_roles import ACCESSORY_LABELS, OPTIONAL_KINDS
+from .model_catalog import TASK_FIELDS, task_values, resolve_task_config, editor_options, capabilities
 
 _MODEL_FIELDS = {'provider','protocol','mode','base_url','model','duration','fps','resolution','public_base_url'}
 _DRAFT_FIELDS = {'person_reference_mode','person_video_asset_id','name','person_id','source_asset_id','face_asset_ids','clothing_asset_ids','hairstyle_asset_ids','scene_asset_ids','hairstyle_enabled','hairstyle_mask','scene_enabled','scene_description','prompt','mask','model'}
@@ -25,7 +26,11 @@ def get_router(settings_getter, local_guard):
     router = APIRouter(prefix='/api/production', dependencies=[Depends(local_guard)])
     def store(): return ProductionStore(settings_getter().storage_dir)
     def public_model():
-        return {k:v for k,v in asdict(generation_settings.load_config(settings_getter())).items() if k in _MODEL_FIELDS}
+        return editor_options(settings_getter())['defaults']
+
+    @router.get('/model-options')
+    def model_options():
+        return editor_options(settings_getter())
     def guarded(operation):
         try: return operation()
         except HTTPException: raise
@@ -83,7 +88,7 @@ def get_router(settings_getter, local_guard):
         for field,kind in [(kind+'_asset_ids',kind) for kind in ('face','clothing',*OPTIONAL_KINDS)]:
             if field in values:
                 ids=values[field]
-                if not isinstance(ids,list) or len(ids)>(1 if kind in OPTIONAL_KINDS else 20) or any(not isinstance(x,str) for x in ids) or len(set(ids))!=len(ids):
+                if not isinstance(ids,list) or len(ids)>(1 if kind in OPTIONAL_KINDS else 30) or any(not isinstance(x,str) for x in ids) or len(set(ids))!=len(ids):
                     raise ValueError('参考素材列表不正确。')
                 for ident in ids:
                     try: asset=store().get_asset(ident)
@@ -105,8 +110,10 @@ def get_router(settings_getter, local_guard):
         if 'model' in values:
             if not isinstance(values['model'],dict) or set(values['model'])-_MODEL_FIELDS: raise ValueError('草稿模型配置不接受密钥或未知字段。')
             base=(current or {}).get('model') or public_model()
-            normalized=generation_settings.resolve_config(settings_getter(),{**base,**values['model']})
-            values['model']={k:v for k,v in asdict(normalized).items() if k in _MODEL_FIELDS}
+            # Old drafts may carry connection fields; only explicit incoming legacy
+            # values are checked, while stored connections never override the server.
+            normalized=resolve_task_config(settings_getter(),{**{k:v for k,v in base.items() if k in TASK_FIELDS},**values['model']})
+            values['model']=task_values(normalized)
         return values
 
     def register(path, name, kind):
@@ -197,7 +204,7 @@ def get_router(settings_getter, local_guard):
                 values={k:v for k,v in old.items() if k in _DRAFT_FIELDS}
                 values['name']=values.get('name','视频')+' 副本'
             else:
-                values={'model':public_model(),'mask':{'blur_style':'mosaic','mask_mode':'face','mask_scale':1.4,'threshold':0.2,'keep_audio':True,'robust_tracking':False},
+                values={'model':public_model(),'mask':redaction_settings.load_config(settings_getter()),
                         'prompt':'保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图；应用@Image2服装参考图，保持自然稳定。'}
             if 'name' in payload: values['name']=payload['name']
             if 'person_input_policy' in payload: values['person_input_policy']=payload['person_input_policy']
@@ -240,7 +247,8 @@ def get_router(settings_getter, local_guard):
             if not draft['source_asset_id'] or not person_ids(draft) or not draft['clothing_asset_ids']:
                 raise ValueError('请选择动作视频、人物参考和衣服图。')
             validate_changes({k:v for k,v in draft.items() if k in _DRAFT_FIELDS})
-            config=generation_settings.resolve_config(settings_getter(),draft['model'])
+            config=resolve_task_config(settings_getter(),draft['model'],require_enabled=True)
+            limits=capabilities(config.model, config.protocol)
             from .person_preparation import input_policy, preflight
             policy = input_policy(draft, store())
             if policy == 'existing_person' and not draft.get('person_id') and not any(store().portrait_binding(x) for x in person_ids(draft)):
@@ -250,15 +258,17 @@ def get_router(settings_getter, local_guard):
                 from .portrait_generation import OFFICIAL_BASE
                 if config.protocol!='ark' or config.base_url.rstrip('/')!=OFFICIAL_BASE:
                     raise ValueError('人物视频目前支持火山官方接口，请在后台检查模型配置。')
-                if not config.model.startswith(('doubao-seedance-2-0','doubao-seedance-2.0')):
-                    raise ValueError('人物视频目前按 Seedance 2.0 接入，请在后台选择对应模型。')
-                validate_pair(store().get_asset(draft['source_asset_id'],private=True)['path'],store().get_asset(draft['person_video_asset_id'],private=True)['path'])
+                if not limits['person_video']:
+                    raise ValueError('人物视频需要支持人物素材的 Seedance 2.0 或 2.5 模型。')
+                validate_pair(store().get_asset(draft['source_asset_id'],private=True)['path'],store().get_asset(draft['person_video_asset_id'],private=True)['path'],max_seconds=limits['max_video_seconds'])
+            elif limits['follow_source']:
+                validate_file(store().get_asset(draft['source_asset_id'],private=True)['path'],person=False,max_seconds=limits['max_video_seconds'])
             storage=storage_settings.load_config(settings_getter())
             problem=admin_settings.generation_problem(config,storage)
             if problem: raise HTTPException(409,problem)
             extra_ids = [ident for kind in OPTIONAL_KINDS if draft.get(kind+'_enabled',False) for ident in draft.get(kind+'_asset_ids',[])]
-            if config.protocol!='adapter' and (0 if is_video(draft) else len(draft['face_asset_ids']))+len(draft['clothing_asset_ids'])+len(extra_ids)>9:
-                raise ValueError('人物、衣服、发型、场景和配饰参考图合计最多 9 张，请关闭部分可选项。')
+            if limits['max_images'] is not None and (0 if is_video(draft) else len(draft['face_asset_ids']))+len(draft['clothing_asset_ids'])+len(extra_ids)>limits['max_images']:
+                raise ValueError(f"人物、衣服、发型、场景和配饰参考图合计最多 {limits['max_images']} 张，请关闭部分可选项。")
             for ident in [draft['source_asset_id']]+person_ids(draft)+draft['clothing_asset_ids']+extra_ids:
                 if not Path(store().get_asset(ident,private=True)['path']).is_file(): raise ValueError('素材文件不存在，请重新导入。')
             from .portrait_generation import prepare

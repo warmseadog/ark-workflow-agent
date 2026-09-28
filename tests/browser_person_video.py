@@ -44,30 +44,33 @@ def check(width):
                 page.locator('[data-person-media=video]').click()
                 expect(page.locator('#person-video-panel')).to_be_visible()
                 expect(page.locator('#person-image-panel')).not_to_be_visible()
-                page.locator('#person-picker > summary').click()
+                page.locator('#person-picker > summary').click();page.locator('[data-person-type=LivenessFace]').click()
                 page.locator('[data-person-id="'+person['id']+'"]').click()
-                dialog=page.locator('#person-photos-dialog');expect(dialog).to_contain_text('这个人还没有视频')
-                dialog.locator('[data-photo-file]').set_input_files({'name':'yoyo-正面.mp4','mimeType':'video/mp4','buffer':clips[3]})
+                dialog=page.locator('#person-photos-dialog');expect(dialog).to_contain_text('暂无人物视频')
+                uploaded=client.post('/api/production/assets',data={'kind':'person_video'},files={'file':('yoyo-正面.mp4',clips[3],'video/mp4')}).json()
+                added=client.post('/api/portrait/photos',json={'person_id':person['id'],'asset_id':uploaded['id']})
+                assert added.status_code==200,added.text
+                dialog.locator('[data-photo-refresh]').click()
                 expect(dialog.locator('.person-photo-card')).to_have_count(1)
                 expect(dialog.locator('[data-photo-use]')).to_be_disabled()
-                expect(dialog.locator('[data-photo-status]')).to_contain_text('视频已添加')
+                expect(dialog.locator('[data-photo-upload]')).to_have_count(0)
                 dialog.locator('[data-photo-close]').click()
                 assert page.evaluate('productionPortraits.currentPhoto') is None
                 lib.process_one()
                 with lib.store.connection() as db:db.execute('UPDATE portrait_photos SET next_check=0')
                 lib.process_one()
-                page.locator('#person-picker > summary').click();page.locator('[data-person-id="'+person['id']+'"]').click()
+                page.locator('#person-picker > summary').click();page.locator('[data-person-type=LivenessFace]').click();page.locator('[data-person-id="'+person['id']+'"]').click()
                 expect(dialog.locator('[data-photo-use]')).to_be_enabled()
                 dialog.screenshot(path=str(ROOT/'storage'/f'person-video-gallery-{width}.png'))
                 dialog.locator('[data-photo-use]').click();expect(dialog).not_to_be_visible()
                 expect(page.locator('#person-current')).to_contain_text('yoyo')
                 expect(page.locator('#person-video-preview')).to_be_visible()
-                expect(page.locator('#person-photos-open')).to_have_text('选视频')
+                expect(page.locator('#person-photos-open')).to_have_text('更换')
                 page.wait_for_function('document.getElementById("person-video-preview").duration === 3')
                 assert page.evaluate('productionPortraits.currentPhoto.kind')=='person_video'
                 expect(page.locator('#draft-save-status')).to_contain_text('已保存')
                 page.reload();expect(page.locator('#draft-save-status')).to_contain_text('已保存')
-                expect(page.locator('[data-person-media=video]')).to_have_attribute('aria-pressed','true')
+                expect(page.locator('[data-person-media=image]')).to_be_visible()
                 assert page.evaluate('productionPortraits.currentPhoto.kind')=='person_video'
                 page.locator('input[name=video]').set_input_files({'name':'动作.mp4','mimeType':'video/mp4','buffer':clips[7]})
                 pic=BytesIO();Image.new('RGB',(400,400),'blue').save(pic,format='PNG')
@@ -99,9 +102,10 @@ def check(width):
                 expect(page.locator('#studio-generate-submit')).to_be_disabled()
                 page.locator('[data-person-media=video]').click()
                 assert page.evaluate('productionPortraits.currentPhoto.kind')=='person_video'
+                assert page.evaluate('portraitPeople.selected')==person['id']
                 # Cloud revocation leaves old choice intact and visibly rejects reuse.
                 remote_status['value']='Failed'
-                page.locator('#person-photos-open').click();dialog.locator('[data-photo-use]').click()
+                page.locator('#person-photos-open').click();page.locator('[data-person-id="'+person['id']+'"]').click();dialog.locator('[data-photo-use]').click()
                 expect(dialog.locator('[data-photo-status]')).to_contain_text('不可用')
                 dialog.locator('[data-photo-close]').click();remote_status['value']='Active'
                 page.locator('#person-video-remove').click();expect(page.locator('#person-video-preview')).not_to_be_visible()

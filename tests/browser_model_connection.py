@@ -1,5 +1,10 @@
 """Check connection settings with intercepted responses; never call a provider."""
 from playwright.sync_api import sync_playwright, expect
+from pathlib import Path
+from urllib.parse import urlsplit
+from jinja2 import Environment, FileSystemLoader
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def check(width, height):
@@ -15,9 +20,15 @@ def check(width, height):
 
         def handle(route):
             request = route.request
-            path = request.url.split('8000')[-1].split('?')[0]
+            path = urlsplit(request.url).path
             calls.append((path, request.method))
-            if path == '/api/model-settings' and request.method == 'GET':
+            if path == '/admin/settings':
+                route.fulfill(content_type='text/html',body=Environment(loader=FileSystemLoader(ROOT/'app/templates')).get_template('admin_settings.html').render())
+            elif path.startswith('/static/'):
+                route.fulfill(path=str(ROOT/'app'/path.lstrip('/')))
+            elif path == '/api/model-catalog':
+                route.fulfill(json={'items':[],'default_model':'saved-model'})
+            elif path == '/api/model-settings' and request.method == 'GET':
                 route.fulfill(json={'config': config, 'presets': {'ark': {'models': []}}})
             elif path == '/api/model-settings/test' and request.method == 'POST':
                 pending.append(route)
@@ -28,9 +39,8 @@ def check(width, height):
             else:
                 route.abort()
 
-        page.route('**/api/**', handle)
-        page.goto('http://127.0.0.1:8000/v1')
-        page.locator('#model-settings-toggle').click()
+        page.route('**/*', handle)
+        page.goto('http://127.0.0.1:8000/admin/settings#model')
         button = page.locator('#test-model-connection')
         expect(button).to_be_visible()
         form = page.locator('#model-settings-form')

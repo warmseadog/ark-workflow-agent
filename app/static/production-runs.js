@@ -57,7 +57,7 @@ window.createProductionRuns = ({api,changeDraft,accessoryLabels}) => {
     const date=new Date(item.created_at);const time=node('time',Number.isNaN(date.getTime())?'—':date.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}),'run-time');
     const state=node('span',(names[item.status]||item.status)+(['queued','running'].includes(item.status)?' '+(item.progress||0)+'%':''),'run-state');state.title=item.message||'';
     if(item.person_preparation?.message)state.append(node('small',item.person_preparation.message,'run-preparation-message'));
-    const duration=node('span',item.duration>0?item.duration+' 秒':'—','run-duration');
+    const duration=node('span',item.duration===-1?'跟随原视频':item.duration>0?item.duration+' 秒':'—','run-duration');
     const actions=node('div','','run-actions');
     if(item.download_url){const play=button('播放',()=>openPlayer(item));play.dataset.runAction='play';actions.append(play);const download=node('a','下载','run-text-button');download.href=item.download_url;download.download='';actions.append(download);}
     const more=node('details','','run-menu');more.append(node('summary','更多'));
@@ -112,6 +112,14 @@ window.createProductionRuns = ({api,changeDraft,accessoryLabels}) => {
       const figure=node('figure');figure.dataset.sourceKind=kind;figure.append(node('figcaption',label));
       const inactive=(kind==='face'&&item.snapshot.person_reference_mode==='video')||(kind==='person_video'&&item.snapshot.person_reference_mode!=='video')||(['hairstyle','scene',...Object.keys(accessoryLabels)].includes(kind)&&!item.snapshot[kind+'_enabled']);
       if(inactive)figure.append(node('small','本次未使用'));
+      const referenceLabel=accessoryLabels[kind] ? label+'参考图' : label;
+      const rejected=item.error_kind==='material_rejected' && !inactive && (item.error||'').includes(referenceLabel);
+      if(rejected){
+        figure.tabIndex=-1;figure.classList.add('run-source-problem');
+        figure.append(node('small','此素材未通过检查'));
+        const locate=button('查看问题素材：'+referenceLabel,()=>{figure.scrollIntoView({block:'center'});figure.focus({preventScroll:true});});
+        locate.dataset.locateSource=kind;panel.append(locate);
+      }
       for(const asset of sources){const video=['video','person_video'].includes(kind),media=node(video?'video':'img');media.src=asset.url;if(video){media.controls=true;media.preload='none';media.playsInline=true;}else{media.alt=label;media.loading='lazy';}figure.append(media);}materials.append(figure);
     }
     panel.append(materials);if(item.snapshot?.scene_description)panel.append(node('p',item.snapshot.scene_description));

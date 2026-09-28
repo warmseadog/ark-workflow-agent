@@ -7,15 +7,12 @@
   const linkStatus = document.getElementById('video-link-status');
   const face = generationForm.elements.namedItem('face_image');
   const clothing = generationForm.elements.namedItem('clothing_image');
-  const mask = document.getElementById('redaction-settings');
-  const model = document.getElementById('model-settings');
   const preview = document.getElementById('studio-preview');
   const previewVideo = document.getElementById('studio-defaced-video');
   const previewButton = document.getElementById('studio-preview-submit');
   const previewStatus = document.getElementById('studio-preview-status');
   const generateButton = document.getElementById('studio-generate-submit');
   const status = document.getElementById('production-status');
-  const maskFields = [...mask.querySelectorAll('input,select')];
   const assetFiles = new WeakMap();
   const uploadingFiles = new WeakMap();
   let hairPreviewVersion = 0, hairPreviewTimer = null;
@@ -32,7 +29,7 @@
   let busy = false;
   let job = null;
   let preparedSignature = '';
-  let savedMask = {};
+  let savedMask = {blur_style:'mosaic',mask_mode:'face',mask_scale:1.4,threshold:0.2,keep_audio:true,robust_tracking:false};
 
   function renderPersonVideo() {
     const automatic = personInputPolicy === 'auto_virtual';
@@ -40,12 +37,11 @@
     if (personVideo) {
       if (personVideoPreview.getAttribute('src') !== personVideo.url) personVideoPreview.src = personVideo.url;
     } else { personVideoPreview.pause(); personVideoPreview.removeAttribute('src'); personVideoPreview.load(); }
-    document.getElementById('person-video-upload').hidden = !automatic || Boolean(personVideo);
-    document.getElementById('person-video-choose').hidden = automatic || Boolean(personVideo);
-    document.getElementById('person-video-name').textContent = personVideo?.name || (automatic ? '上传虚拟人物视频' : '先选人物，再上传视频');
+    document.getElementById('person-video-upload').hidden = Boolean(personVideo);
+    document.getElementById('person-video-name').textContent = personVideo ? '已选人物视频' : '未设置';
+    document.getElementById('person-video-replace').hidden = !personVideo;
     document.getElementById('person-video-remove').hidden = !personVideo;
-    document.getElementById('person-video-status').textContent = automatic ? (personVideo ? '✓ 素材已保存；点击生成后自动准备虚拟人物。' : '上传后先保存到本机，点击生成后自动入库。') : personVideo ? '✓ 已入库；生成前会再次检查可用状态。' : '新视频自动入库检查，通过后可选。';
-    document.getElementById('person-auto-virtual').setAttribute('aria-pressed',String(automatic));
+    document.getElementById('person-video-status').textContent = automatic ? (personVideo ? '已保存，生成时自动准备人物。' : '上传人物视频，生成时自动准备。') : personVideo ? '人物视频可用' : '上传视频或从人物库选择。';
     updateButtons();
   }
   function setPersonMode(mode) {
@@ -54,35 +50,35 @@
     document.getElementById('person-image-panel').hidden = mode !== 'image';
     document.getElementById('person-video-panel').hidden = mode !== 'video';
     if (mode !== 'video') personVideoPreview.pause();
-    document.querySelectorAll('[data-person-media]').forEach(button => button.setAttribute('aria-pressed',String(button.dataset.personMedia === mode)));
+    document.querySelectorAll('[data-person-media]').forEach(button => { button.hidden = button.dataset.personMedia === mode; });
     window.portraitPeople?.restore(window.portraitPeople.selected);
     renderPersonVideo(); syncReferencePrompt(); updateButtons();
   }
   document.querySelectorAll('[data-person-media]').forEach(button => button.addEventListener('click',() => {
     if (busy || !sessionReady) return;
-    setPersonMode(button.dataset.personMedia); clearResult(); refreshPhotoInputs(); changed();
+    setPersonMode(button.dataset.personMedia); syncImages('face'); clearResult(); refreshPhotoInputs(); changed();
   }));
-  document.getElementById('person-video-choose').addEventListener('click',event => {
-    event.stopPropagation();
-    if (busy) return;
-    if (window.portraitPeople?.selected) document.getElementById('person-photos-open').click();
-    else { document.getElementById('person-picker').open = true; document.getElementById('person-search').focus(); }
+  document.getElementById('person-video-replace').addEventListener('click',() => {
+    if (!busy && sessionReady) document.getElementById('person-video-file').click();
   });
   document.getElementById('person-video-remove').addEventListener('click',() => {
     if (busy) return;
+    if (personInputPolicy !== 'auto_virtual') useUploadedPerson();
     personInputVersion++; personVideo = null; renderPersonVideo(); clearResult(); changed();
   });
-  document.getElementById('person-auto-virtual').addEventListener('click',() => {
-    if (busy || !sessionReady || personInputPolicy === 'auto_virtual') return;
+  function useUploadedPerson() {
+    // A local file is a new reference, never an implicit addition to a library person.
+    // Drop the previous library set together so official/real bindings cannot leak.
     personInputVersion++; personInputPolicy = 'auto_virtual';
     window.portraitPeople?.restore(null);
-    personVideo = null; imageFiles.face = []; syncImages('face');
-    renderPersonVideo(); refreshPhotoInputs(); changed();
-  });
+    personVideo = null; imageFiles.face = [];
+    renderPersonVideo();
+  }
   document.getElementById('person-video-file').addEventListener('change',async event => {
     const input = event.currentTarget, file = input.files[0]; input.value = '';
-    if (!file || busy || !sessionReady || personInputPolicy !== 'auto_virtual') return;
+    if (!file || busy || !sessionReady) return;
     if (!/\.(mp4|mov)$/i.test(file.name) || file.size > 50 * 1024 * 1024) { toast('人物视频支持 MP4 / MOV，50 MB 以内。'); return; }
+    if (personInputPolicy !== 'auto_virtual') { useUploadedPerson(); syncImages('face'); }
     const version = ++personInputVersion, targetDraft = draft?.id, targetPerson = window.portraitPeople?.selected;
     const current = () => version === personInputVersion && personMode === 'video' && personInputPolicy === 'auto_virtual' && draft?.id === targetDraft && window.portraitPeople?.selected === targetPerson;
     document.getElementById('person-video-status').textContent = '正在保存人物视频…';
@@ -100,14 +96,10 @@
   });
 
   function maskValues() {
-    return Object.fromEntries(maskFields.map(input => [input.name, input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value]));
+    return {...savedMask};
   }
   function applyMask(values) {
-    maskFields.forEach(input => {
-      if (values[input.name] === undefined) return;
-      if (input.type === 'checkbox') input.checked = Boolean(values[input.name]);
-      else input.value = values[input.name];
-    });
+    savedMask = {...values};
   }
   savedMask = maskValues();
   function signature() {
@@ -116,23 +108,28 @@
   }
   function hasSource() { return Boolean(source.files.length || sourceUrl.value.trim() || job?.defaced_url); }
   function referenceTotal() { return (personMode === 'video' ? 0 : imageFiles.face.length) + imageFiles.clothing.length + extraKinds.reduce((n,k)=>n+(document.getElementById(k+'-enabled').checked ? imageFiles[k].length : 0),0); }
-  function referenceOverLimit() { return model.querySelector('[name=protocol]')?.value !== 'adapter' && referenceTotal()>9; }
+  function modelLimits() { return window.generationOptions?.limits() || {max_images:9,max_video_seconds:15}; }
+  function referenceOverLimit() { const max = modelLimits().max_images; return max != null && referenceTotal()>max; }
   function updateButtons() {
     const total = referenceTotal(), over = referenceOverLimit();
     const sourceSeconds = document.querySelector('#video-reference-preview video')?.duration;
     const personSeconds = personVideoPreview.duration;
-    const seconds = sourceSeconds + personSeconds;
-    const durationOver = personMode === 'video' && personVideo && Number.isFinite(seconds) && seconds > 15;
+    const seconds = sourceSeconds + personSeconds, maxSeconds = modelLimits().max_video_seconds;
+    const durationOver = (personMode === 'video' && personVideo && Number.isFinite(seconds) && seconds > maxSeconds) || (modelLimits().follow_source && Number.isFinite(sourceSeconds) && (sourceSeconds < 2 || sourceSeconds > maxSeconds));
     const durationHint = document.getElementById('person-video-duration');
-    durationHint.textContent = Number.isFinite(seconds) && personVideo ? `动作 ${sourceSeconds.toFixed(1)} 秒 + 人物 ${personSeconds.toFixed(1)} 秒 = ${seconds.toFixed(1)} / 15 秒` + (durationOver ? '，请缩短其中一段。' : '') : '动作视频 + 人物视频，合计不超过 15 秒。';
+    durationHint.textContent = Number.isFinite(seconds) && personVideo ? `动作 ${sourceSeconds.toFixed(1)} 秒 + 人物 ${personSeconds.toFixed(1)} 秒 = ${seconds.toFixed(1)} / ${maxSeconds} 秒` + (durationOver ? '，请缩短其中一段。' : '') : `动作视频 + 人物视频，合计不超过 ${maxSeconds} 秒。`;
     durationHint.dataset.error = String(Boolean(durationOver));
+    const sourceHint = document.getElementById('source-model-hint');
+    sourceHint.hidden = !modelLimits().follow_source;
+    sourceHint.textContent = Number.isFinite(sourceSeconds) && (sourceSeconds < 2 || sourceSeconds > maxSeconds) ? `当前模型需要 2–${maxSeconds} 秒的动作视频，请更换或裁剪。` : `视频编辑将保留原视频时长，参考视频合计不超过 ${maxSeconds} 秒。`;
     face.required = personMode === 'image';
     const counter = document.getElementById('reference-count');
-    counter.textContent = `本次参考图 ${total}${model.querySelector('[name=protocol]')?.value === 'adapter' ? '' : ' / 9'} 张` + (over ? ' · 请关闭部分可选项后生成' : '');
+    counter.textContent = `本次参考图 ${total}${modelLimits().max_images == null ? '' : ' / '+modelLimits().max_images} 张` + (over ? ' · 请关闭部分可选项后生成' : '');
+    window.generationOptions?.refreshSource();
     counter.classList.toggle('over-limit',over);
     importButton.disabled = busy || !sessionReady || !sourceUrl.value.trim();
     previewButton.disabled = busy || !sessionReady || !hasSource();
-    generateButton.disabled = busy || !sessionReady || (!pendingSubmission && (referenceOverLimit() || durationOver || !(hasSource() && (personMode === 'video' ? personVideo && (personInputPolicy === 'auto_virtual' || window.portraitPeople?.selected) : face.files.length) && clothing.files.length)));
+    generateButton.disabled = busy || !sessionReady || (!pendingSubmission && (window.generationOptions?.available() === false || referenceOverLimit() || durationOver || !(hasSource() && (personMode === 'video' ? personVideo && (personInputPolicy === 'auto_virtual' || window.portraitPeople?.selected) : face.files.length) && clothing.files.length)));
     generateButton.formNoValidate = Boolean(pendingSubmission);
     for (const id of ['replace-source-video', 'remove-source-video']) document.getElementById(id).hidden = !hasSource();
     if (!busy) generateButton.textContent = pendingSubmission ? '确认上次提交结果' : '生成视频 →';
@@ -145,9 +142,9 @@
     window.portraitPeople?.lock(value);
     generationForm.setAttribute('aria-busy', String(value));
     [...sourceForm.elements, ...generationForm.querySelectorAll('input,textarea,[data-prompt-template],[data-template-action],[data-asset-edit]'), document.getElementById('toggle-video-url')].forEach(input => input.disabled = value);
-    mask.querySelectorAll('[data-redaction-save]').forEach(button => button.disabled = value);
+    window.generationOptions?.setLocked(value);
     ['draft-recover'].forEach(id => document.getElementById(id).disabled = value || !sessionReady);
-    document.querySelectorAll('[data-person-media],#person-video-choose,#person-video-remove,#person-auto-virtual').forEach(button => button.disabled = value);
+    document.querySelectorAll('[data-person-media],#person-video-replace,#person-video-remove').forEach(button => button.disabled = value);
     updateButtons();
   }
   function clearResult() {
@@ -185,8 +182,9 @@
       const tag = document.createElement('span'); tag.className = 'reference-index';
       tag.textContent = index === 0 ? '主参考' : String(index + 1);
       const actions = document.createElement('span'); actions.className = 'reference-actions';
-      for (const [label, action] of [['替换', () => replaceImage(kind, index)], ['删除', () => {
+      for (const [label, action] of [['替换', () => replaceImage(kind, index)], [kind === 'face' ? '移除' : '删除', () => {
         imageFiles[kind].splice(index, 1); syncImages(kind);
+        if (kind === 'face' && !imageFiles.face.length && personInputPolicy !== 'auto_virtual') { useUploadedPerson(); syncImages('face'); }
       }]]) {
         const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
         button.dataset.assetEdit = ''; button.setAttribute('aria-label', `${label}第 ${index + 1} 张图片`);
@@ -230,7 +228,11 @@
     const chooser = document.createElement('input'); chooser.type = 'file'; chooser.accept = 'image/*';
     chooser.addEventListener('change', () => {
       const file = chooser.files[0];
-      if (!busy && file && validImage(file)) { imageFiles[kind][index] = file; syncImages(kind); }
+      if (!busy && file && validImage(file)) {
+        if (kind === 'face' && personInputPolicy !== 'auto_virtual') { useUploadedPerson(); imageFiles.face = [file]; }
+        else imageFiles[kind][index] = file;
+        syncImages(kind);
+      }
     }, {once: true});
     chooser.click();
   }
@@ -306,16 +308,17 @@
       if (file && validImage(file)) { imageFiles[kind] = [file]; document.getElementById(kind+'-enabled').checked = true; }
       syncImages(kind); return;
     }
+    const accepted = [...input.files].filter(validImage);
+    if (kind === 'face' && accepted.length && personInputPolicy !== 'auto_virtual') useUploadedPerson();
     const seen = new Set(imageFiles[kind].map(identity));
-    for (const file of input.files) {
-      if (validImage(file) && !seen.has(identity(file))) { imageFiles[kind].push(file); seen.add(identity(file)); }
+    for (const file of accepted) {
+      if (!seen.has(identity(file))) { imageFiles[kind].push(file); seen.add(identity(file)); }
     }
     syncImages(kind);
   });
   document.querySelectorAll('[data-add-images]').forEach(button => button.addEventListener('click', () => {
     if (!busy) imageInputs[button.dataset.addImages].click();
   }));
-  maskFields.forEach(input => input.addEventListener('input', invalidate));
   function stripReferenceRules(text) {
     return text.replace(/\n*【素材联动】[\s\S]*?【联动结束】/g, '').trim();
   }
@@ -481,6 +484,9 @@
   previewButton.addEventListener('click', async () => {
     if (busy || !sourceForm.reportValidity()) return;
     const body = new FormData(sourceForm), fingerprint = signature();
+    for (const [name, value] of Object.entries(maskValues())) {
+      body.set(name === 'style' ? 'blur_style' : name === 'shape' ? 'blur_shape' : name, value == null ? '' : String(value));
+    }
     lock(true); previewButton.textContent = '正在生成预览…';
     try { await prepareVideo(body, fingerprint, false); }
     catch (error) { report(error, true); }
@@ -512,27 +518,12 @@
       if (pendingSubmission) status.textContent = '提交结果尚未确认。点击“确认上次提交结果”安全查询；不会重复创建任务。';
     } finally { lock(false); }
   });
-  mask.querySelectorAll('[data-redaction-save]').forEach(button => button.addEventListener('click', () => {
-    if (busy || !sourceForm.reportValidity()) return;
-    savedMask = maskValues();
-    changed();
-    mask.open = false;
-  }));
-  function cancelMask() {
-    if (!busy && JSON.stringify(savedMask) !== JSON.stringify(maskValues())) { applyMask(savedMask); invalidate(); }
-    mask.open = false; mask.querySelector('summary').focus();
-  }
-  mask.querySelectorAll('[data-redaction-cancel]').forEach(button => button.addEventListener('click', cancelMask));
-  mask.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); cancelMask(); } });
-  [mask, model].forEach(details => details.addEventListener('toggle', () => {
-    if (details.open) (details === mask ? model : mask).open = false;
-  }));
   const currentKey = 'production-current-draft-v1', pendingKey = 'production-pending-submit-v1';
   const saveStatus = document.getElementById('draft-save-status');
   const retrySave = document.getElementById('draft-save-retry');
   const recoverDraft = document.getElementById('draft-recover');
   const modelForm = document.getElementById('model-settings-form');
-  const publicModelFields = ['provider','protocol','mode','base_url','model','duration','fps','resolution','public_base_url'];
+  const publicModelFields = ['model','duration','resolution'];
   const drafts = new Map(), runs = new Map();
   let draft = null, draftName = null, dirtyVersion = 0, savedVersion = 0, saveTimer, savePromise = null, pendingSubmission = null;
   try { pendingSubmission = JSON.parse(localStorage.getItem(pendingKey) || 'null'); } catch (_) {}
@@ -646,8 +637,8 @@
     const records = currentPhotos();
     const failed = records.find(x => x.status === 'failed' || x.status === 'uncertain');
     label.dataset.error = String(Boolean(failed));
-    label.textContent = personInputPolicy === 'auto_virtual' ? (imageFiles.face.length ? '素材保存后即可生成，人物入库将在任务中自动完成。' : '上传虚拟人物参考图，点击生成后自动入库。') : !window.portraitPeople?.selected ? '参考图沿用原有草稿流程。真人照片可从人物库选择。' :
-      !imageFiles.face.length ? '点击“选照片”，或上传这个人的新照片。' : failed ? failed.message :
+    label.textContent = personInputPolicy === 'auto_virtual' ? (imageFiles.face.length ? (imageFiles.face.every(file => assetFiles.has(file)) ? '已保存，生成时自动准备人物。' : '正在保存人物参考图…') : '上传人物参考图，生成时自动准备。') : !window.portraitPeople?.selected ? '参考图已恢复，可继续生成。' :
+      !imageFiles.face.length ? '上传新参考图，或从人物库选择。' : failed ? failed.message :
       records.length === imageFiles.face.length && records.every(x => x.status === 'active') ? '✓ 照片可用' : '正在校验人物照片，可继续准备素材或提交视频。';
     document.getElementById('person-photo-retry').hidden = !failed;
   }
@@ -718,7 +709,8 @@
   });
 
   function publicModel() {
-    return Object.fromEntries(publicModelFields.map(name => [name, ['duration','fps'].includes(name) ? Number(modelForm.elements.namedItem(name).value) : modelForm.elements.namedItem(name).value.trim()]));
+    if (window.generationOptions) return window.generationOptions.get();
+    return Object.fromEntries(publicModelFields.map(name => [name, name === 'duration' ? Number(modelForm.querySelector(`[name="${name}"]`).value) : modelForm.querySelector(`[name="${name}"]`).value.trim()]));
   }
   async function captureDraft() {
     // Read all fields synchronously before awaiting uploads: saves represent one editor version.
@@ -797,9 +789,8 @@
       window.portraitPeople?.restore(item.person_id);
       generationForm.elements.namedItem('prompt').value = item.prompt ?? defaultPrompt;
       applyMask({...defaultMask,...item.mask}); savedMask = maskValues();
-      for (const name of publicModelFields) if (item.model?.[name] !== undefined) modelForm.elements.namedItem(name).value = item.model[name];
+      window.generationOptions.restore(item.model);
       window.productionDraftModel = {...item.model};
-      modelForm.elements.namedItem('protocol').dispatchEvent(new Event('change', {bubbles:true}));
       setPersonMode(personMode); showFiles(source,'video'); Object.keys(imageFiles).forEach(syncImages); invalidate();
       dirtyVersion = savedVersion = 0;
       localStorage.setItem(currentKey,item.id);
@@ -847,9 +838,7 @@
     if (input.value !== before) changed();
   });
   window.addEventListener('production-prompt-changed',event => { if (event.detail?.applyTemplate) syncReferencePrompt(); changed(); });
-  window.addEventListener('model-settings-saved',changed);
-  modelForm.addEventListener('input',event => { if (publicModelFields.includes(event.target.name)) { updateButtons(); changed(); } });
-  modelForm.addEventListener('change',event => { if (publicModelFields.includes(event.target.name)) { updateButtons(); changed(); } });
+  window.addEventListener('model-settings-saved',() => { updateButtons(); changed(); });
   window.addEventListener('beforeunload', event => {
     if (savedVersion !== dirtyVersion) { event.preventDefault(); event.returnValue = ''; }
   });

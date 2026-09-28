@@ -65,10 +65,11 @@ def execute_run(settings, store, run):
                 return
             source = store.get_asset(snapshot['source_asset_id'], private=True)
             from .person_video import is_video, validate_pair
+            from .model_catalog import capabilities
             faces = [] if is_video(snapshot) else [Path(store.get_asset(x, private=True)['path']) for x in snapshot['face_asset_ids']]
             if is_video(snapshot):
                 person_path=Path(store.get_asset(snapshot['person_video_asset_id'],private=True)['path'])
-                validate_pair(Path(source['path']),person_path)
+                validate_pair(Path(source['path']),person_path,max_seconds=capabilities(config.model,config.protocol)['max_video_seconds'])
                 person_uri=image_asset_uris.pop(str(person_path),None)
                 if not person_uri:raise ValueError('人物视频尚未通过官方检查，请重新选择。')
                 extra_references.update(person_video=person_path,person_video_uri=person_uri)

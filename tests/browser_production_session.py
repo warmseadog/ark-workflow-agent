@@ -1,4 +1,5 @@
 import re
+from tests.browser_model_fixture import options as model_options
 from app.reference_prompt import strip_reference_rules
 """Offline browser regression: durable drafts, snapshot queue and uncertain submit recovery.
 All requests are intercepted; this never touches live sessions or paid providers.
@@ -68,7 +69,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
                     photos.setdefault(key,dict(id='job'+str(len(photos)+1),person_id=body['person_id'],asset_id=body['asset_id'],status='processing',message='校验中'))
                     route.fulfill(json=photos[key])
                 else: route.fulfill(json={'items':list(photos.values())})
-            elif path == '/api/model-settings': route.fulfill(json={'config': dict(CONFIG, has_api_key=False, status='demo'), 'presets': {'ark': {'models': []}}})
+            elif path == '/api/production/model-options': route.fulfill(json=model_options(CONFIG))
             elif path == '/api/prompt-templates': route.fulfill(json={'items': [{'id':'t1','name':'应用模板','content':'模板新提示词'}]})
             elif path == '/api/link-settings': route.fulfill(json={'has_api_key':False})
             elif path == '/api/production/hairstyle/preview':route.fulfill(json={'url':'/api/production/assets/hair-preview/file','faces_detected':1,'settings':body.get('settings',{})})
@@ -131,10 +132,11 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         expect(page.locator('#generation-prompt')).to_have_value(re.compile('^'+re.escape('服务器保存的提示词')+r'(?:\n\n【素材联动】[\s\S]*【联动结束】)?$'))
         if portrait_people and not drafts['d1'].get('person_id'):
             page.locator('#person-picker > summary').click()
+            page.locator('[data-person-type=LivenessFace]').click()
             expect(page.locator('[data-person-id=p1]')).to_contain_text('1 张照片')
             menu=page.locator('.person-menu')
             box=menu.bounding_box()
-            assert box['width'] >= min(360,width-24),box
+            assert box['width'] >= min(360,width-60),box
             assert box['x'] >= 0 and box['x']+box['width'] <= width+1,box
             assert menu.evaluate('(el)=>el.scrollWidth <= el.clientWidth+1')
             page.locator('#person-search').fill('小张')
@@ -196,6 +198,13 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
             assert '按文字描述替换场景：夜晚的海边' in page.locator('#generation-prompt').input_value()
             page.locator('#scene-enabled').uncheck()
             assert '夜晚的海边' not in page.locator('#generation-prompt').input_value()
+            runs['r1'].update(status='failed',error_kind='material_rejected',error='第 4 张包包参考图未通过检查')
+            page.locator('#runs-refresh').click()
+            expect(page.locator('[data-run-id=r1]')).to_have_attribute('data-state','failed')
+            page.locator('[data-run-id=r1] .run-menu > summary').click()
+            page.locator('[data-run-id=r1] [data-run-action=details]').click()
+            page.locator('[data-run-id=r1] [data-locate-source=bag]').click()
+            expect(page.locator('[data-run-id=r1] [data-source-kind=bag]')).to_be_focused()
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
             assert not errors,errors
             page.screenshot(path=str(ROOT/'storage'/f'accessories-{width}.png'),full_page=True)
@@ -229,7 +238,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
                 page.locator('[name=face_image]').set_input_files({'name':'second-face.png','mimeType':'image/png','buffer':image_bytes})
                 text=page.locator('#generation-prompt').input_value()
                 assert '@Image4 发型参考' in text and '@Image5 场景参考' in text
-                page.locator('#face-reference-preview button[aria-label="删除第 2 张图片"]').click()
+                page.locator('#face-reference-preview button[aria-label="移除第 1 张图片"]').click()
                 assert '@Image3 发型参考' in page.locator('#generation-prompt').input_value()
                 page.locator('#hairstyle-enabled').uncheck()
                 text=page.locator('#generation-prompt').input_value()
@@ -345,7 +354,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
             expect(page.locator('#person-current')).to_contain_text('小张')
             page.locator('#person-picker > summary').click()
             assert page.locator('#person-rename-toggle').count() == 0
-            page.locator('#person-picker > summary').click()
+            page.locator('[data-photo-close]').click()
 
         expect(page.locator('[data-run-id]')).to_have_count(2)
         page.locator('#flow-stage-generation > summary').click()
@@ -375,19 +384,15 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         expect(page.locator('#draft-save-status')).to_contain_text('已保存')
         assert strip_reference_rules(drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['prompt']) == '冲突后仍保留的内容'
         assert len(uploads)==(2 if portrait_people else 3)
-        page.locator('#redaction-settings > summary').click()
-        page.locator('[name=mask_scale]').fill('1.6')
+        page.locator('#flow-stage-redaction > summary').click()
         page.locator('#studio-preview-submit').click()
         expect(page.locator('#studio-preview-status')).to_contain_text('预览已就绪')
-        page.locator('[data-redaction-save]').click()
-        page.locator('#model-settings-toggle').click()
         page.locator('#model-settings-form [name=duration]').fill('6')
-        page.locator('#close-model-settings').click()
         page.locator('[data-prompt-template=t1]').click()
         expect(page.locator('#generation-prompt')).to_have_value(re.compile('^'+re.escape('模板新提示词')+r'(?:\n\n【素材联动】[\s\S]*【联动结束】)?$'))
         expect(page.locator('#draft-save-status')).to_contain_text('已保存')
         assert drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['model']['duration']==6
-        assert drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['mask']['mask_scale']==1.6
+        assert drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['mask']['mask_scale']==1.4
         page.locator('#toggle-video-url').click()
         page.locator('[name=video_url]').fill('https://example.test/video')
         page.locator('#confirm-video-url').click()
@@ -395,12 +400,16 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         expect(page.locator('#draft-save-status')).to_contain_text('已保存')
         assert assets[drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['source_asset_id']]['name']=='imported.mp4'
         assert len(uploads)==(2 if portrait_people else 3)
-        runs['r2'].update(status='failed', error_kind='material_rejected', error='sensitive content', request_id='req-fixture')
+        rejected_label = '包包' if accessories else '人物'
+        runs['r2'].update(status='failed', error_kind='material_rejected', error=rejected_label+'参考图未通过检查：sensitive content', request_id='req-fixture')
         page.locator('#runs-refresh').click()
         expect(page.locator('[data-run-id=r2]')).to_have_attribute('data-state','failed')
         expect(page.locator('[data-run-id=r2] [data-run-action=resume]')).to_have_count(0)
         page.locator('[data-run-id=r2] .run-menu > summary').click(); page.locator('[data-run-id=r2] [data-run-action=details]').click()
         expect(page.locator('[data-run-id=r2] .run-error-detail')).to_contain_text('sensitive content')
+        rejected_kind = 'bag' if accessories else 'face'
+        page.locator('[data-run-id=r2] [data-locate-source='+rejected_kind+']').click()
+        expect(page.locator('[data-run-id=r2] [data-source-kind='+rejected_kind+']')).to_be_focused()
         page.locator('[data-run-id=r1] .run-menu > summary').click(); page.locator('[data-run-id=r1] [data-run-action=cancel]').click()
         expect(page.locator('[data-run-id=r1]')).to_contain_text('已取消')
         expect(page.locator('[data-run-id=r2] > details')).to_have_attribute('open','')
@@ -420,26 +429,25 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
             expect(page.locator('#person-photos-dialog')).not_to_be_visible()
             switches['hold_face']=True
             page.locator('[name=face_image]').set_input_files({'name':'slow.png','mimeType':'image/png','buffer':b'slow upload'})
-            expect(page.locator('#face-reference-preview img')).to_have_count(2)
+            expect(page.locator('#face-reference-preview img')).to_have_count(1)
             for _ in range(30):
                 if held_uploads:break
                 page.wait_for_timeout(100)
             assert held_uploads
             count=len(photos)
-            page.locator('#face-reference-preview button[aria-label="删除第 2 张图片"]').click()
+            page.locator('#face-reference-preview button[aria-label="移除第 1 张图片"]').click()
             page.locator('#person-picker > summary').click();page.locator('[data-person-id=p2]').click()
             page.locator('[data-photo-use]').click()
             for route,asset in held_uploads:route.fulfill(json=asset)
             expect(page.locator('#person-photos-dialog')).not_to_be_visible()
             expect(page.locator('#draft-save-status')).to_contain_text('已保存')
             assert len(photos)==count,'Removed photo must not be submitted for the newly selected person'
-            page.locator('#person-picker > summary').click()
-            page.get_by_role('button',name='不选人物，仅用参考图',exact=True).click()
+            page.locator('#face-reference-preview button[aria-label="移除第 1 张图片"]').click()
             expect(page.locator('#draft-save-status')).to_contain_text('已保存')
             assert drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['person_id'] is None
             page.reload();expect(page.locator('#draft-save-status')).to_contain_text('已保存')
-            expect(page.locator('#person-current')).to_have_text('从人物库选择')
-            page.locator('#person-picker > summary').click();page.locator('[data-person-id=p2]').click()
+            expect(page.locator('#person-current')).not_to_be_visible()
+            page.locator('#person-picker > summary').click();page.locator('[data-person-type=LivenessFace]').click();page.locator('[data-person-id=p2]').click()
             page.locator('[data-photo-use]').click()
             expect(page.locator('#person-photos-dialog')).not_to_be_visible()
             expect(page.locator('#draft-save-status')).to_contain_text('已保存')

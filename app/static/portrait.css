@@ -109,3 +109,15 @@
 .person-photos-empty{grid-column:1/-1;background:#eee9df;border-radius:8px;padding:20px;text-align:center}
 [data-photo-status]:empty{display:none}[data-photo-status][data-error=true]{color:#a8342a}
 @media(max-width:540px){.person-photos-dialog{padding:16px}.person-photo-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.person-photo-card{padding:8px}#person-photos-open{padding:9px 8px}}
+
+/* One modal contains both the directory and the selected person's media. */
+.person-photos-dialog { box-sizing:border-box; max-height:calc(100dvh - 32px); overflow:auto; }
+.person-photos-dialog .person-menu { display:flex; flex-direction:column; gap:12px; padding:0; box-shadow:none; position:static; border:0; }
+.person-photos-dialog #person-options { max-height:48vh; min-height:80px; }
+.person-photos-dialog .person-menu-actions { display:flex; flex-wrap:wrap; gap:20px; }
+.person-photos-dialog [data-photo-detail][hidden],.person-photos-dialog [data-photo-library][hidden] { display:none; }
+.person-photos-dialog [data-photo-manage] { color:var(--accent); }
+.person-photos-dialog .person-photos-toolbar { justify-content:space-between; }
+.person-photos-dialog .person-library-tabs button { color:var(--muted); background:transparent; border-color:var(--hair); }
+.person-photos-dialog .person-library-tabs button[aria-pressed=true] { color:var(--accent); background:#f8eee8; border-color:#c78d80; }
+.person-photos-dialog :is(button,input,a):focus-visible { outline:2px solid var(--accent,#b9362f); outline-offset:2px; }

@@ -3,28 +3,19 @@
   const picker = document.getElementById('person-picker');
   if (!picker) return;
   const el = id => document.getElementById('person-' + id);
-  let people = [], selected = null, locked = false, personType = 'LivenessFace';
+  let people = [], selected = null, locked = false, personType = 'AIGC';
   const tabs = document.createElement('div'); tabs.className = 'person-library-tabs'; tabs.setAttribute('role','group'); tabs.setAttribute('aria-label','人物库类型');
-  for (const [type,label] of [['LivenessFace','真人库'],['AIGC','虚拟人物库']]) {
+  for (const [type,label] of [['AIGC','虚拟人物'],['LivenessFace','已授权真人']]) {
     const button = document.createElement('button'); button.type = 'button'; button.dataset.personType = type; button.textContent = label;
     button.addEventListener('click',() => { personType = type; render(); }); tabs.append(button);
   }
   el('search').before(tabs);
   const menu = picker.querySelector('.person-menu');
-  function positionMenu() {
-    if (!picker.open) return;
-    const rect = picker.querySelector('summary').getBoundingClientRect();
-    const width = Math.min(420,window.innerWidth-24), height = Math.min(520,window.innerHeight-24);
-    const below = window.innerHeight-rect.bottom-20, above = rect.top-20;
-    const available = below >= Math.min(340,height) ? Math.min(height,below) : above >= Math.min(340,height) ? Math.min(height,above) : height;
-    const top = below >= Math.min(340,height) ? rect.bottom+8 : above >= Math.min(340,height) ? rect.top-available-8 : Math.max(12,(window.innerHeight-available)/2);
-    menu.style.width = width+'px'; menu.style.maxHeight = available+'px';
-    menu.style.left = Math.max(12,Math.min(rect.left,window.innerWidth-width-12))+'px'; menu.style.top = top+'px';
-  }
-  picker.addEventListener('toggle',positionMenu);
-  window.addEventListener('resize',positionMenu);
-  window.addEventListener('scroll',positionMenu,true);
-  el('menu-close').addEventListener('click',() => { picker.open = false; picker.querySelector('summary').focus(); });
+  document.querySelector('[data-photo-library]').append(menu);
+  picker.querySelector('summary').addEventListener('click',event => {
+    event.preventDefault();
+    if (!locked) window.portraitPhotos.openLibrary();
+  });
   async function request(path, method = 'GET', body) {
     const response = await fetch('/api/portrait/' + path, {method,
       headers: body === undefined ? {} : {'Content-Type':'application/json'},
@@ -35,18 +26,13 @@
   }
   function render() {
     const person = people.find(x => x.id === selected);
-    const automatic = window.productionPortraits?.inputPolicy === 'auto_virtual';
-    el('current').textContent = person ? person.name + (person.person_type === 'AIGC' ? ' · 虚拟人物' : ' · 真人') : selected ? '原人物不可用，请重新选择' : '从人物库选择';
-    el('avatar').hidden = !person?.thumbnail_url;
-    if (person?.thumbnail_url) el('avatar').src = person.thumbnail_url;
-    el('add-first').hidden = automatic || people.length > 0;
+    el('current').textContent = person ? '来自人物库：' + person.name : selected ? '原人物不可用，请重新选择' : '';
+    el('bar').hidden = !selected;
     el('search').hidden = false;
     el('current').title = el('current').textContent;
     el('photos-open').disabled = locked;
-    el('photos-open').hidden = !person;
-    const videoMode = window.productionPortraits?.referenceMode === 'video';
-    el('photos-open').textContent = videoMode ? '选视频' : '选照片';
-    el('photos-hint').textContent = automatic ? '上传虚拟人物素材，点击生成后自动准备人物。真人请从人物库选择或先完成授权。' : videoMode ? (person ? '可选择已入库视频，也可上传这个人的新视频。' : '先选人物，再选视频；新视频会自动入库检查。') : person ? '可换选已入库照片，也可上传这个人的新照片。' : '当前为旧版参考图模式；可继续原流程，或切换上传虚拟人物。';
+    el('photos-open').textContent = '更换';
+    el('photos-hint').textContent = selected ? '上传替换图会作为新参考，不会追加到原人物。' : '虚拟人物可直接上传；真人请从人物库选择已授权素材。';
     tabs.querySelectorAll('button').forEach(button => { button.setAttribute('aria-pressed',String(button.dataset.personType === personType)); button.disabled = locked; });
     const query = el('search').value.trim().toLowerCase();
     el('options').replaceChildren();
@@ -63,21 +49,14 @@
       if (item.id === selected) { const badge = document.createElement('span'); badge.className = 'person-selected-label'; badge.textContent = '已选'; button.append(badge); }
       button.addEventListener('click', () => selectPhoto(item)); el('options').append(button);
     }
-    const ordinary = document.createElement('button'); ordinary.type = 'button'; ordinary.className = 'person-option';
-    ordinary.textContent = '不选人物，仅用参考图'; ordinary.classList.add('person-ordinary'); ordinary.disabled = locked; ordinary.hidden = videoMode;
-    ordinary.addEventListener('click', () => choose(null)); el('options').append(ordinary);
     if (!matches.length) { const note = document.createElement('p'); note.className = 'person-empty'; note.textContent = query ? /^asset-/i.test(query) ? '这里按名称搜索；照片编号请到后台人物库导入。' : '没有找到这个人物，请换个名称搜索。' : '暂无人物，请到后台人物库添加。'; el('options').prepend(note); }
-    positionMenu();
   }
   function selectPhoto(person) {
     if (locked) return;
-    picker.open = false;
     window.portraitPhotos.open(person);
   }
   el('photos-open').addEventListener('click',() => {
-    const person = people.find(item => item.id === selected);
-    if (person) selectPhoto(person);
-    else { picker.open = true; el('search').focus(); }
+    if (!locked) window.portraitPhotos.openLibrary();
   });
   function choose(id, notify = true) {
     if (locked && notify) return;
@@ -91,8 +70,6 @@
     people = (data.items || []).sort((a,b) => Number(b.photo_count > 0 || b.video_count > 0)-Number(a.photo_count > 0 || a.video_count > 0)); render(); return people;
   }
   el('search').addEventListener('input',render);
-  picker.addEventListener('keydown',event => { if (event.key === 'Escape') { picker.open = false; picker.querySelector('summary').focus(); } });
-  document.addEventListener('click',event => { if (!picker.contains(event.target)) picker.open = false; });
   window.addEventListener('portrait-verified', async event => {
     try { await refresh(); choose(event.detail?.person_id || selected || (people.length === 1 ? people[0].id : null)); }
     catch (error) { window.toast?.(error.message); }

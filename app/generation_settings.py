@@ -16,7 +16,7 @@ PRESETS = {
     'ark': {'label': '火山方舟官方', 'protocol': 'ark',
             'base_url': 'https://ark.cn-beijing.volces.com/api/v3',
             'model': 'doubao-seedance-2-0-260128',
-            'models': ['doubao-seedance-2-0-260128', 'doubao-seedance-2-0-fast-260128']},
+            'models': ['doubao-seedance-2-5-260628', 'doubao-seedance-2-0-260128', 'doubao-seedance-2-0-fast-260128', 'doubao-seedance-2-0-mini-260615']},
     'toapis': {'label': 'toapis.cn', 'protocol': 'toapis',
                'base_url': 'https://toapis.cn/v1', 'model': 'seedance-2',
                'models': ['seedance-2', 'seedance-2-fast', 'seedance-2-mini']},
@@ -58,7 +58,7 @@ class GenerationConfig:
         if self.mode == 'mock':
             return ''
         if not self.base_url or not self.model or not self.api_key:
-            return '请在右下角视频模型设置中填写接口地址、API Key 和模型 ID。'
+            return '请在后台配置视频模型的接口地址、API Key 和模型 ID。'
         return ''
 
     def generation_problem(self, video_available: bool = False) -> str:
@@ -124,17 +124,18 @@ def resolve_config(settings: Settings, payload: dict) -> GenerationConfig:
             raise ValueError('工作台公网地址不能使用本机或局域网 IP，请填写公网域名或公网 IP。')
     if not 1 <= len(values['model']) <= 160:
         raise ValueError('请填写有效的模型 ID（不超过 160 字符）。')
-    if type(values['duration']) is not int or not 4 <= values['duration'] <= 15:
-        raise ValueError('生成时长应为 4–15 秒。')
+    from .model_catalog import capabilities
+    limits = capabilities(values['model'], values['protocol'])
+    if type(values['duration']) is not int or not (4 <= values['duration'] <= limits['max_duration'] or (limits['follow_source'] and values['duration'] == -1)):
+        raise ValueError(f"生成时长应为 4–{limits['max_duration']} 秒。")
     if type(values['fps']) is not int or values['fps'] not in {0, 24, 25, 30}:
         raise ValueError('帧率应为自动、24、25 或 30 fps。')
     if values['protocol'] != 'adapter' and values['fps'] != 0:
         raise ValueError('方舟和 toapis 预设不传自定义帧率，请使用模型默认帧率。')
     if values['resolution'] not in {'480p', '720p', '1080p', '4k'}:
         raise ValueError('不支持的输出分辨率。')
-    if ('seedance-2-fast' in values['model'] or 'seedance-2-mini' in values['model']
-            or 'seedance-2-0-fast' in values['model']) and values['resolution'] not in {'480p', '720p'}:
-        raise ValueError('当前 Fast / Mini 模型预设支持 480p 或 720p。')
+    if values['resolution'] not in limits['resolutions']:
+        raise ValueError('当前模型支持的清晰度为：' + '、'.join(limits['resolutions']) + '。')
     key = payload.get('api_key', '')
     if not isinstance(key, str) or len(key) > 4096 or '\n' in key or '\r' in key:
         raise ValueError('API Key 格式不正确。')
@@ -146,6 +147,8 @@ def resolve_config(settings: Settings, payload: dict) -> GenerationConfig:
 def save_config(settings: Settings, payload: dict) -> GenerationConfig:
     with _lock:
         config = resolve_config(settings, payload)
+        from .model_catalog import preserve_existing
+        preserve_existing(settings)
         path = config_path(settings)
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, temporary = tempfile.mkstemp(dir=path.parent, prefix='.settings-', suffix='.tmp')

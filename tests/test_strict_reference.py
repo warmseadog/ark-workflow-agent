@@ -15,7 +15,7 @@ def capture(tmp_path, monkeypatch, protocol="ark", person_video=False, prompt="è
         calls.append(kwargs);return {"id":"test-task"}
     monkeypatch.setattr(VideoProvider,"_request",request)
     monkeypatch.setattr(VideoProvider,"_poll",lambda *a:{})
-    monkeypatch.setattr("app.person_video.validate_pair",lambda *a:None)
+    monkeypatch.setattr("app.person_video.validate_pair",lambda *a,**kw:None)
     config=GenerationConfig(mode="http",api_key="fixture",protocol=protocol,
         provider="custom" if protocol=="adapter" else protocol,
         base_url="https://ark.cn-beijing.volces.com/api/v3",model="fixture")

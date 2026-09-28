@@ -49,10 +49,11 @@ def check(width):
                 page.goto('http://127.0.0.1:18749/')
                 expect(page.locator('#draft-save-status')).to_contain_text('已保存')
                 page.locator('#person-picker summary').click()
+                page.locator('[data-person-type=LivenessFace]').click()
                 page.locator('[data-person-id="'+real['id']+'"]').click()
                 dialog=page.locator('#person-photos-dialog')
                 expect(dialog).to_be_visible();expect(dialog.locator('.person-photo-card')).to_have_count(2)
-                expect(page.locator('#person-current')).to_contain_text('从人物库选择')
+                expect(page.locator('#person-current')).not_to_be_visible()
                 assert dialog.evaluate('(el)=>el.scrollWidth<=el.clientWidth+1')
                 dialog.screenshot(path=str(ROOT/'storage'/f'person-photos-{width}.png'))
                 def use(aid):page.locator('[data-photo-id="'+jobs[aid]+'"] [data-photo-use]').click()
@@ -60,21 +61,26 @@ def check(width):
                 expect(dialog).not_to_be_visible();expect(page.locator('#person-current')).to_contain_text('yoyo-真人头像')
                 expect(page.locator('#draft-save-status')).to_contain_text('已保存')
                 assert page.evaluate('productionPortraits.currentPhoto.portrait.remote_asset_id')=='asset-two'
-                page.locator('#person-photos-open').click()
+                page.locator('#person-photos-open').click(); page.locator('[data-person-id="'+real['id']+'"]').click()
                 expect(dialog).to_contain_text('当前主参考')
                 page.locator('[data-photo-close]').click()
                 assert page.evaluate('productionPortraits.currentPhoto.portrait.remote_asset_id')=='asset-two'
-                page.locator('#person-photos-open').click();use('asset-one')
+                page.locator('#person-photos-open').click(); page.locator('[data-person-id="'+real['id']+'"]').click();use('asset-one')
                 expect(dialog).not_to_be_visible()
                 assert page.evaluate('productionPortraits.currentPhoto.portrait.remote_asset_id')=='asset-one'
                 page.reload();expect(page.locator('#draft-save-status')).to_contain_text('已保存')
                 assert page.evaluate('productionPortraits.currentPhoto.portrait.remote_asset_id')=='asset-one'
                 # An unavailable cloud asset cannot overwrite the current reference.
-                fail['id']='asset-two';page.locator('#person-photos-open').click();use('asset-two')
+                fail['id']='asset-two';page.locator('#person-photos-open').click(); page.locator('[data-person-id="'+real['id']+'"]').click();use('asset-two')
                 expect(dialog.locator('[data-photo-status]')).to_contain_text('暂不可用')
                 assert page.evaluate('productionPortraits.currentPhoto.portrait.remote_asset_id')=='asset-one'
                 fail['id']=None
-                dialog.locator('[data-photo-file]').set_input_files({'name':'新角度.png','mimeType':'image/png','buffer':pictures['asset-new']})
+                # Adding to an existing person belongs to the backend, never the production picker.
+                expect(dialog.locator('[data-photo-file]')).to_have_count(0)
+                uploaded=client.post('/api/production/assets',data={'kind':'face'},files={'file':('新角度.png',pictures['asset-new'],'image/png')}).json()
+                added=client.post('/api/portrait/photos',json={'person_id':real['id'],'asset_id':uploaded['id']})
+                assert added.status_code==200,added.text
+                dialog.locator('[data-photo-refresh]').click()
                 expect(dialog.locator('.person-photo-card')).to_have_count(3)
                 new_card=dialog.locator('.person-photo-card').filter(has_text='新角度.png')
                 expect(new_card).to_contain_text('入库检查中')
@@ -84,27 +90,30 @@ def check(width):
                 lib.process_one()
                 with lib.store.connection() as db:db.execute('UPDATE portrait_photos SET next_check=0')
                 lib.process_one()
-                page.locator('#person-photos-open').click()
+                page.locator('#person-photos-open').click(); page.locator('[data-person-id="'+real['id']+'"]').click()
                 expect(new_card.locator('[data-photo-use]')).to_be_enabled()
                 new_card.locator('[data-photo-use]').click();expect(dialog).not_to_be_visible()
                 assert page.evaluate('productionPortraits.currentPhoto.portrait.remote_asset_id')=='asset-new'
                 # Reuploading the same bytes reuses the verified photo without another cloud creation.
-                page.locator('#person-photos-open').click()
-                dialog.locator('[data-photo-file]').set_input_files({'name':'重复.png','mimeType':'image/png','buffer':pictures['asset-new']})
-                expect(dialog.locator('[data-photo-status]')).to_contain_text('已入库')
+                page.locator('#person-photos-open').click(); page.locator('[data-person-id="'+real['id']+'"]').click()
+                duplicate=client.post('/api/production/assets',data={'kind':'face'},files={'file':('重复.png',pictures['asset-new'],'image/png')}).json()
+                reused=client.post('/api/portrait/photos',json={'person_id':real['id'],'asset_id':duplicate['id']}).json()
+                assert reused['id']==added.json()['id']
+                dialog.locator('[data-photo-refresh]').click()
                 expect(dialog.locator('.person-photo-card')).to_have_count(3)
                 page.locator('[data-photo-close]').click()
                 assert sum(action=='CreateAsset' for action,_ in calls)==1
                 # Keep another face reference, then prove changing people replaces the old set.
                 page.locator('#studio-face-image').set_input_files({'name':'附加.png','mimeType':'image/png','buffer':pictures['asset-one']})
-                expect(page.locator('#face-reference-preview img')).to_have_count(2)
+                expect(page.locator('#face-reference-preview img')).to_have_count(1)
                 expect(page.locator('#draft-save-status')).to_contain_text('已保存')
                 page.locator('#person-picker summary').click();page.locator('[data-person-type=AIGC]').click()
                 page.locator('[data-person-id="'+virtual['id']+'"]').click()
                 expect(dialog.locator('.person-photo-card')).to_have_count(1)
                 page.locator('[data-photo-close]').click()
-                expect(page.locator('#person-current')).to_contain_text('yoyo-真人头像')
-                expect(page.locator('#face-reference-preview img')).to_have_count(2)
+                expect(page.locator('#person-current')).not_to_be_visible()
+                assert page.evaluate('portraitPeople.selected') is None
+                expect(page.locator('#face-reference-preview img')).to_have_count(1)
                 page.locator('#person-picker summary').click();page.locator('[data-person-type=AIGC]').click()
                 page.locator('[data-person-id="'+virtual['id']+'"]').click()
                 dialog.locator('[data-photo-use]').click();expect(dialog).not_to_be_visible()

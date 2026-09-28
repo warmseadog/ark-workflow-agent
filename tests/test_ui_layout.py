@@ -131,11 +131,12 @@ def test_production_flow_has_three_material_inputs_and_optional_prompt():
     assert 'id="studio-reference-submit"' not in studio
 
 
-def test_production_flow_keeps_preview_inside_corner_configuration():
+def test_production_flow_has_inline_generation_and_source_preview():
     from fastapi.testclient import TestClient
     from app.main import app
     studio = TestClient(app).get('/v1').text
-    assert '<details class="flow-config" id="redaction-settings">' in studio
-    assert '<details class="flow-config" id="model-settings">' in studio
-    assert studio.index('id="redaction-settings"') < studio.index('id="studio-preview-submit"') < studio.index('id="model-settings"')
+    assert 'id="redaction-settings"' not in studio
+    assert 'id="model-settings-toggle"' not in studio
+    assert studio.index('class="generation-action"') < studio.index('id="model-settings"') < studio.index('id="studio-generate-submit"')
+    assert studio.index('id="flow-stage-source"') < studio.index('id="studio-preview-submit"') < studio.index('id="flow-stage-references"')
     assert 'id="studio-redaction-confirm"' not in studio

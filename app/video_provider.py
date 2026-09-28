@@ -144,13 +144,18 @@ class VideoProvider:
                 return self._poll(resume_task_id, output, on_result)
         if resume_task_id is not None:
             return self._poll(resume_task_id, output, on_result)
+        from .model_catalog import capabilities
+        limits = capabilities(self.config.model, self.config.protocol)
         if person_video is not None:
             if faces or self.config.protocol!='ark' or self.config.base_url.rstrip('/')!='https://ark.cn-beijing.volces.com/api/v3' or not isinstance(person_video_uri,str) or not re.fullmatch(r'asset://asset-[A-Za-z0-9-]{1,114}',person_video_uri):
                 raise ProviderError('人物视频需使用火山官方已入库素材，且不能同时传入人物图片。',error_kind='configuration')
             from .person_video import validate_pair
-            validate_pair(video,person_video)
+            validate_pair(video,person_video,max_seconds=limits['max_video_seconds'])
         elif person_video_uri is not None:
             raise ProviderError('人物视频与授权编号不匹配。',error_kind='configuration')
+        elif limits['follow_source']:
+            from .person_video import validate_file
+            validate_file(video,person=False,max_seconds=limits['max_video_seconds'])
         image_asset_uris = image_asset_uris or {}
         if image_asset_uris:
             if self.config.protocol != 'ark' or self.config.base_url.rstrip('/') != 'https://ark.cn-beijing.volces.com/api/v3':
@@ -175,8 +180,8 @@ class VideoProvider:
         self._content_roles[len(references)+1] = '参考视频'
         if person_video is not None:self._content_roles[len(references)+2] = '人物参考视频'
         if self.config.protocol != 'adapter':
-            if len(references) > 9:
-                raise ProviderError('人物、衣服、发型、场景和配饰参考图合计最多 9 张，请删除部分图片后重试。')
+            if len(references) > limits['max_images']:
+                raise ProviderError(f"人物、衣服、发型、场景和配饰参考图合计最多 {limits['max_images']} 张，请删除部分图片后重试。")
             if video.stat().st_size > 50 * 1024 * 1024:
                 raise ProviderError('参考视频超过 50 MB，请压缩或缩短视频后重试。')
             if sum(p.stat().st_size for p, _ in references) > 45 * 1024 * 1024:
@@ -199,6 +204,8 @@ class VideoProvider:
             structured=structured.replace('主人物参考图','人物参考视频 @Video2')
             structured+='人物身份分工优先：@Video2（视频2）仅提供人物脸部身份与外貌；@Video1 仅提供动作、镜头与节奏，不采用视频2的动作、服装、背景、声音或台词。衣服以衣服参考图为准。'
         structured += '\n' + strict_reference_rules(references, person_video is not None)
+        if limits['follow_source']:
+            structured = '视频编辑任务：编辑 @Video1，按参考素材替换人物、服装及指定元素。唯一编辑目标为 @Video1，保持原视频时长、画面比例、动作与镜头节奏；其他视频仅作人物身份参考，不进行延长或新增镜头。\n' + structured
         self.progress('正在上传参考素材', 65)
         if self.config.protocol == 'toapis':
             with video.open('rb') as source:
@@ -222,7 +229,7 @@ class VideoProvider:
                 content.append({'type':'video_url','video_url':{'url':person_video_uri},'role':'reference_video'})
             endpoint = '/contents/generations/tasks'
             submitted = self._request('POST', endpoint, json={'model': self.config.model, 'content': content,
-                'duration': self.config.duration, 'resolution': self.config.resolution, 'ratio': 'adaptive'})
+                'duration': -1 if limits['follow_source'] else self.config.duration, 'resolution': self.config.resolution, 'ratio': 'adaptive'})
         else:
             endpoint = '/tasks'
             with ExitStack() as stack:

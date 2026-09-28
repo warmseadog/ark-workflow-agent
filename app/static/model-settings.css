@@ -40,6 +40,18 @@
 #model-connection-result[data-state=success] { background: #edf2e9; color: #36562d; }
 #model-connection-result[data-state=error] { background: #b7373010; color: var(--accent); }
 #model-connection-result[hidden] { display: none; }
+.generation-facts { margin: 18px 0; font-size: 12px; }
+.generation-facts > div { display: flex; justify-content: space-between; gap: 16px; margin: 12px 0; }
+.generation-facts dt { color: var(--muted); }
+.generation-facts dd { margin: 0; text-align: right; }
+.generation-facts [hidden], #generation-duration-field[hidden] { display: none; }
+#model-settings .generation-options-panel .config-actions { justify-content: flex-end; }
+.catalog-model { padding: 16px 0; border-bottom: 1px solid var(--hair, #ded8cd); }
+.catalog-model > strong, .catalog-model > code { display: block; overflow-wrap: anywhere; }
+.catalog-model > code { font-size: 11px; color: var(--muted); margin: 6px 0 12px; }
+.catalog-model .catalog-check { display: flex; align-items: center; gap: 8px; }
+.catalog-model .catalog-check input { width: 16px; min-height: 16px; }
+#model-catalog-status[data-error=true] { color: #b73730; }
 @media (max-width: 720px) {
   .top { position: sticky; top: 0; gap: 8px; }
   .top-title h1 { font-size: 16px; }

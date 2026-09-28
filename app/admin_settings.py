@@ -1,6 +1,6 @@
 """Configuration overview and account verification, without returning secrets."""
 import requests
-from . import local_preferences, storage_settings
+from . import local_preferences, storage_settings, redaction_settings
 from .generation_settings import load_config
 
 
@@ -26,8 +26,7 @@ def overview(settings):
         'system': {'storage_dir': str(settings.storage_dir), 'max_upload_mb': settings.max_upload_mb,
                    'seedance_poll_seconds': settings.seedance_poll_seconds, 'access': '仅本机访问',
                    'cookie_configured': bool(settings.ytdlp_cookie_file or settings.ytdlp_cookies_from_browser)},
-        'redaction': {'blur_style': settings.deface_replacewith, 'mosaic_size': settings.deface_mosaic_size,
-                       'mask_scale': settings.deface_mask_scale},
+        'redaction': redaction_settings.load_config(settings),
     }
 
 

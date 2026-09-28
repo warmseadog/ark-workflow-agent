@@ -1,4 +1,4 @@
-"""Person video validation and active media selection for Seedance 2.0 workflows."""
+"""Person video validation and active media selection for Seedance workflows."""
 import hashlib
 import math
 from pathlib import Path
@@ -26,15 +26,15 @@ def probe(path):
     finally:capture.release()
 
 
-def validate_file(path, *, person=True):
+def validate_file(path, *, person=True, max_seconds=30):
     path=Path(path)
     if not path.is_file() or not 0<path.stat().st_size<=50*1024*1024:
         raise ValueError('单段参考视频需大于 0、小于等于 50 MB。')
     if person and path.suffix.lower() not in {'.mp4','.mov'}:
         raise ValueError('人物视频请使用 MP4 或 MOV 格式。')
     info=probe(path)
-    if not 2<=info['duration']<=15:
-        raise ValueError('参考视频时长需在 2–15 秒之间。')
+    if not 2<=info['duration']<=max_seconds:
+        raise ValueError(f'参考视频时长需在 2–{max_seconds} 秒之间。')
     if person:
         w,h=info['width'],info['height']
         if not (300<w<6000 and 300<h<6000 and .4<w/h<2.5 and 407696<=w*h<=8295044):
@@ -54,8 +54,8 @@ def validate_asset(settings, asset):
     return path
 
 
-def validate_pair(source, person):
-    total=validate_file(source,person=False)['duration']+validate_file(person)['duration']
-    if total>15:
-        raise ValueError(f'动作视频和人物视频合计 {total:.1f} 秒，超过 15 秒；请缩短其中一段再提交。')
+def validate_pair(source, person, *, max_seconds=15):
+    total=validate_file(source,person=False,max_seconds=max_seconds)['duration']+validate_file(person,max_seconds=max_seconds)['duration']
+    if total>max_seconds:
+        raise ValueError(f'动作视频和人物视频合计 {total:.1f} 秒，超过 {max_seconds} 秒；请缩短其中一段再提交。')
     return total

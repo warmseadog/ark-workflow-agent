@@ -1,0 +1,17 @@
+<div id="model-settings" class="inline-generation-options">
+  <div id="model-settings-form" data-task-options>
+    <fieldset id="model-settings-fields" disabled>
+      <legend class="sr-only">本次视频生成设置</legend>
+      <label class="generation-model-field">视频模型<select name="model" required aria-describedby="generation-model-note"></select></label>
+      <label>清晰度<select name="resolution" required></select></label>
+      <div class="generation-duration-control">
+        <label id="generation-duration-field">秒数<input name="duration" type="number" min="4" max="15" step="1" required></label>
+        <div id="generation-follow-source" hidden><span>秒数</span><output id="generation-duration-note">跟随动作视频</output></div>
+      </div>
+    </fieldset>
+  </div>
+  <p id="generation-model-note" class="sr-only"></p>
+  <span id="generation-ratio-note" class="sr-only">跟随动作视频</span>
+  <p id="model-settings-status" class="generation-options-note" role="status" aria-live="polite" hidden></p>
+  <p id="model-settings-error" role="alert" hidden></p>
+</div>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>方舟 · 后台配置</title>
-  <link rel="stylesheet" href="/static/model-settings.css?v=20260927">
+  <link rel="stylesheet" href="/static/model-settings.css?v=20260928-model-selection-1">
   <link rel="stylesheet" href="/static/admin-settings.css?v=20260927">
   <link rel="stylesheet" href="/static/portrait.css?v=20260928-backend-1">
   <link rel="stylesheet" href="/static/virtual-library.css?v=20260928-backend-1">
@@ -38,15 +38,19 @@
           <a href="#storage" class="summary-card"><span>对象存储 · TOS</span><strong id="overview-storage">读取中…</strong><small id="overview-storage-detail">—</small><b>管理存储 ↗</b></a>
         </div>
         <div class="card"><p class="eyebrow">YOUR WORKFLOW</p><h3>从参考视频到生成结果</h3><div class="workflow"><span>链接 / 本地视频</span><i>→</i><span>本地打码</span><i>→</i><span>TOS / 公网地址</span><i>→</i><span>视频模型</span></div><p class="hint">启用 TOS 后，火山方舟读取带有效期的打码视频链接。其他服务商继续使用各自的素材上传方式。</p><p id="overview-attention" class="notice"></p></div>
-        <div class="card compact"><h3>配置生效方式</h3><p>模型、TikHub 和 TOS 保存后用于新任务。正在生成的任务保留提交时的配置。打码参数沿用当前浏览器的设置。</p></div>
+        <div class="card compact"><h3>配置生效方式</h3><p>模型、TikHub 和 TOS 保存后用于新任务。打码默认参数用于新建草稿；已有草稿和正在生成的任务保留原参数。</p></div>
       </section>
       <section id="section-people" class="section" hidden>
         <div class="section-title"><div><h2>人物库</h2><p>在这里添加和管理人物，制作页直接按名字选用。</p></div></div>
         <div class="card" id="people-management"><h3>人物与照片</h3><p data-library-counts class="hint">正在读取…</p><div class="actions"><button type="button" class="primary" id="manage-people">管理人物与照片</button><button type="button" class="secondary" data-portrait-open="invite">新增真人授权</button></div><p class="hint">已有官方照片：打开管理 → 选择真人或虚拟人物 → 按照片编号导入。</p></div>
       </section>
       <section id="section-model" class="section" hidden>
-        <div class="section-title"><div><h2>视频模型</h2><p>与制作页的视频模型设置同步。</p></div><span id="model-service-status" class="badge"></span></div>
+        <div class="section-title"><div><h2>视频模型</h2><p>管理服务连接与新草稿的默认模型。制作页单独选择每条视频的模型。</p></div><span id="model-service-status" class="badge"></span></div>
         <details id="model-settings" open><summary id="model-settings-toggle">模型配置</summary>{% include "model_settings_panel.html" %}</details>
+        <div class="card"><h3>制作页可选模型</h3><p class="hint">连接测试只检查接口鉴权。新增模型请先在服务商控制台完成此账号的实际生成验收，再勾选“已验收”和“在制作页开放”。更换服务地址或密钥后需重新验收。</p>
+          <form id="model-catalog-form"><div id="model-catalog-list"></div><div class="actions"><button id="save-model-catalog" class="primary" type="submit">保存模型目录</button></div></form>
+          <p id="model-catalog-status" role="status" class="notice"></p>
+        </div>
       </section>
       <section id="section-tikhub" class="section" hidden>
         <div class="section-title"><div><h2>链接解析</h2><p>通过你购买的 TikHub API 获取分享链接中的视频。</p></div><span class="badge">TikHub</span></div>
@@ -89,9 +93,23 @@
         </fieldset></form><p id="prompt-status" class="notice" role="status" hidden></p></div>
       </section>
       <section id="section-redaction" class="section" hidden>
-        <div class="section-title"><div><h2>打码参数</h2><p>查看参数来源。修改本次任务的设置，请返回制作页的“打码设置”。</p></div><a href="/" class="button">前往制作页 ↗</a></div>
-        <div class="card"><h3>服务端默认值</h3><dl id="redaction-defaults" class="info-list"></dl><p class="hint">来自服务端环境配置，修改后需重启服务。</p></div>
-        <div class="card"><h3>当前浏览器已保存的参数</h3><dl id="redaction-browser" class="info-list"></dl><p class="hint">来自此浏览器的本地存储，在制作页保存后生效；不会同步到其他浏览器。</p></div>
+        <div class="section-title"><div><h2>打码设置</h2><p>保存后供新建草稿使用，无需重启。已有草稿和已提交任务保留原参数。</p></div></div>
+        <div class="card"><form id="redaction-form"><fieldset disabled>
+          <div class="form-grid">
+            <label>打码样式<select name="blur_style"><option value="mosaic">马赛克</option><option value="blur">高斯模糊</option><option value="solid">黑色遮挡</option></select></label>
+            <label>遮挡目标<select name="mask_mode"><option value="face">只遮人脸</option><option value="face_hair_primary">人脸 + 主人物头发</option><option value="hair_primary">只遮主人物头发</option><option value="face_hair_all">所有人物脸和头发</option></select></label>
+            <label>遮罩倍数<input name="mask_scale" type="number" min="0.1" max="3" step="0.1" required></label>
+            <label>检测阈值<input name="threshold" type="number" min="0.01" max="1" step="0.01" required></label>
+            <label>马赛克颗粒<input name="mosaic_size" type="number" min="4" max="100" step="1" required></label>
+            <label>模糊遮罩形状<select name="shape"><option value="ellipse">椭圆</option><option value="box">矩形</option></select></label>
+            <label>检测尺寸<select name="detection_size"><option value="">原始尺寸</option><option>320</option><option>640</option><option>960</option><option>1280</option><option>1920</option><option>2560</option><option>4096</option></select></label>
+          </div>
+          <label class="check"><input name="keep_audio" type="checkbox">保留原视频音频</label>
+          <label class="check"><input name="robust_tracking" type="checkbox">稳定跟踪</label>
+          <p class="hint">头发遮挡仅支持马赛克样式。制作页生成前会自动打码，也可以在参考视频下方预览效果。</p>
+          <div class="actions"><button type="submit" class="primary">保存打码设置</button></div>
+        </fieldset></form><p id="redaction-status" class="notice" role="status" hidden></p></div>
+        <div class="card"><h3>已保存的默认值</h3><dl id="redaction-defaults" class="info-list"></dl></div>
       </section>
       <section id="section-system" class="section" hidden>
         <div class="section-title"><div><h2>系统信息</h2><p>查看当前服务的存储位置与运行参数。</p></div><span class="badge">只读</span></div>
@@ -101,8 +119,9 @@
     </div>
   </main>
   {% include "portrait_panel.html" %}
-  <script src="/static/model-settings.js?v=20260927"></script>
-  <script src="/static/admin-settings.js?v=20260927"></script>
+  <script src="/static/model-settings.js?v=20260928-model-selection-1"></script>
+  <script src="/static/model-catalog.js?v=20260928-model-selection-1"></script>
+  <script src="/static/admin-settings.js?v=20260928-inline-settings-1"></script>
   <script src="/static/virtual-library.js?v=20260928-backend-1"></script>
   <script src="/static/portrait.js?v=20260928-backend-1"></script>
 </body>

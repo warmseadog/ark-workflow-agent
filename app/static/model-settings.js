@@ -57,6 +57,15 @@
       const option = document.createElement('option'); option.value = value; return option;
     }));
   }
+  function updateModelLimits() {
+    const id = control('model').value;
+    const is25 = control('protocol').value === 'ark' && id === 'doubao-seedance-2-5-260628';
+    control('duration').max = is25 ? '30' : '15';
+    if (Number(control('duration').value) > Number(control('duration').max) || Number(control('duration').value) < 4) control('duration').value = '8';
+    const fast = control('protocol').value !== 'adapter' && /seedance-2(?:-0)?-(fast|mini)/.test(id);
+    for (const option of control('resolution').options) option.disabled = (is25 && option.value === '4k') || (fast && !['480p','720p'].includes(option.value));
+    if (control('resolution').selectedOptions[0]?.disabled) control('resolution').value = '720p';
+  }
   function fill(config) {
     for (const name of ['provider', 'protocol', 'mode', 'base_url', 'model', 'duration', 'fps', 'resolution']) control(name).value = config[name];
     control('public_base_url').value = config.public_base_url || '';
@@ -66,7 +75,7 @@
     keyButton.textContent = '显示';
     keyButton.setAttribute('aria-pressed', 'false');
     keyButton.setAttribute('aria-label', '显示 API Key');
-    updateProtocol(); updateSuggestions();
+    updateProtocol(); updateSuggestions(); updateModelLimits();
     status.textContent = config.status === 'demo' ? '当前为本地演示，不调用视频模型。' : config.status === 'incomplete' ? '配置待补全：请填写接口地址、Key 和模型 ID。' : '配置已保存 · 可测试连接';
     const badge = document.getElementById('model-service-status');
     badge.textContent = config.status === 'demo' ? '演示模式' : config.status === 'incomplete' ? '模型待配置' : '配置已保存';
@@ -105,10 +114,12 @@
     control('clear_api_key').checked = false;
     control('resolution').value = '720p';
     control('fps').value = '0';
-    updateProtocol(); updateSuggestions();
+    updateProtocol(); updateSuggestions(); updateModelLimits();
     status.textContent = '预设已填入，可继续编辑后保存。';
   });
   control('protocol').addEventListener('change', updateProtocol);
+  control('protocol').addEventListener('change', updateModelLimits);
+  control('model').addEventListener('input', updateModelLimits);
   control('api_key').addEventListener('input', () => {
     if (control('api_key').value.trim()) control('mode').value = 'http';
   });
