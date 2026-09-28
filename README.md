@@ -40,6 +40,8 @@ v2 在保留 ORB-HD/deface 人脸打码的同时，接入了本地的头发语�
 
 ## 本地运行
 
+新版制作页支持上传虚拟人物图片或视频，提交生成后自动入库；已有人物和真人授权流程继续兼容。配置、交互及验收范围见 [虚拟人物自动入库说明](docs/auto-virtual-person.md)。
+
 需要 Python 3.11+。在 Windows PowerShell 中执行：
 
 ```powershell

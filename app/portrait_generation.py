@@ -8,6 +8,14 @@ class PortraitPending(Exception):
     pass
 
 
+class PortraitPhotoError(ValueError):
+    """Keep recoverability when the ingestion worker changes a photo mid-check."""
+    def __init__(self, message, *, retryable=False, kind='material_rejected'):
+        super().__init__(message)
+        self.retryable = retryable
+        self.error_kind = kind
+
+
 OFFICIAL_BASE='https://ark.cn-beijing.volces.com/api/v3'
 
 
@@ -43,7 +51,7 @@ def prepare(settings, store, draft, generation):
     return snapshot
 
 
-def verify(snapshot, store):
+def verify(snapshot, store, *, wait_deadline=None):
     config=portrait_service.PortraitConfig(**snapshot['config'])
     from types import SimpleNamespace
     current=portrait_service.load_config(SimpleNamespace(storage_dir=store.storage))
@@ -70,11 +78,17 @@ def verify(snapshot, store):
             photo=lib.get_photo(job_id,private=True)
             if photo['person_id']!=snapshot['person_id']:
                 raise ValueError('任务照片与所选人物不匹配。')
-            if photo['status']=='failed': raise ValueError(photo['message'])
+            if photo['status']=='failed':
+                retryable = bool(photo.get('retryable'))
+                raise PortraitPhotoError(photo['message'], retryable=retryable,
+                    kind='person_preparation_failed' if retryable else 'material_rejected')
             if photo['status']!='active':
-                if photo['status']=='uncertain': raise ValueError('照片提交结果待确认，请在人物照片处查看状态后重新提交。')
-                if time.time()-photo['created']>1800:
-                    raise ValueError('官方照片校验仍未完成，请待照片可用后重新提交视频。')
+                if photo['status']=='uncertain':
+                    raise PortraitPhotoError('照片提交结果待确认，请继续检查原记录。',
+                        retryable=True, kind='person_preparation_uncertain')
+                if (time.time() > wait_deadline if wait_deadline is not None else time.time()-photo['created']>1800):
+                    raise PortraitPhotoError('官方照片校验仍未完成，请待照片可用后重新提交视频。',
+                        retryable=wait_deadline is not None, kind='person_preparation_timeout')
                 waiting=True
         if waiting: raise PortraitPending('等待人物素材校验，可继续准备其他视频')
         for ident,job_id in snapshot['uploads'].items():

@@ -33,6 +33,8 @@ def mask_options(values):
 
 def execute_run(settings, store, run):
     ident = run['id']
+    if store.get_run(ident)['status'] in {'cancelled', 'succeeded'}:
+        return
     snapshot, private = run['snapshot'], run['private']
     work = settings.storage_dir / 'work' / ident
     work.mkdir(parents=True, exist_ok=True)
@@ -47,13 +49,20 @@ def execute_run(settings, store, run):
         image_asset_uris = {}
         extra_references = {'reference_roles':snapshot_content_roles(snapshot)} if provider_id or result_url else {}
         if not provider_id and not result_url:
-            if private.get('portrait'):
+            if private.get('portrait') or private.get('person_preparation'):
                 from .portrait_generation import verify, PortraitPending
                 store.update_run(ident,stage='authorizing',message='正在核实人物素材',progress=2)
-                try: image_asset_uris=verify(private['portrait'],store)
+                try:
+                    if private.get('person_preparation'):
+                        from .person_preparation import prepare_run
+                        image_asset_uris = prepare_run(settings, store, run)
+                    else:
+                        image_asset_uris=verify(private['portrait'],store)
                 except PortraitPending as pending:
                     store.update_run(ident,status='queued',stage='authorizing',message=str(pending),progress=2)
                     return
+            if store.get_run(ident)['status'] == 'cancelled':
+                return
             source = store.get_asset(snapshot['source_asset_id'], private=True)
             from .person_video import is_video, validate_pair
             faces = [] if is_video(snapshot) else [Path(store.get_asset(x, private=True)['path']) for x in snapshot['face_asset_ids']]
@@ -123,7 +132,7 @@ def execute_run(settings, store, run):
             kind = 'download_failed' if current['stage']=='downloading' else 'query_unavailable'
         if uncertain:
             kind = 'submission_uncertain'
-        needs_attention = uncertain or kind in {'query_unavailable', 'download_failed'}
+        needs_attention = uncertain or kind in {'query_unavailable', 'download_failed'} or bool(getattr(exc, 'retryable', False) and private.get('person_preparation') and current['stage'] == 'authorizing')
         message = VideoProvider(config)._safe(str(exc))
         store.update_run(ident, status='needs_attention' if needs_attention else 'failed',
                          error=VideoProvider(config)._safe(str(exc)), error_kind=kind,

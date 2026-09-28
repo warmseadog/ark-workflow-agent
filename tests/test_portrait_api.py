@@ -119,7 +119,8 @@ def test_simultaneous_official_imports_share_one_local_asset(client,official,mon
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures=[pool.submit(upload) for _ in range(2)]
         failures=[future.exception() for future in futures if future.exception()]
-        assert not failures, repr(failures)
+        import traceback
+        assert not failures, '\n'.join(''.join(traceback.format_exception(exc)) for exc in failures)
         first,second=[future.result() for future in futures]
     assert first.status_code==second.status_code==200
     assert first.json()['id']==second.json()['id']

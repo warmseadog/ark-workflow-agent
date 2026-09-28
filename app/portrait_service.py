@@ -219,14 +219,20 @@ class ArkPortraitClient:
         if not _identifier(group, 'group'): raise PortraitError('官方认证结果格式异常，请稍后重试。')
         return group
 
-    def create_group(self, name):
+    def create_group(self, name, on_created=None):
         if self.person_type != 'AIGC':
             raise PortraitError('真人素材组必须通过官方本人认证创建。')
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 60 or any(ord(c) < 32 for c in name):
             raise PortraitError('虚拟人物名称请输入 1–60 个字符。')
         result = self._request('CreateAssetGroup', {'Name': name.strip(), 'GroupType': 'AIGC',
                                                    'ProjectName': self.config.project_name})
-        return self.get_group(result.get('Id'))
+        group_id = result.get('Id')
+        if not _identifier(group_id, 'group'):
+            raise PortraitError('创建人物结果待确认，请稍后重新检查。')
+        # Commit the creation receipt before another network request can fail.
+        if on_created is not None:
+            on_created(group_id)
+        return self.get_group(group_id)
 
     def get_group(self, group_id):
         if not _identifier(group_id, 'group'):

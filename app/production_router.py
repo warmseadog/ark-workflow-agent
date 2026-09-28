@@ -17,6 +17,7 @@ from .reference_roles import ACCESSORY_LABELS, OPTIONAL_KINDS
 _MODEL_FIELDS = {'provider','protocol','mode','base_url','model','duration','fps','resolution','public_base_url'}
 _DRAFT_FIELDS = {'person_reference_mode','person_video_asset_id','name','person_id','source_asset_id','face_asset_ids','clothing_asset_ids','hairstyle_asset_ids','scene_asset_ids','hairstyle_enabled','hairstyle_mask','scene_enabled','scene_description','prompt','mask','model'}
 _DRAFT_FIELDS |= {kind+suffix for kind in ACCESSORY_LABELS for suffix in ('_asset_ids','_enabled')}
+_DRAFT_FIELDS.add('person_input_policy')
 _MASK_FIELDS = {'blur_style','style','shape','mask_mode','robust_tracking','mask_scale','mosaic_size','threshold','detection_size','keep_audio'}
 
 
@@ -48,6 +49,18 @@ def get_router(settings_getter, local_guard):
     def validate_changes(values, current=None):
         if set(values)-_DRAFT_FIELDS:
             raise ValueError('草稿包含不支持的字段。')
+        from .person_preparation import POLICIES
+        if 'person_input_policy' in values:
+            if not isinstance(values['person_input_policy'], str) or values['person_input_policy'] not in POLICIES:
+                raise ValueError('人物来源模式不正确。')
+        elif 'person_id' in values:
+            if values['person_id']:
+                values['person_input_policy'] = 'existing_person'
+            elif (current or {}).get('person_input_policy') == 'existing_person':
+                values['person_input_policy'] = 'legacy_raw'
+        effective = {**(current or {}), **values}
+        if effective.get('person_input_policy') == 'auto_virtual' and effective.get('person_id'):
+            raise ValueError('已选择人物，请使用人物库模式；自动上传虚拟人不绑定其他人物。')
         if 'person_reference_mode' in values and values['person_reference_mode'] not in ('image','video'):
             raise ValueError('人物参考请选择图片或视频。')
         if values.get('person_video_asset_id') is not None:
@@ -187,6 +200,7 @@ def get_router(settings_getter, local_guard):
                 values={'model':public_model(),'mask':{'blur_style':'mosaic','mask_mode':'face','mask_scale':1.4,'threshold':0.2,'keep_audio':True,'robust_tracking':False},
                         'prompt':'保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图；应用@Image2服装参考图，保持自然稳定。'}
             if 'name' in payload: values['name']=payload['name']
+            if 'person_input_policy' in payload: values['person_input_policy']=payload['person_input_policy']
             validate_changes(values)
             return decorate_draft(store().create_draft(values))
         return guarded(operation)
@@ -221,12 +235,18 @@ def get_router(settings_getter, local_guard):
                 if previous['draft_id']!=draft_id or previous['revision']!=revision: raise Conflict('提交标识已用于另一份输入。')
                 return decorate_run(previous)
             draft=store().get_draft(draft_id)
+            if draft['revision'] != revision:
+                raise Conflict('草稿发生变化，请保存后重新提交。')
             if not draft['source_asset_id'] or not person_ids(draft) or not draft['clothing_asset_ids']:
                 raise ValueError('请选择动作视频、人物参考和衣服图。')
             validate_changes({k:v for k,v in draft.items() if k in _DRAFT_FIELDS})
             config=generation_settings.resolve_config(settings_getter(),draft['model'])
+            from .person_preparation import input_policy, preflight
+            policy = input_policy(draft, store())
+            if policy == 'existing_person' and not draft.get('person_id') and not any(store().portrait_binding(x) for x in person_ids(draft)):
+                raise ValueError('请先从人物库选择人物或素材。')
             if is_video(draft):
-                if not draft.get('person_id'):raise ValueError('人物视频请先选择人物并入库检查。')
+                if not draft.get('person_id') and policy != 'auto_virtual':raise ValueError('人物视频请先选择人物并入库检查。')
                 from .portrait_generation import OFFICIAL_BASE
                 if config.protocol!='ark' or config.base_url.rstrip('/')!=OFFICIAL_BASE:
                     raise ValueError('人物视频目前支持火山官方接口，请在后台检查模型配置。')
@@ -243,8 +263,11 @@ def get_router(settings_getter, local_guard):
                 if not Path(store().get_asset(ident,private=True)['path']).is_file(): raise ValueError('素材文件不存在，请重新导入。')
             from .portrait_generation import prepare
             private={'generation':asdict(config),'storage':asdict(storage)}
-            portrait=prepare(settings_getter(),store(),draft,config)
-            if portrait: private['portrait']=portrait
+            if policy == 'auto_virtual':
+                private['person_preparation'] = preflight(settings_getter(),store(),draft,config)
+            else:
+                portrait=prepare(settings_getter(),store(),draft,config)
+                if portrait: private['portrait']=portrait
             run=store().create_run(draft_id,revision,key,private)
             production_worker.wake(settings_getter())
             return decorate_run(run)
@@ -330,6 +353,15 @@ def get_router(settings_getter, local_guard):
             return decorate_run(run)
         return guarded(operation)
 
+    @router.post('/runs/{ident}/person-preparation/retry')
+    def retry_person_preparation(ident: str):
+        def operation():
+            store().require_visible(ident)
+            run = store().retry_preparation(ident)
+            production_worker.wake(settings_getter())
+            return decorate_run(run)
+        return guarded(operation)
+
     @router.post('/runs/{ident}/copy')
     def copy_run(ident: str):
         def operation():
@@ -348,6 +380,12 @@ def get_router(settings_getter, local_guard):
                 old=store().get_run(ident)['snapshot']
                 values={k:v for k,v in old.items() if k in _DRAFT_FIELDS}
                 values['name']=store().get_run(ident)['name']+' 副本'
+                preparation = store().get_preparation(ident)
+                if preparation and preparation.get('person_id'):
+                    from .portrait_library import PortraitLibrary
+                    lib = PortraitLibrary(settings_getter())
+                    if lib.account == preparation['account']:
+                        values.update(person_id=preparation['person_id'], person_input_policy='existing_person')
             return decorate_draft(store().create_draft(values))
         return guarded(operation)
 

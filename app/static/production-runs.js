@@ -4,17 +4,36 @@ window.createProductionRuns = ({api,changeDraft,accessoryLabels}) => {
   const previous=document.getElementById('runs-previous'), next=document.getElementById('runs-next'), pageLabel=document.getElementById('runs-page');
   const names={queued:'排队中',running:'生成中',succeeded:'已完成',failed:'失败',cancelled:'已取消',needs_attention:'需要处理',defaced:'预览完成'};
   let page=1,pages=1,total=0,active=0,sequence=0,loading=false,pollTimer=null,items=[];
+  const observedPreparationPeople=new Set();
+  let refreshingPeople=false;
   const node=(tag,text,cls)=>{const el=document.createElement(tag);if(text)el.textContent=text;if(cls)el.className=cls;return el;};
   const button=(label,fn,cls='run-text-button')=>{const el=node('button',label,cls);el.type='button';el.addEventListener('click',fn);return el;};
   const notice=error=>{status.textContent=error.message || String(error);};
   function schedule(){clearTimeout(pollTimer);pollTimer=setTimeout(()=>{if(!document.hidden&&!loading)refresh();else schedule();},active?5000:30000);}
+  function refreshPreparedPeople(){
+    const directory=window.portraitPeople;if(!directory||refreshingPeople)return;
+    const known=new Set(directory.items.map(person=>person.id));
+    const missing=items.map(item=>item.person_preparation?.person_id).filter(id=>id&&!known.has(id)&&!observedPreparationPeople.has(id));
+    if(!missing.length)return;
+    refreshingPeople=true;let succeeded=false;
+    // One directory read for newly resolved identities; never select or change a draft.
+    Promise.resolve(directory.ready).then(async()=>{
+      const loaded=new Set(directory.items.map(person=>person.id));
+      if(missing.some(id=>!loaded.has(id)))await directory.refresh();
+      missing.forEach(id=>observedPreparationPeople.add(id));succeeded=true;
+    }).catch(()=>{}).finally(()=>{
+      refreshingPeople=false;
+      // Failed reads retry on the next run refresh, never in an immediate loop.
+      if(succeeded)refreshPreparedPeople();
+    });
+  }
   async function refresh(target=page){
     if(list.querySelector('.run-name-edit')){if(target!==page)status.textContent='请先保存或取消正在修改的名称。';schedule();return;}
     const token=++sequence;loading=true;previous.disabled=next.disabled=true;
     try {
       const data=await api('/runs?page='+target+'&page_size=10');if(token!==sequence||list.querySelector('.run-name-edit'))return;
       items=data.items||[];page=data.page||target;pages=data.pages||1;total=data.total??items.length;active=data.active_count??items.filter(x=>['queued','running'].includes(x.status)).length;
-      render();status.textContent=total?'共 '+total+' 个任务，最新创建的排在前面。':'还没有生成任务。';
+      render();refreshPreparedPeople();status.textContent=total?'共 '+total+' 个任务，最新创建的排在前面。':'还没有生成任务。';
     } catch(error){if(token===sequence)notice(error);}
     finally{if(token===sequence){loading=false;previous.disabled=page<=1;next.disabled=page>=pages;schedule();}}
   }
@@ -37,6 +56,7 @@ window.createProductionRuns = ({api,changeDraft,accessoryLabels}) => {
     title.append(text,pencil);
     const date=new Date(item.created_at);const time=node('time',Number.isNaN(date.getTime())?'—':date.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}),'run-time');
     const state=node('span',(names[item.status]||item.status)+(['queued','running'].includes(item.status)?' '+(item.progress||0)+'%':''),'run-state');state.title=item.message||'';
+    if(item.person_preparation?.message)state.append(node('small',item.person_preparation.message,'run-preparation-message'));
     const duration=node('span',item.duration>0?item.duration+' 秒':'—','run-duration');
     const actions=node('div','','run-actions');
     if(item.download_url){const play=button('播放',()=>openPlayer(item));play.dataset.runAction='play';actions.append(play);const download=node('a','下载','run-text-button');download.href=item.download_url;download.download='';actions.append(download);}
@@ -55,6 +75,7 @@ window.createProductionRuns = ({api,changeDraft,accessoryLabels}) => {
     add('copy','复制为草稿',()=>changeDraft(()=>api('/runs/'+encodeURIComponent(item.id)+'/copy','POST',{})));
     if(item.can_cancel)add('cancel','取消排队',async()=>{await api('/runs/'+item.id+'/cancel','POST',{});await refresh();});
     if(item.can_resume)add('resume','继续查询 / 下载',async()=>{await api('/runs/'+item.id+'/resume','POST',{});await refresh();});
+    if(item.can_retry_preparation)add('retry-preparation','重新检查人物准备',async()=>{await api('/runs/'+item.id+'/person-preparation/retry','POST',{});await refresh();});
     add('delete','删除任务',async()=>{
       if(!window.confirm('删除这条任务记录？草稿和原始视频文件会保留。'+(item.status==='needs_attention'?' 此操作不会取消服务商端的任务。':'')))return;
       await api('/runs/'+item.id,'DELETE');if(playerRun?.id===item.id)dialog.close();await refresh();
@@ -77,6 +98,12 @@ window.createProductionRuns = ({api,changeDraft,accessoryLabels}) => {
   }
   function fillDetails(panel,item){
     panel.append(node('p',item.message||names[item.status]||''));
+    if(item.person_preparation){
+      const preparation=node('div','','run-person-preparation');
+      preparation.append(node('p',item.person_preparation.message||'正在准备人物素材'));
+      if(item.person_preparation.person_id)preparation.append(node('small','人物编号：'+item.person_preparation.person_id));
+      panel.append(preparation);
+    }
     if(item.error){const error=node('details','','run-error-detail');error.append(node('summary','错误详情'),node('p',item.error));panel.append(error);}
     const assets=item.snapshot?.assets||[],materials=node('div','','run-detail-assets');
     const labels={video:'动作参考视频',person_video:'人物参考视频',face:'人物参考图',clothing:'衣服参考图',hairstyle:'发型参考图',scene:'场景参考图',...accessoryLabels};

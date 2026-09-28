@@ -35,17 +35,18 @@
   }
   function render() {
     const person = people.find(x => x.id === selected);
-    el('current').textContent = person ? person.name + (person.person_type === 'AIGC' ? ' · 虚拟人物' : ' · 真人') : selected ? '原人物不可用，请重新选择' : '选择人物';
+    const automatic = window.productionPortraits?.inputPolicy === 'auto_virtual';
+    el('current').textContent = person ? person.name + (person.person_type === 'AIGC' ? ' · 虚拟人物' : ' · 真人') : selected ? '原人物不可用，请重新选择' : '从人物库选择';
     el('avatar').hidden = !person?.thumbnail_url;
     if (person?.thumbnail_url) el('avatar').src = person.thumbnail_url;
-    el('add-first').hidden = people.length > 0;
+    el('add-first').hidden = automatic || people.length > 0;
     el('search').hidden = false;
     el('current').title = el('current').textContent;
     el('photos-open').disabled = locked;
     el('photos-open').hidden = !person;
     const videoMode = window.productionPortraits?.referenceMode === 'video';
     el('photos-open').textContent = videoMode ? '选视频' : '选照片';
-    el('photos-hint').textContent = videoMode ? (person ? '可选择已入库视频，也可上传这个人的新视频。' : '先选人物，再选视频；新视频会自动入库检查。') : person ? '可换选已入库照片，也可上传这个人的新照片。' : '先选人物，再选照片；新照片会自动入库检查。';
+    el('photos-hint').textContent = automatic ? '上传虚拟人物素材，点击生成后自动准备人物。真人请从人物库选择或先完成授权。' : videoMode ? (person ? '可选择已入库视频，也可上传这个人的新视频。' : '先选人物，再选视频；新视频会自动入库检查。') : person ? '可换选已入库照片，也可上传这个人的新照片。' : '当前为旧版参考图模式；可继续原流程，或切换上传虚拟人物。';
     tabs.querySelectorAll('button').forEach(button => { button.setAttribute('aria-pressed',String(button.dataset.personType === personType)); button.disabled = locked; });
     const query = el('search').value.trim().toLowerCase();
     el('options').replaceChildren();
@@ -99,7 +100,7 @@
   const ready = refresh().catch(error => { el('current').textContent = '人物暂不可用'; return []; });
   window.portraitPeople = {
     ready, request, refresh, choose, get items() { return [...people]; }, get selected() { return selected; },
-    restore(id) { choose(id === undefined && people.length === 1 ? people[0].id : id, false); },
+    restore(id) { choose(id, false); },
     lock(value) { locked = value; picker.inert = value; if (value) picker.open = false; render(); },
     async selectGroup(groupId, personType = 'LivenessFace') {
       const data = await request('people/resolve','POST',{group_id:groupId,person_type:personType});

@@ -52,7 +52,7 @@ def check(width):
                 page.locator('[data-person-id="'+real['id']+'"]').click()
                 dialog=page.locator('#person-photos-dialog')
                 expect(dialog).to_be_visible();expect(dialog.locator('.person-photo-card')).to_have_count(2)
-                expect(page.locator('#person-current')).to_contain_text('选择人物')
+                expect(page.locator('#person-current')).to_contain_text('从人物库选择')
                 assert dialog.evaluate('(el)=>el.scrollWidth<=el.clientWidth+1')
                 dialog.screenshot(path=str(ROOT/'storage'/f'person-photos-{width}.png'))
                 def use(aid):page.locator('[data-photo-id="'+jobs[aid]+'"] [data-photo-use]').click()

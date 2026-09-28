@@ -27,7 +27,7 @@
   const extraKinds = ['hairstyle','scene',...Object.keys(accessoryLabels)];
   const imageFiles = Object.fromEntries(['face','clothing',...extraKinds].map(kind=>[kind,[]]));
   const imageInputs = Object.fromEntries(Object.keys(imageFiles).map(kind=>[kind,generationForm.elements.namedItem(kind+'_image')]));
-  let personMode = 'image', personVideo = null;
+  let personMode = 'image', personVideo = null, personInputPolicy = 'auto_virtual', personInputVersion = 0;
   const personVideoPreview = document.getElementById('person-video-preview');
   let busy = false;
   let job = null;
@@ -35,17 +35,21 @@
   let savedMask = {};
 
   function renderPersonVideo() {
+    const automatic = personInputPolicy === 'auto_virtual';
     personVideoPreview.hidden = !personVideo;
     if (personVideo) {
       if (personVideoPreview.getAttribute('src') !== personVideo.url) personVideoPreview.src = personVideo.url;
     } else { personVideoPreview.pause(); personVideoPreview.removeAttribute('src'); personVideoPreview.load(); }
-    document.getElementById('person-video-choose').hidden = Boolean(personVideo);
-    document.getElementById('person-video-name').textContent = personVideo?.name || '先选人物，再上传视频';
+    document.getElementById('person-video-upload').hidden = !automatic || Boolean(personVideo);
+    document.getElementById('person-video-choose').hidden = automatic || Boolean(personVideo);
+    document.getElementById('person-video-name').textContent = personVideo?.name || (automatic ? '上传虚拟人物视频' : '先选人物，再上传视频');
     document.getElementById('person-video-remove').hidden = !personVideo;
-    document.getElementById('person-video-status').textContent = personVideo ? '✓ 已入库；生成前会再次检查可用状态。' : '新视频自动入库检查，通过后可选。';
+    document.getElementById('person-video-status').textContent = automatic ? (personVideo ? '✓ 素材已保存；点击生成后自动准备虚拟人物。' : '上传后先保存到本机，点击生成后自动入库。') : personVideo ? '✓ 已入库；生成前会再次检查可用状态。' : '新视频自动入库检查，通过后可选。';
+    document.getElementById('person-auto-virtual').setAttribute('aria-pressed',String(automatic));
     updateButtons();
   }
   function setPersonMode(mode) {
+    if (personMode !== mode) personInputVersion++;
     personMode = mode;
     document.getElementById('person-image-panel').hidden = mode !== 'image';
     document.getElementById('person-video-panel').hidden = mode !== 'video';
@@ -66,7 +70,29 @@
   });
   document.getElementById('person-video-remove').addEventListener('click',() => {
     if (busy) return;
-    personVideo = null; renderPersonVideo(); clearResult(); changed();
+    personInputVersion++; personVideo = null; renderPersonVideo(); clearResult(); changed();
+  });
+  document.getElementById('person-auto-virtual').addEventListener('click',() => {
+    if (busy || !sessionReady || personInputPolicy === 'auto_virtual') return;
+    personInputVersion++; personInputPolicy = 'auto_virtual';
+    window.portraitPeople?.restore(null);
+    personVideo = null; imageFiles.face = []; syncImages('face');
+    renderPersonVideo(); refreshPhotoInputs(); changed();
+  });
+  document.getElementById('person-video-file').addEventListener('change',async event => {
+    const input = event.currentTarget, file = input.files[0]; input.value = '';
+    if (!file || busy || !sessionReady || personInputPolicy !== 'auto_virtual') return;
+    if (!/\.(mp4|mov)$/i.test(file.name) || file.size > 50 * 1024 * 1024) { toast('人物视频支持 MP4 / MOV，50 MB 以内。'); return; }
+    const version = ++personInputVersion, targetDraft = draft?.id, targetPerson = window.portraitPeople?.selected;
+    const current = () => version === personInputVersion && personMode === 'video' && personInputPolicy === 'auto_virtual' && draft?.id === targetDraft && window.portraitPeople?.selected === targetPerson;
+    document.getElementById('person-video-status').textContent = '正在保存人物视频…';
+    try {
+      const asset = await persistFile(file,'person_video');
+      if (!current()) return;
+      personVideo = asset; renderPersonVideo(); clearResult(); changed();
+    } catch (error) {
+      if (current()) document.getElementById('person-video-status').textContent = '视频保存失败：' + error.message;
+    }
   });
   personVideoPreview.addEventListener('loadedmetadata',updateButtons);
   personVideoPreview.addEventListener('error',() => {
@@ -106,7 +132,7 @@
     counter.classList.toggle('over-limit',over);
     importButton.disabled = busy || !sessionReady || !sourceUrl.value.trim();
     previewButton.disabled = busy || !sessionReady || !hasSource();
-    generateButton.disabled = busy || !sessionReady || (!pendingSubmission && (referenceOverLimit() || durationOver || !(hasSource() && (personMode === 'video' ? personVideo && window.portraitPeople?.selected : face.files.length) && clothing.files.length)));
+    generateButton.disabled = busy || !sessionReady || (!pendingSubmission && (referenceOverLimit() || durationOver || !(hasSource() && (personMode === 'video' ? personVideo && (personInputPolicy === 'auto_virtual' || window.portraitPeople?.selected) : face.files.length) && clothing.files.length)));
     generateButton.formNoValidate = Boolean(pendingSubmission);
     for (const id of ['replace-source-video', 'remove-source-video']) document.getElementById(id).hidden = !hasSource();
     if (!busy) generateButton.textContent = pendingSubmission ? '确认上次提交结果' : '生成视频 →';
@@ -121,7 +147,7 @@
     [...sourceForm.elements, ...generationForm.querySelectorAll('input,textarea,[data-prompt-template],[data-template-action],[data-asset-edit]'), document.getElementById('toggle-video-url')].forEach(input => input.disabled = value);
     mask.querySelectorAll('[data-redaction-save]').forEach(button => button.disabled = value);
     ['draft-recover'].forEach(id => document.getElementById(id).disabled = value || !sessionReady);
-    document.querySelectorAll('[data-person-media],#person-video-choose,#person-video-remove').forEach(button => button.disabled = value);
+    document.querySelectorAll('[data-person-media],#person-video-choose,#person-video-remove,#person-auto-virtual').forEach(button => button.disabled = value);
     updateButtons();
   }
   function clearResult() {
@@ -538,9 +564,9 @@
     dirtyVersion++; showSave('有修改，正在保存…');
     clearTimeout(saveTimer);
     // Start media persistence immediately; draft update follows when upload completes.
-    const uploadingPerson = window.portraitPeople?.selected, uploadingDraft = draft?.id;
+    const uploadingPerson = window.portraitPeople?.selected, uploadingDraft = draft?.id, uploadingPolicy = personInputPolicy, uploadingVersion = personInputVersion;
     [['video',source.files[0]], ...Object.entries(imageFiles).flatMap(([kind,files])=>files.map(file=>[kind,file]))].filter(([,file])=>file).forEach(([kind,file]) => {
-      persistFile(file, kind).then(asset => { if (kind === 'face' && personMode === 'image' && imageFiles.face.includes(file) && draft?.id === uploadingDraft && window.portraitPeople?.selected === uploadingPerson) queuePhoto(file, asset, uploadingPerson); }).catch(error => showSave('素材保存失败：' + error.message, true));
+      persistFile(file, kind).then(asset => { if (kind === 'face' && personMode === 'image' && uploadingPolicy === personInputPolicy && uploadingVersion === personInputVersion && imageFiles.face.includes(file) && draft?.id === uploadingDraft && window.portraitPeople?.selected === uploadingPerson) queuePhoto(file, asset, uploadingPerson); }).catch(error => { if (draft?.id === uploadingDraft && personInputPolicy === uploadingPolicy && personInputVersion === uploadingVersion) showSave('素材保存失败：' + error.message, true); });
     });
     saveTimer = setTimeout(() => flushDraft().catch(() => {}), 500);
   }
@@ -564,6 +590,7 @@
     assetFiles.set(file, asset); return file;
   }
   window.productionPortraits = {
+    get inputPolicy() { return personInputPolicy; },
     get referenceMode() { return personMode; },
     get currentPhoto() { return personMode === 'video' ? personVideo : assetFiles.get(imageFiles.face[0]) || null; },
     async importAsset(asset, {signal} = {}) {
@@ -577,6 +604,7 @@
         if (asset.kind === 'person_video') {
           const oldPerson = window.portraitPeople?.selected;
           await window.portraitPeople.selectGroup(asset.portrait.group_id,asset.person_type || 'LivenessFace');
+          personInputVersion++; personInputPolicy = 'existing_person';
           if (oldPerson !== window.portraitPeople.selected) { imageFiles.face = []; syncImages('face'); }
           personVideo = asset; setPersonMode('video'); changed();
           try { await flushDraft(); } catch (_) { throw new Error('人物视频已加载，但草稿保存失败，请重试保存。'); }
@@ -591,6 +619,7 @@
         if (signal?.aborted) throw new DOMException('Dialog closed', 'AbortError');
         const oldPerson = window.portraitPeople?.selected;
         if (window.portraitPeople) await window.portraitPeople.selectGroup(asset.portrait.group_id, asset.person_type || 'LivenessFace');
+        personInputVersion++; personInputPolicy = 'existing_person';
         const remaining = oldPerson === window.portraitPeople?.selected ? imageFiles.face.slice(1).filter(item => assetFiles.get(item)?.sha256 !== asset.sha256) : [];
         if (oldPerson !== window.portraitPeople?.selected) personVideo = null;
         personMode = 'image';
@@ -609,7 +638,7 @@
   function photoKey(file, person) { return person + ':' + assetFiles.get(file)?.id; }
   function currentPhotos() {
     const person = window.portraitPeople?.selected;
-    return person && personMode === 'image' ? imageFiles.face.map(file => photoRecords.get(photoKey(file, person))).filter(Boolean) : [];
+    return person && personInputPolicy !== 'auto_virtual' && personMode === 'image' ? imageFiles.face.map(file => photoRecords.get(photoKey(file, person))).filter(Boolean) : [];
   }
   function renderPhotoStatus() {
     const label = document.getElementById('person-photo-status');
@@ -617,13 +646,13 @@
     const records = currentPhotos();
     const failed = records.find(x => x.status === 'failed' || x.status === 'uncertain');
     label.dataset.error = String(Boolean(failed));
-    label.textContent = !window.portraitPeople?.selected ? '真人照片请先选择或添加已认证人物。' :
+    label.textContent = personInputPolicy === 'auto_virtual' ? (imageFiles.face.length ? '素材保存后即可生成，人物入库将在任务中自动完成。' : '上传虚拟人物参考图，点击生成后自动入库。') : !window.portraitPeople?.selected ? '参考图沿用原有草稿流程。真人照片可从人物库选择。' :
       !imageFiles.face.length ? '点击“选照片”，或上传这个人的新照片。' : failed ? failed.message :
       records.length === imageFiles.face.length && records.every(x => x.status === 'active') ? '✓ 照片可用' : '正在校验人物照片，可继续准备素材或提交视频。';
     document.getElementById('person-photo-retry').hidden = !failed;
   }
   async function queuePhoto(file, asset, person = window.portraitPeople?.selected) {
-    if (!person || !window.portraitPeople) { renderPhotoStatus(); return; }
+    if (personInputPolicy === 'auto_virtual' || !person || !window.portraitPeople) { renderPhotoStatus(); return; }
     const key = person + ':' + asset.id;
     if (photoRecords.has(key)) { renderPhotoStatus(); schedulePhotoPoll(); return; }
     const pending = {status:'queued',message:'等待校验'};
@@ -650,13 +679,17 @@
     photoTimer = null;
     const jobs = currentPhotos().filter(x => x.id && !['active','failed'].includes(x.status));
     if (!jobs.length || photoPolling) return;
+    const version = personInputVersion, targetDraft = draft?.id, targetPerson = window.portraitPeople?.selected, policy = personInputPolicy;
+    const current = () => personInputVersion === version && draft?.id === targetDraft && window.portraitPeople?.selected === targetPerson && personInputPolicy === policy;
     photoPolling = true;
     try {
       const data = await window.portraitPeople.request('photos?ids='+encodeURIComponent([...new Set(jobs.map(x=>x.id))].join(',')));
+      if (!current()) return;
       const updated = new Map((data.items || []).map(x=>[x.id,x]));
       for (const [key,job] of photoRecords) if (updated.has(job.id)) photoRecords.set(key,updated.get(job.id));
       renderPhotoStatus();
     } catch (error) {
+      if (!current()) return;
       const label=document.getElementById('person-photo-status');
       label.textContent='照片状态查询暂时失败，稍后自动恢复；可以继续编辑。';
     } finally { photoPolling=false; schedulePhotoPoll(); }
@@ -675,7 +708,9 @@
   });
   window.addEventListener('portrait-person-changed',() => {
     if (!sessionReady || restoring) return;
+    personInputVersion++; personInputPolicy = window.portraitPeople?.selected ? 'existing_person' : 'legacy_raw';
     if (!window.portraitPeople?.selected) personVideo = null;
+    window.portraitPeople?.restore(window.portraitPeople.selected);
     renderPersonVideo(); showFiles(face,'face'); refreshPhotoInputs(); changed();
   });
   window.addEventListener('visibilitychange',() => {
@@ -690,7 +725,7 @@
     const videoFile = source.files[0], faceFiles = [...imageFiles.face], clothingFiles = [...imageFiles.clothing];
     const extraFiles = Object.fromEntries(extraKinds.map(kind=>[kind,[...imageFiles[kind]]]));
     const selectedPerson = window.portraitPeople?.selected || null;
-    const values = {person_reference_mode:personMode,person_video_asset_id:personVideo?.id || null,person_id:selectedPerson, name:draftName || draft?.name || '未命名视频', prompt:generationForm.elements.namedItem('prompt').value, mask:maskValues(), model:publicModel()};
+    const values = {person_input_policy:personInputPolicy,person_reference_mode:personMode,person_video_asset_id:personVideo?.id || null,person_id:selectedPerson, name:draftName || draft?.name || '未命名视频', prompt:generationForm.elements.namedItem('prompt').value, mask:maskValues(), model:publicModel()};
     for (const kind of extraKinds) values[kind+'_enabled'] = document.getElementById(kind+'-enabled').checked;
     values.scene_description = document.getElementById('scene-description').value;
     values.hairstyle_mask = hairMaskValues();
@@ -730,7 +765,7 @@
     } finally { savePromise = null; }
   }
   async function restoreDraft(item) {
-    restoring = true;
+    restoring = true; personInputVersion++;
     try {
       const known = new Map((item.assets || []).map(asset => [asset.id,asset]));
       const restore = async id => {
@@ -746,6 +781,9 @@
       ]);
       const transfer = new DataTransfer(); if (videoFile) transfer.items.add(videoFile);
       source.files = transfer.files; sourceUrl.value = '';
+      const activePersonIds = item.person_reference_mode === 'video' ? [item.person_video_asset_id] : (item.face_asset_ids || []);
+      const hasOfficialBinding = activePersonIds.some(id => known.get(id)?.portrait?.remote_asset_id);
+      personInputPolicy = item.person_input_policy || (item.person_id || hasOfficialBinding ? 'existing_person' : 'legacy_raw');
       personMode = item.person_reference_mode || 'image'; personVideo = known.get(item.person_video_asset_id) || null;
       imageFiles.face = faces; imageFiles.clothing = clothes;
       Object.assign(imageFiles,Object.fromEntries(extras));
@@ -796,7 +834,7 @@
     lock(true); draftControls(true);
     try {
       const values = await captureDraft();
-      const item = await api('/drafts','POST',{name:values.name + '（恢复）'});
+      const item = await api('/drafts','POST',{name:values.name + '（恢复）',person_input_policy:values.person_input_policy});
       const saved = await api('/drafts/'+encodeURIComponent(item.id),'PUT',{...values,name:item.name,revision:item.revision});
       await restoreDraft(saved); recoverDraft.hidden = true;
     } catch (error) { showSave('恢复失败：'+error.message,true); }
@@ -826,7 +864,7 @@
       (data.items || []).forEach(item=>drafts.set(item.id,item));
       const requested = localStorage.getItem(currentKey);
       const selected = drafts.get(requested) || data.items?.[0];
-      const item = selected ? await api('/drafts/'+encodeURIComponent(selected.id)) : await api('/drafts','POST',{});
+      const item = selected ? await api('/drafts/'+encodeURIComponent(selected.id)) : await api('/drafts','POST',{person_input_policy:'auto_virtual'});
       await restoreDraft(item); sessionReady=true;
       if (/^未命名视频(?: 副本)*$/.test(draft.name)) {
         const stamp=new Date().toLocaleString('sv-SE',{timeZone:'Asia/Shanghai'}).replace(/\D/g,'').slice(4);

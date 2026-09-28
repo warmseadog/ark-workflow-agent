@@ -1,5 +1,6 @@
 """Durable people and deduplicated official photo ingestion; one bounded worker."""
 from __future__ import annotations
+import base64
 import hashlib
 import json
 import re
@@ -78,6 +79,8 @@ class PortraitLibrary:
                     created REAL NOT NULL, checked REAL NOT NULL DEFAULT 0,
                     UNIQUE(account,person_id,sha256));
                 CREATE INDEX IF NOT EXISTS portrait_photos_pending ON portrait_photos(status,next_check);
+                CREATE TABLE IF NOT EXISTS portrait_photo_errors (
+                    photo_id TEXT PRIMARY KEY, retryable INTEGER NOT NULL);
             """)
 
             db.execute('BEGIN IMMEDIATE')
@@ -88,6 +91,10 @@ class PortraitLibrary:
                 account TEXT NOT NULL, request_id TEXT NOT NULL, name TEXT NOT NULL,
                 status TEXT NOT NULL, person_id TEXT, message TEXT NOT NULL,
                 PRIMARY KEY(account,request_id))""")
+            request_columns = {row[1] for row in db.execute('PRAGMA table_info(portrait_group_requests)')}
+            for column in ('remote_group_id', 'auto_kind', 'auto_sha256'):
+                if column not in request_columns:
+                    db.execute(f'ALTER TABLE portrait_group_requests ADD COLUMN {column} TEXT')
 
     def api(self, person_type, asset_type='Image'):
         if asset_type=='Video': return service.ArkPortraitClient(self.config,person_type=person_type,asset_type='Video')
@@ -109,7 +116,7 @@ class PortraitLibrary:
             if old:
                 if old['name']!=name: raise Conflict('该创建请求已用于其他人物。')
                 return self.group_request(dict(old))
-            db.execute('INSERT INTO portrait_group_requests VALUES (?,?,?,?,?,?)',
+            db.execute('INSERT INTO portrait_group_requests (account,request_id,name,status,person_id,message) VALUES (?,?,?,?,?,?)',
                        (self.account,request_id,name,'submitting',None,'正在创建官方虚拟素材组'))
         try:
             group=self.api('AIGC').create_group(name)
@@ -123,6 +130,150 @@ class PortraitLibrary:
             db.execute('UPDATE portrait_group_requests SET status=?,person_id=?,message=? WHERE account=? AND request_id=?',
                        (status,person_id,message,self.account,request_id))
         return {'request_id':request_id,'status':status,'person_id':person_id,'message':message}
+
+    def _auto_assets(self, asset_ids):
+        if not isinstance(asset_ids, list) or not asset_ids:
+            raise ValueError('请先上传虚拟人物参考素材。')
+        assets = []
+        for ident in asset_ids:
+            if not isinstance(ident, str) or not ident:
+                raise ValueError('人物参考素材编号不正确。')
+            asset = self.store.get_asset(ident, private=True)
+            if asset['kind'] not in {'face', 'person_video'} or not re.fullmatch(r'[a-f0-9]{64}', asset['sha256']):
+                raise ValueError('请选择有效的人物照片或人物视频。')
+            assets.append(asset)
+        return assets
+
+    def resolve_virtual_assets(self, asset_ids):
+        """Read exact content associations only; never infer a face or query cloud."""
+        assets = self._auto_assets(asset_ids)
+        people = set()
+        with self.store.connection() as db:
+            for asset in assets:
+                rows = db.execute("""
+                    SELECT pe.id,pe.person_type,h.person_id AS hidden
+                    FROM portrait_photos ph
+                    JOIN production_assets a ON a.id=ph.asset_id
+                    LEFT JOIN portrait_people pe ON pe.id=ph.person_id AND pe.account=ph.account
+                    LEFT JOIN portrait_hidden_people h ON h.person_id=pe.id AND h.account=pe.account
+                    WHERE ph.account=? AND ph.sha256=? AND a.kind=?
+                    UNION ALL
+                    SELECT pe.id,pe.person_type,h.person_id AS hidden
+                    FROM production_portraits p
+                    JOIN production_assets a ON a.id=p.asset_id
+                    LEFT JOIN portrait_people pe ON pe.group_id=p.group_id AND pe.account=p.fingerprint
+                    LEFT JOIN portrait_hidden_people h ON h.person_id=pe.id AND h.account=pe.account
+                    WHERE p.fingerprint=? AND a.sha256=? AND a.kind=?
+                    """, (self.account, asset['sha256'], asset['kind'],
+                          self.account, asset['sha256'], asset['kind'])).fetchall()
+                for row in rows:
+                    if not row['id']:
+                        raise ValueError('人物素材已有官方归属，请从人物库选择并核实所属人物。')
+                    if row['person_type'] != 'AIGC':
+                        raise ValueError('素材已关联真人，请从人物库选择已有真人，不能作为虚拟人物自动入库。')
+                    if row['hidden']:
+                        raise ValueError('素材关联的人物已移除，请先在人物库中确认或恢复。')
+                    people.add(row['id'])
+        if len(people) > 1:
+            raise ValueError('参考素材关联了不同人物，请从人物库明确选择同一人物的素材。')
+        return self.person(next(iter(people)), private=True) if people else None
+
+    def _visible_virtual(self, person_id):
+        person = self.person(person_id, private=True)
+        if person['person_type'] != 'AIGC':
+            raise ValueError('该人物属于真人，请从人物库选择。')
+        with self.store.connection() as db:
+            hidden = db.execute('SELECT 1 FROM portrait_hidden_people WHERE person_id=? AND account=?',
+                                (person_id, self.account)).fetchone()
+        if hidden:
+            raise ValueError('素材关联的人物已移除，请先在人物库中确认或恢复。')
+        return person
+
+    def ensure_auto_virtual(self, asset_ids):
+        """Create once, then reconcile the same durable request after uncertainty."""
+        if not self.config.ready:
+            raise ValueError(self.config.problem())
+        primary = self._auto_assets(asset_ids)[0]
+        resolved = self.resolve_virtual_assets(asset_ids)
+        digest = hashlib.sha256(json.dumps(
+            ['auto-virtual-v1', self.account, primary['kind'], primary['sha256']],
+            separators=(',', ':')).encode()).digest()
+        request_id = 'auto-' + digest.hex()
+        # Base32 retains the full digest while respecting the 60-character limit.
+        cloud_name = 'auto-v-' + base64.b32encode(digest).decode().rstrip('=').lower()
+        message = '正在准备虚拟人物'
+        with self.store.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            old = db.execute('SELECT * FROM portrait_group_requests WHERE account=? AND request_id=?',
+                             (self.account, request_id)).fetchone()
+            fresh = old is None
+            if fresh:
+                db.execute('''INSERT INTO portrait_group_requests
+                    (account,request_id,name,status,person_id,message,remote_group_id,auto_kind,auto_sha256)
+                    VALUES (?,?,?,?,?,?,?,?,?)''',
+                    (self.account, request_id, cloud_name, 'ready' if resolved else 'submitting',
+                     resolved['id'] if resolved else None, message,
+                     resolved['group_id'] if resolved else None, primary['kind'], primary['sha256']))
+                old = db.execute('SELECT * FROM portrait_group_requests WHERE account=? AND request_id=?',
+                                 (self.account, request_id)).fetchone()
+            row = dict(old)
+        if (row['name'] != cloud_name or row['auto_kind'] != primary['kind']
+                or row['auto_sha256'] != primary['sha256']):
+            raise Conflict('自动人物请求归属不一致，请重新核实人物素材。')
+        if row['status'] == 'ready':
+            person = self._visible_virtual(row['person_id'])
+            if resolved and person['id'] != resolved['id']:
+                raise ValueError('参考素材关联了不同人物，请重新选择。')
+            return self.group_request(row)
+
+        def checkpoint(group_id):
+            with self.store.connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                changed = db.execute('''UPDATE portrait_group_requests SET remote_group_id=?
+                    WHERE account=? AND request_id=? AND (remote_group_id IS NULL OR remote_group_id=?)''',
+                    (group_id, self.account, request_id, group_id)).rowcount
+                if not changed:
+                    raise Conflict('自动人物请求出现不同官方组，请核实后再使用。')
+
+        try:
+            api = self.api('AIGC')
+            if fresh:
+                group = api.create_group(cloud_name, on_created=checkpoint)
+            elif row['remote_group_id']:
+                group = api.get_group(row['remote_group_id'])
+            else:
+                # list_groups returns only after complete bounded pagination. A
+                # partial/error/ambiguous listing must never authorize a create.
+                matches = {g['Id']: g for g in api.list_groups() if g.get('Name') == cloud_name}
+                if len(matches) != 1:
+                    raise service.PortraitError('未找到唯一可确认的官方人物组，请稍后重新检查。')
+                group_id = next(iter(matches))
+                checkpoint(group_id)
+                group = api.get_group(group_id)
+            person = self.add_person(group['Id'], '虚拟人物 ' + digest.hex()[:8], 'AIGC')
+            person = self._visible_virtual(person['id'])
+            latest = self.resolve_virtual_assets(asset_ids)
+            if latest and latest['id'] != person['id']:
+                raise ValueError('参考素材关联了不同人物，请重新选择。')
+            with self.store.connection() as db:
+                db.execute('''UPDATE portrait_group_requests SET status='ready',person_id=?,message=?
+                    WHERE account=? AND request_id=?''',
+                    (person['id'], '虚拟人物已准备，正在检查参考素材', self.account, request_id))
+        except Exception as exc:
+            message = '人物入库结果待确认，暂不重复创建；请重新检查原请求。'
+            if isinstance(exc, ValueError):
+                message += ' ' + str(exc)
+            with self.store.connection() as db:
+                # A slower failed observer must not overwrite a completed peer.
+                db.execute('''UPDATE portrait_group_requests SET status='uncertain',message=?
+                    WHERE account=? AND request_id=? AND status!='ready' ''',
+                    (message, self.account, request_id))
+        with self.store.connection() as db:
+            result = dict(db.execute('SELECT * FROM portrait_group_requests WHERE account=? AND request_id=?',
+                                     (self.account, request_id)).fetchone())
+        if result['status'] == 'ready':
+            self._visible_virtual(result['person_id'])
+        return self.group_request(result)
 
     def group_request(self, row):
         if row['status']=='submitting': row['message']='创建结果待确认，暂不重复提交；请同步官方虚拟库或核实控制台。'
@@ -139,12 +290,16 @@ class PortraitLibrary:
             people=db.execute("SELECT id FROM portrait_people WHERE account=? AND person_type='AIGC' AND id NOT IN (SELECT person_id FROM portrait_hidden_people WHERE account=?)",(self.account,self.account)).fetchall()
             counts=db.execute("SELECT ph.status,count(*) AS count FROM portrait_photos ph JOIN portrait_people pe ON pe.id=ph.person_id WHERE ph.account=? AND pe.person_type='AIGC' AND pe.id NOT IN (SELECT person_id FROM portrait_hidden_people) GROUP BY ph.status",(self.account,)).fetchall()
             failures=db.execute("SELECT pe.name,ph.message,ph.created FROM portrait_photos ph JOIN portrait_people pe ON pe.id=ph.person_id WHERE ph.account=? AND pe.person_type='AIGC' AND pe.id NOT IN (SELECT person_id FROM portrait_hidden_people) AND ph.status IN ('failed','uncertain') ORDER BY ph.created DESC LIMIT 5",(self.account,)).fetchall()
-            runs=db.execute("SELECT snapshot,updated_at FROM production_runs WHERE status='succeeded' ORDER BY updated_at DESC").fetchall()
+            runs=db.execute("""SELECT r.snapshot,r.updated_at,
+                COALESCE(json_extract(r.snapshot,'$.person_id'),json_extract(p.data,'$.person_id')) AS resolved_person_id
+                FROM production_runs r LEFT JOIN production_person_preparations p ON p.run_id=r.id
+                WHERE r.status='succeeded' AND COALESCE(json_extract(r.snapshot,'$.model.mode'),'')!='mock'
+                ORDER BY r.updated_at DESC""").fetchall()
         ids={row['id'] for row in people}
         last=None
         for run in runs:
             snapshot=json.loads(run['snapshot'])
-            if snapshot.get('person_id') in ids:
+            if run['resolved_person_id'] in ids:
                 last={'time':run['updated_at'],'model':snapshot.get('model',{}).get('model',''),
                       'mode':snapshot.get('model',{}).get('mode','')}
                 break
@@ -192,7 +347,10 @@ class PortraitLibrary:
         value['verified'] = value['person_type']=='LivenessFace'
         value['usable'] = value['photo_count']+value['video_count']>0
         with self.store.connection() as db:
-            value['generated_count']=db.execute("SELECT count(*) FROM production_runs WHERE status='succeeded' AND COALESCE(json_extract(snapshot,'$.model.mode'),'')!='mock' AND json_extract(snapshot,'$.person_id')=?",(ident,)).fetchone()[0]
+            value['generated_count']=db.execute("""SELECT count(*) FROM production_runs r
+                LEFT JOIN production_person_preparations p ON p.run_id=r.id
+                WHERE r.status='succeeded' AND COALESCE(json_extract(r.snapshot,'$.model.mode'),'')!='mock'
+                AND COALESCE(json_extract(r.snapshot,'$.person_id'),json_extract(p.data,'$.person_id'))=?""",(ident,)).fetchone()[0]
         thumb = self.settings.storage_dir/'portrait-thumbs'/(ident+'.jpg')
         value['thumbnail_url'] = '/api/portrait/people/'+ident+'/thumbnail' if thumb.is_file() else None
         return value
@@ -259,17 +417,25 @@ class PortraitLibrary:
 
     def get_photo(self, ident, private=False):
         with self.store.connection() as db:
-            row = db.execute('SELECT * FROM portrait_photos WHERE id=? AND account=?',(ident,self.account)).fetchone()
+            row = db.execute('''SELECT ph.*,COALESCE(e.retryable,0) AS retryable
+                FROM portrait_photos ph LEFT JOIN portrait_photo_errors e ON e.photo_id=ph.id
+                WHERE ph.id=? AND ph.account=?''',(ident,self.account)).fetchone()
         if not row: raise LookupError('照片校验记录不可用，请重新选择人物和照片。')
         result = dict(row)
+        result['retryable'] = bool(result['retryable'])
         if not private:
             result = {k:result[k] for k in ('id','person_id','asset_id','status','message')}
         return result
 
     def update(self, ident, **values):
+        retryable = values.pop('retryable', None)
         assert set(values) <= {'status','remote_id','message','next_check','checked'}
         with self.store.connection() as db:
             db.execute('UPDATE portrait_photos SET '+','.join(k+'=?' for k in values)+' WHERE id=?',(*values.values(),ident))
+            if retryable is not None:
+                db.execute('INSERT OR REPLACE INTO portrait_photo_errors VALUES (?,?)', (ident, int(bool(retryable))))
+            elif values.get('status') and values['status'] != 'failed':
+                db.execute('DELETE FROM portrait_photo_errors WHERE photo_id=?', (ident,))
 
     def record_verified_import(self, person_id, asset_id, remote_id):
         """Reconcile a freshly verified official import with any existing upload job.
@@ -292,6 +458,9 @@ class PortraitLibrary:
                     next_check=0,checked=excluded.checked""",
                     (uuid.uuid4().hex,self.account,person_id,asset_id,asset['sha256'],'active',
                      remote_id,'官方照片可用',0,checked,checked))
+                db.execute('''DELETE FROM portrait_photo_errors WHERE photo_id IN
+                    (SELECT id FROM portrait_photos WHERE account=? AND person_id=? AND sha256=?)''',
+                    (self.account, person_id, asset['sha256']))
             self.thumbnail({'asset_id':asset_id,'person_id':person_id})
 
     def enqueue(self, person_id, asset_id):
@@ -364,7 +533,7 @@ class PortraitLibrary:
                         messages={'FaceMismatch':'照片与所选人物不一致，请切换人物或更换清晰正面照片。',
                                   'ContentRestricted':'照片未通过官方内容检查，请更换照片。',
                                   'DownloadFailed':'官方读取照片失败，请检查 TOS 后更换照片重试。'}
-                        self.update(ident,status='failed',message=messages.get(result.get('error_code'),'照片未通过官方检查，请更换照片或到官方控制台查看。'))
+                        self.update(ident,status='failed',retryable=False,message=messages.get(result.get('error_code'),'照片未通过官方检查，请更换照片或到官方控制台查看。'))
                     else:
                         self.update(ident,next_check=time.time()+10,message='官方正在校验照片，可继续准备其他视频')
             except Exception as exc:
@@ -374,7 +543,7 @@ class PortraitLibrary:
                     self.update(ident,status='uncertain',message='提交结果待确认，正在查找官方记录',next_check=time.time()+15)
                 elif current['status'] in {'processing','uncertain'}:
                     self.update(ident,message=safe,next_check=time.time()+30)
-                else: self.update(ident,status='failed',message=safe)
+                else: self.update(ident,status='failed',retryable=True,message=safe)
             if asset['kind']=='person_video':
                 current=self.get_photo(ident,private=True)
                 self.update(ident,message=current['message'].replace('照片','视频'))

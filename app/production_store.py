@@ -2,10 +2,14 @@
 from __future__ import annotations
 import json
 import sqlite3
+import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from threading import RLock
+
+_connection_setup_lock = RLock()
 
 
 def default_name(person='视频'):
@@ -50,6 +54,8 @@ class ProductionStore:
                 message TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0,
                 error TEXT, error_kind TEXT, request_id TEXT, provider_task_id TEXT,
                 result_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS production_person_preparations (
+                run_id TEXT PRIMARY KEY, data TEXT NOT NULL, next_check REAL NOT NULL DEFAULT 0);
             CREATE INDEX IF NOT EXISTS production_runs_order ON production_runs(created_at DESC,id DESC);
             """)
 
@@ -57,8 +63,19 @@ class ProductionStore:
     def connection(self):
         db = sqlite3.connect(self.path, timeout=30)
         db.row_factory = sqlite3.Row
-        db.execute('PRAGMA journal_mode=WAL')
         try:
+            # WAL is persistent. Serialize first-open transitions between local
+            # request threads; SQLite can reject this PRAGMA before busy_timeout.
+            with _connection_setup_lock:
+                for attempt in range(5):
+                    try:
+                        if db.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'wal':
+                            db.execute('PRAGMA journal_mode=WAL').fetchone()
+                        break
+                    except sqlite3.OperationalError as exc:
+                        if 'locked' not in str(exc).lower() or attempt == 4:
+                            raise
+                        time.sleep(0.05 * (attempt + 1))
             yield db
             db.commit()
         except Exception:
@@ -169,6 +186,10 @@ class ProductionStore:
         value['can_resume'] = value['status'] == 'needs_attention' and has_remote
         value['can_cancel'] = value['status'] == 'queued' and not has_remote
         value['can_delete'] = value['status'] != 'running' and (value['status'] != 'queued' or not has_remote)
+        preparation = self.get_preparation(value['id'])
+        value['person_preparation'] = self.public_preparation(preparation)
+        value['can_retry_preparation'] = bool(preparation and preparation.get('retryable')
+            and value['status'] in {'failed', 'needs_attention'} and not has_remote)
         if private:
             value['private'] = json.loads(value['private'])
         else:
@@ -202,6 +223,59 @@ class ProductionStore:
             db.execute('INSERT INTO production_runs\n                (id,draft_id,revision,idempotency_key,snapshot,private,status,stage,message,created_at,updated_at)\n                VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                 (ident,draft_id,revision,key,json.dumps(draft,ensure_ascii=False),json.dumps(private,ensure_ascii=False),
                  'queued','queued','等待处理',stamp,stamp))
+            if private.get('person_preparation'):
+                intent = private['person_preparation']
+                data = {'state': 'pending', 'account': intent['account'],
+                    'input_digest': intent['input_digest'], 'person_id': None,
+                    'group_request_id': None, 'uploads': {}, 'started_at': None,
+                    'deadline_at': None, 'retryable': False, 'attempts': 0,
+                    'message': '等待准备虚拟人物', 'updated_at': stamp}
+                db.execute('INSERT INTO production_person_preparations VALUES (?,?,0)',
+                    (ident, json.dumps(data, ensure_ascii=False)))
+        return self.get_run(ident)
+
+    def get_preparation(self, ident):
+        with self.connection() as db:
+            row = db.execute('SELECT * FROM production_person_preparations WHERE run_id=?', (ident,)).fetchone()
+        return {**json.loads(row['data']), 'next_check': row['next_check']} if row else None
+
+    @staticmethod
+    def public_preparation(data):
+        return {key: data.get(key) for key in ('state', 'person_id', 'message')} if data else None
+
+    def update_preparation(self, ident, **changes):
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            run = db.execute('SELECT status FROM production_runs WHERE id=?', (ident,)).fetchone()
+            if not run or run['status'] == 'cancelled':
+                return False
+            row = db.execute('SELECT * FROM production_person_preparations WHERE run_id=?', (ident,)).fetchone()
+            if not row:
+                raise LookupError('找不到人物准备记录。')
+            next_check = changes.pop('next_check', row['next_check'])
+            data = {**json.loads(row['data']), **changes, 'updated_at': now()}
+            db.execute('UPDATE production_person_preparations SET data=?,next_check=? WHERE run_id=?',
+                (json.dumps(data, ensure_ascii=False), next_check, ident))
+        return True
+
+    def retry_preparation(self, ident):
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute('SELECT 1 FROM production_deleted_runs WHERE id=?', (ident,)).fetchone():
+                raise LookupError('任务已删除。')
+            row = db.execute('SELECT * FROM production_runs WHERE id=?', (ident,)).fetchone()
+            prep = db.execute('SELECT data FROM production_person_preparations WHERE run_id=?', (ident,)).fetchone()
+            if not row:
+                raise LookupError('找不到生成任务。')
+            data = json.loads(prep['data']) if prep else {}
+            if (row['status'] not in {'failed', 'needs_attention'} or row['provider_task_id']
+                    or row['result_url'] or not data.get('retryable')):
+                raise Conflict('此任务不能重新检查人物，请核对详情后复制为新草稿。')
+            data.update(state='pending', retryable=False, attempts=0, started_at=None,
+                deadline_at=None, message='等待重新检查人物', updated_at=now(), retry_requested=True)
+            db.execute('UPDATE production_person_preparations SET data=?,next_check=0 WHERE run_id=?',
+                (json.dumps(data, ensure_ascii=False), ident))
+            db.execute("UPDATE production_runs SET status='queued',stage='queued',error=NULL,error_kind=NULL,message='等待重新检查人物',updated_at=? WHERE id=?", (now(), ident))
         return self.get_run(ident)
 
     def run_name(self, ident, fallback):
@@ -246,6 +320,10 @@ class ProductionStore:
             item['can_resume']=not item['legacy'] and item['status']=='needs_attention' and bool(remote)
             item['can_cancel']=not item['legacy'] and item['status']=='queued' and not remote
             item['can_delete']=item['status']!='running' and (item['status']!='queued' or (not item['legacy'] and not remote))
+            preparation = None if item['legacy'] else self.get_preparation(item['id'])
+            item['person_preparation'] = self.public_preparation(preparation)
+            item['can_retry_preparation'] = bool(preparation and preparation.get('retryable')
+                and item['status'] in {'failed', 'needs_attention'} and not remote)
             result.append(item)
         return {'items':result,'total':count['total'],'active_count':count['active'],'page':page,'pages':pages,'page_size':page_size}
 
@@ -286,14 +364,19 @@ class ProductionStore:
             raise ValueError('Invalid task fields')
         changes['updated_at'] = now()
         with self.connection() as db:
-            db.execute('UPDATE production_runs SET '+','.join(k+'=?' for k in changes)+' WHERE id=?',
+            db.execute('UPDATE production_runs SET '+','.join(k+'=?' for k in changes)+" WHERE id=? AND status!='cancelled'",
                        (*changes.values(), ident))
         return self.get_run(ident)
 
     def claim_next(self):
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
-            row = db.execute("SELECT * FROM production_runs WHERE status='queued' AND (stage!='authorizing' OR updated_at<?) ORDER BY created_at LIMIT 1", ((datetime.now(timezone.utc)-timedelta(seconds=10)).isoformat(),)).fetchone()
+            row = db.execute("""SELECT r.* FROM production_runs r
+                LEFT JOIN production_person_preparations p ON p.run_id=r.id
+                WHERE r.status='queued' AND (r.stage!='authorizing' OR r.updated_at<?)
+                AND r.id NOT IN (SELECT id FROM production_deleted_runs)
+                AND (p.run_id IS NULL OR p.next_check<=?) ORDER BY r.created_at LIMIT 1""",
+                ((datetime.now(timezone.utc)-timedelta(seconds=10)).isoformat(), time.time())).fetchone()
             if not row:
                 return None
             db.execute("UPDATE production_runs SET status='running',updated_at=? WHERE id=?", (now(),row['id']))

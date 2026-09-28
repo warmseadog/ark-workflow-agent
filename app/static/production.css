@@ -183,6 +183,14 @@
 #person-video-panel .asset-footer span { min-width:0; overflow-wrap:anywhere; }
 #person-video-duration[data-error="true"] { color:#b53e37; font-weight:600; }
 .person-photo-card video { width:100%; height:190px; object-fit:contain; background:#222; border-radius:5px; }
+.person-source-options { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:12px; }
+.person-source-options button { border:1px solid #c6b9ab; border-radius:5px; padding:8px 12px; background:transparent; }
+.person-source-options button[aria-pressed="true"] { background:#fff4ed; color:#aa3932; border-color:#bd7164; font-weight:600; }
+.person-source-options a { font-size:12px; color:#6e6257; margin-left:auto; }
+.person-video-upload { display:flex; justify-content:center; align-items:center; position:relative; cursor:pointer; }
+.person-video-upload input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+.run-preparation-message { display:block; font-size:11px; font-weight:400; line-height:1.5; white-space:normal; overflow-wrap:anywhere; margin-top:4px; color:#7c6554; }
+.run-person-preparation { background:#faf5ed; padding:8px 12px; border-radius:5px; overflow-wrap:anywhere; }
 
 /* Task list: compact rows, stable title editor, single on-demand player. */
 #production-run-list { display:block; }

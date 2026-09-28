@@ -131,7 +131,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         expect(page.locator('#generation-prompt')).to_have_value(re.compile('^'+re.escape('服务器保存的提示词')+r'(?:\n\n【素材联动】[\s\S]*【联动结束】)?$'))
         if portrait_people and not drafts['d1'].get('person_id'):
             page.locator('#person-picker > summary').click()
-            expect(page.locator('[data-person-id=p1]')).to_contain_text('1 张照片可用')
+            expect(page.locator('[data-person-id=p1]')).to_contain_text('1 张照片')
             menu=page.locator('.person-menu')
             box=menu.bounding_box()
             assert box['width'] >= min(360,width-24),box
@@ -438,7 +438,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
             expect(page.locator('#draft-save-status')).to_contain_text('已保存')
             assert drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['person_id'] is None
             page.reload();expect(page.locator('#draft-save-status')).to_contain_text('已保存')
-            expect(page.locator('#person-current')).to_have_text('选择人物')
+            expect(page.locator('#person-current')).to_have_text('从人物库选择')
             page.locator('#person-picker > summary').click();page.locator('[data-person-id=p2]').click()
             page.locator('[data-photo-use]').click()
             expect(page.locator('#person-photos-dialog')).not_to_be_visible()
