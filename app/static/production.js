@@ -451,7 +451,7 @@
       if (!['queued', 'running'].includes(current.status)) return current;
       if (Date.now() > deadline) throw new Error('等待超时，请检查网络；已提交的模型任务可在服务商控制台查看。');
       await new Promise(resolve => setTimeout(resolve, 1200));
-      current = await jsonRequest(`/api/jobs/${encodeURIComponent(current.id)}`);
+      current = await jsonRequest(`${window.currentAccount ? '/api/previews' : '/api/jobs'}/${encodeURIComponent(current.id)}`);
     }
   }
   async function prepareVideo(body, fingerprint, isGeneration) {
@@ -461,7 +461,12 @@
     if (!source.files.length && !sourceUrl.value.trim()) throw new Error('请重新选择参考视频。');
     previewStatus.textContent = '正在处理预览…';
     if (isGeneration) { generateButton.textContent = '正在准备视频…'; status.textContent = '正在准备视频'; }
-    const created = await jsonRequest('/api/jobs', {method: 'POST', body});
+    let created;
+    if (window.currentAccount) {
+      const saved = await flushDraft();
+      created = await jsonRequest('/api/previews', {method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({source_asset_id:saved.source_asset_id,mask:saved.mask})});
+    } else created = await jsonRequest('/api/jobs', {method: 'POST', body});
     const ready = await waitForJob(created, isGeneration);
     if (ready.status !== 'defaced' || !ready.defaced_url) throw new Error('视频预处理未完成，请重试。');
     preparedSignature = fingerprint; previewStatus.textContent = '预览已就绪';
@@ -518,7 +523,7 @@
       if (pendingSubmission) status.textContent = '提交结果尚未确认。点击“确认上次提交结果”安全查询；不会重复创建任务。';
     } finally { lock(false); }
   });
-  const currentKey = 'production-current-draft-v1', pendingKey = 'production-pending-submit-v1';
+  let currentKey = 'production-current-draft-v1', pendingKey = 'production-pending-submit-v1';
   const saveStatus = document.getElementById('draft-save-status');
   const retrySave = document.getElementById('draft-save-retry');
   const recoverDraft = document.getElementById('draft-recover');
@@ -526,7 +531,6 @@
   const publicModelFields = ['model','duration','resolution'];
   const drafts = new Map(), runs = new Map();
   let draft = null, draftName = null, dirtyVersion = 0, savedVersion = 0, saveTimer, savePromise = null, pendingSubmission = null;
-  try { pendingSubmission = JSON.parse(localStorage.getItem(pendingKey) || 'null'); } catch (_) {}
   const templatesReady = new Promise(resolve => window.addEventListener('production-templates-ready', resolve, {once:true}));
   const modelsReady = new Promise(resolve => window.addEventListener('model-settings-loaded', resolve, {once:true}));
   const defaultMask = maskValues(), defaultPrompt = generationForm.elements.namedItem('prompt').value;
@@ -580,6 +584,17 @@
     const file = new File([await response.blob()], asset.name, {type:asset.mime || (asset.kind === 'video' ? 'video/mp4' : 'image/png')});
     assetFiles.set(file, asset); return file;
   }
+  async function selectPortraitPerson(asset) {
+    if (asset.person_id) {
+      await window.portraitPeople.selectPerson(asset.person_id);
+      return;
+    }
+    // Only legacy admin cloud imports may lack a tenant-local person ID.
+    if (window.currentAccount && window.currentAccount.role !== 'admin' && !window.currentAccount.is_admin) {
+      throw new Error('请从当前账号的人物库选择素材。');
+    }
+    await window.portraitPeople.selectGroup(asset.portrait.group_id, asset.person_type || 'LivenessFace');
+  }
   window.productionPortraits = {
     get inputPolicy() { return personInputPolicy; },
     get referenceMode() { return personMode; },
@@ -594,7 +609,7 @@
       try {
         if (asset.kind === 'person_video') {
           const oldPerson = window.portraitPeople?.selected;
-          await window.portraitPeople.selectGroup(asset.portrait.group_id,asset.person_type || 'LivenessFace');
+          await selectPortraitPerson(asset);
           personInputVersion++; personInputPolicy = 'existing_person';
           if (oldPerson !== window.portraitPeople.selected) { imageFiles.face = []; syncImages('face'); }
           personVideo = asset; setPersonMode('video'); changed();
@@ -609,7 +624,7 @@
         }
         if (signal?.aborted) throw new DOMException('Dialog closed', 'AbortError');
         const oldPerson = window.portraitPeople?.selected;
-        if (window.portraitPeople) await window.portraitPeople.selectGroup(asset.portrait.group_id, asset.person_type || 'LivenessFace');
+        await selectPortraitPerson(asset);
         personInputVersion++; personInputPolicy = 'existing_person';
         const remaining = oldPerson === window.portraitPeople?.selected ? imageFiles.face.slice(1).filter(item => assetFiles.get(item)?.sha256 !== asset.sha256) : [];
         if (oldPerson !== window.portraitPeople?.selected) personVideo = null;
@@ -849,6 +864,11 @@
   async function initialize() {
     lock(true); draftControls(true);
     try {
+      await window.accountReady;
+      if (window.currentAccount) {
+        currentKey += ':'+window.currentAccount.id; pendingKey += ':'+window.currentAccount.id;
+      }
+      try { pendingSubmission = JSON.parse(localStorage.getItem(pendingKey) || 'null'); } catch (_) {}
       const [data] = await Promise.all([api('/drafts'),templatesReady,modelsReady,window.portraitPeople?.ready]);
       (data.items || []).forEach(item=>drafts.set(item.id,item));
       const requested = localStorage.getItem(currentKey);

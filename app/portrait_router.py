@@ -16,6 +16,34 @@ from .production_store import ProductionStore
 CONSOLE_URL = 'https://console.volcengine.com/ark/region:ark+cn-beijing/experience/vision?modelId=doubao-seedance-2-0-260128'
 
 
+def _use_local_reference(lib, ident):
+    """Select already verified media exclusively from this tenant's library."""
+    from .portrait_library import validate_photo
+
+    photo = lib.get_photo(ident, private=True)
+    if photo['status'] != 'active' or not photo['remote_id']:
+        raise ValueError('人物素材尚未通过官方检查，请稍后刷新。')
+    person = lib.person(photo['person_id'], private=True)
+    asset = lib.store.get_asset(photo['asset_id'], private=True)
+    if asset['kind'] not in {'face', 'person_video'} or asset['sha256'] != photo['sha256']:
+        raise ValueError('人物素材与本地校验记录不匹配，请重新选择。')
+    # Verified imports can be below upload recommendations; bytes, format and
+    # tenant-local path must still validate. Videos retain full video validation.
+    validate_photo(lib.settings, asset, require_upload_dimensions=False)
+    asset_type = 'Video' if asset['kind'] == 'person_video' else 'Image'
+    remote = lib.api(person['person_type'], asset_type).get_asset(photo['remote_id'])
+    if (remote['remote_asset_id'] != photo['remote_id']
+            or remote['group_id'] != person['group_id']
+            or remote['project'] != lib.config.project_name
+            or remote['asset_type'] != asset_type
+            or remote['person_type'] != person['person_type']
+            or remote['status'] != 'Active'):
+        raise ValueError('素材与所选人物、项目或类型不匹配，请重新选择。')
+    lib.store.bind_portrait(asset['id'], remote, lib.account)
+    return {**lib.store.get_asset(asset['id']), 'person_id': person['id'],
+            'person_type': person['person_type']}
+
+
 def get_router(settings_getter, local_guard):
     router=APIRouter(prefix='/api/portrait',dependencies=[Depends(local_guard)])
     def store(): return ProductionStore(settings_getter().storage_dir)
@@ -118,8 +146,8 @@ def get_router(settings_getter, local_guard):
         return guarded(operation)
 
     @router.post('/photos/{ident}/use')
-    def use_video(ident:str):
-        return guarded(lambda:library().use_video(ident))
+    def use_reference(ident:str):
+        return guarded(lambda:_use_local_reference(library(),ident))
 
     @router.get('/photos')
     def photos(ids:str=''):

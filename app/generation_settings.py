@@ -79,7 +79,8 @@ class GenerationConfig:
 
 
 def config_path(settings: Settings) -> Path:
-    return settings.storage_dir / 'private' / 'generation-settings.json'
+    from .tenancy import config_root
+    return config_root(settings) / 'private' / 'generation-settings.json'
 
 
 def load_config(settings: Settings) -> GenerationConfig:

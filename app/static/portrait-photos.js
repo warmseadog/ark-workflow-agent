@@ -50,7 +50,7 @@
       const use = document.createElement('button'); use.type = 'button'; use.className = 'primary'; use.dataset.photoUse = ''; use.dataset.unavailable = String(!active); use.textContent = selected ? '继续使用' : mode === 'video' ? '使用这段' : '使用这张';
       use.addEventListener('click',() => run(async () => {
         find('status').textContent = '正在核实并加载照片…';
-        const asset = mode === 'video' ? await request('photos/'+photo.id+'/use','POST',{}) : await request('import','POST',{remote_asset_id:photo.remote_asset_id,person_type:person.person_type});
+        const asset = await request('photos/'+encodeURIComponent(photo.id)+'/use','POST',{});
         await window.productionPortraits.importAsset(asset); dialog.close();
       }));
       card.append(image,name,label,use);

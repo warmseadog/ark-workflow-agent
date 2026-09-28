@@ -137,7 +137,7 @@ def prepare_run(settings, store, run):
         portrait = {'config': intent['config'], 'person_id': person['id'],
             'group_id': person['group_id'], 'person_type': 'AIGC', 'uploads': uploads, 'bindings': {}}
         try:
-            uris = verify(portrait, store, wait_deadline=prep['deadline_at'])
+            uris = verify(portrait, store, wait_deadline=prep['deadline_at'], settings=settings)
         except PortraitPending:
             message = '正在准备虚拟人物，入库完成后自动生成'
             store.update_preparation(ident, state='waiting', message=message, next_check=time.time() + 10)

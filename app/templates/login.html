@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>登录 · 方舟</title>
+  <link rel="stylesheet" href="/static/account.css?v=20260928-account-1">
+  <script src="/static/account.js?v=20260928-account-1"></script>
+</head>
+<body class="account-page">
+  <main class="auth-layout">
+    <a class="account-brand" href="/" aria-label="方舟制作台"><span>方</span> 方舟 <small>视频创作工作台</small></a>
+    <section class="auth-card" aria-labelledby="login-title">
+      <p class="account-eyebrow">欢迎回来</p><h1 id="login-title">登录你的工作台</h1>
+      <p class="account-muted">继续制作，管理你的素材与生成任务。</p>
+      <form id="login-form">
+        <label for="login-username">用户名</label><input id="login-username" name="username" autocomplete="username" required autofocus spellcheck="false">
+        <label for="login-password">密码</label><input id="login-password" name="password" type="password" autocomplete="current-password" required>
+        <p id="login-error" class="account-message" role="alert" hidden></p>
+        <button type="submit" class="account-primary" id="login-submit">登录工作台</button>
+      </form>
+      <p class="auth-footnote">还没有账号或忘记密码？请联系管理员。</p>
+    </section>
+    <p class="account-banner" data-account-error role="alert" hidden></p>
+    <p class="auth-caption">从参考到成片，让创作有序发生。</p>
+  </main>
+  <script src="/static/login.js?v=20260928-account-1"></script>
+</body>
+</html>

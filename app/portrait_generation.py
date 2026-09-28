@@ -47,14 +47,15 @@ def prepare(settings, store, draft, generation):
             person=db.execute('SELECT person_type FROM portrait_people WHERE account=? AND group_id=?',(lib.account,binding['group_id'])).fetchone()
         binding['person_type']=person['person_type'] if person else 'LivenessFace'
     snapshot={'config':asdict(config),'bindings':{ident:{k:binding[k] for k in ('remote_asset_id','group_id','project','person_type')} for ident,binding in bindings.items()}}
-    verify(snapshot,store)
+    verify(snapshot,store,settings=settings)
     return snapshot
 
 
-def verify(snapshot, store, *, wait_deadline=None):
+def verify(snapshot, store, *, wait_deadline=None, settings=None):
     config=portrait_service.PortraitConfig(**snapshot['config'])
     from types import SimpleNamespace
-    current=portrait_service.load_config(SimpleNamespace(storage_dir=store.storage))
+    settings=settings or SimpleNamespace(storage_dir=store.storage)
+    current=portrait_service.load_config(settings)
     if portrait_service.fingerprint(config)!=portrait_service.fingerprint(current):
         raise ValueError('人物素材账号或项目已变更，请重新选择人物和照片。')
     def client(person_type='LivenessFace', asset_type='Image'):
@@ -67,7 +68,7 @@ def verify(snapshot, store, *, wait_deadline=None):
         from types import SimpleNamespace
         from .portrait_library import PortraitLibrary, validate_photo
         import time
-        lib=PortraitLibrary(SimpleNamespace(storage_dir=store.storage))
+        lib=PortraitLibrary(settings)
         if portrait_service.fingerprint(config)!=lib.account:
             raise ValueError('人物账号或项目已变更，请重新选择人物和照片。')
         person=lib.person(snapshot['person_id'],private=True)
@@ -94,7 +95,7 @@ def verify(snapshot, store, *, wait_deadline=None):
         for ident,job_id in snapshot['uploads'].items():
             photo=lib.get_photo(job_id,private=True)
             asset=store.get_asset(ident,private=True)
-            path=validate_photo(SimpleNamespace(storage_dir=store.storage),asset)
+            path=validate_photo(settings,asset)
             if asset['sha256']!=photo['sha256']: raise ValueError('照片内容与校验记录不一致。')
             media_api=client(person['person_type'],'Video' if asset['kind']=='person_video' else 'Image')
             remote=media_api.get_asset(photo['remote_id'])

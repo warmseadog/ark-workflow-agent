@@ -11,7 +11,8 @@ _lock = RLock()
 
 
 def config_path(settings):
-    return settings.storage_dir / 'private' / 'redaction-settings.json'
+    from .tenancy import config_root
+    return config_root(settings) / 'private' / 'redaction-settings.json'
 
 
 def validate(values):

@@ -35,7 +35,7 @@ def connection(settings):
             db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS prompt_templates (id TEXT PRIMARY KEY, name TEXT NOT NULL, content TEXT NOT NULL)')
             cursor = db.execute("INSERT OR IGNORE INTO preferences VALUES ('prompts_initialized', '1')")
-            if cursor.rowcount:
+            if cursor.rowcount and (not getattr(settings,'user_id','') or settings.storage_dir == getattr(settings,'config_root',None)):
                 db.executemany('INSERT INTO prompt_templates VALUES (?, ?, ?)',
                     [(f'default-{i}', name, text) for i, (name, text) in enumerate(DEFAULT_PROMPTS)])
             # Upgrade only untouched bundled templates, once; never recreate deleted items.
@@ -50,9 +50,16 @@ def connection(settings):
 
 def list_templates(settings):
     with connection(settings) as db:
-        return [dict(row) for row in db.execute('SELECT * FROM prompt_templates ORDER BY rowid')]
+        personal = [dict(row) for row in db.execute('SELECT * FROM prompt_templates ORDER BY rowid')]
+    from .tenancy import root_settings, config_root
+    if settings.storage_dir != config_root(settings):
+        shared=[{**item,'id':'system:'+item['id'],'read_only':True} for item in list_templates(root_settings(settings))]
+        return shared+personal
+    return personal
 
 def save_template(settings, name, content, template_id=None):
+    if template_id and template_id.startswith('system:'):
+        raise ValueError('系统模板为只读，请另存为个人模板。')
     from .reference_prompt import strip_reference_rules
     name, content = name.strip(), strip_reference_rules(content)
     if not name or len(name) > 60 or not content or len(content) > 10000:
@@ -67,16 +74,22 @@ def save_template(settings, name, content, template_id=None):
     return {'id': template_id, 'name': name, 'content': content}
 
 def delete_template(settings, template_id):
+    if template_id.startswith('system:'):
+        raise ValueError('系统模板为只读，不能删除。')
     with connection(settings) as db:
         if not db.execute('DELETE FROM prompt_templates WHERE id=?', (template_id,)).rowcount:
             raise LookupError('模板不存在或已被删除。')
 
 def get_tikhub_key(settings):
+    from .tenancy import root_settings
+    settings = root_settings(settings)
     with connection(settings) as db:
         row = db.execute("SELECT value FROM preferences WHERE key='tikhub_api_key'").fetchone()
     return row['value'] if row else os.getenv('TIKHUB_API_KEY', '').strip()
 
 def save_tikhub_key(settings, api_key='', clear_api_key=False):
+    from .tenancy import root_settings
+    settings = root_settings(settings)
     key = api_key.strip()
     if len(key) > 2048 or any(ord(char) < 32 or ord(char) > 126 for char in key):
         raise ValueError('API Key 格式不正确。')

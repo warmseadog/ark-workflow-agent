@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from .tenancy import config_root
 import tempfile
 
 SD25 = 'doubao-seedance-2-5-260628'
@@ -44,7 +45,7 @@ def _scope(config) -> str:
 def catalog(settings) -> dict:
     from .generation_settings import load_config, PRESETS
     config = load_config(settings)
-    path = settings.storage_dir / 'private' / 'model-catalog.json'
+    path = config_root(settings) / 'private' / 'model-catalog.json'
     document = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
     same_account = document.get('scope') == _scope(config)
     overrides = document.get('items', {}) if same_account else {}
@@ -92,7 +93,7 @@ def save_catalog(settings, payload: dict) -> dict:
 
 
 def _write(settings, document):
-    path = settings.storage_dir / 'private' / 'model-catalog.json'
+    path = config_root(settings) / 'private' / 'model-catalog.json'
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix='.catalog-', suffix='.tmp')
     try:
@@ -108,7 +109,7 @@ def _write(settings, document):
 def preserve_existing(settings):
     """Freeze migration eligibility before an administrator changes the default."""
     from .generation_settings import load_config, config_path
-    path = settings.storage_dir / 'private' / 'model-catalog.json'
+    path = config_root(settings) / 'private' / 'model-catalog.json'
     if not path.exists() and config_path(settings).exists():
         current = load_config(settings)
         _write(settings, {'scope':_scope(current), 'items':{}, 'legacy_model':current.model})

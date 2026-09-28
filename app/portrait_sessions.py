@@ -135,6 +135,9 @@ def routers(settings_getter, local_guard):
     secured=APIRouter(prefix='/api/portrait/sessions',dependencies=[Depends(local_guard)])
     public=APIRouter(prefix='/auth/portrait')
     def store(): return Sessions(settings_getter())
+    def public_store(state):
+        from .tenancy import enabled, callback_settings
+        return Sessions(callback_settings(settings_getter(),state)) if enabled() else store()
     @secured.post('')
     def create(payload:dict, response:Response):
         response.headers.update(_NO_STORE); return store().create(payload.get('request_id'))
@@ -159,12 +162,12 @@ def routers(settings_getter, local_guard):
         return Response(output.getvalue(),media_type='image/svg+xml',headers=_NO_STORE)
     @public.get('/scan/{state}')
     def scan(state:str):
-        data=store().get(state=state)
+        data=public_store(state).get(state=state)
         if data['status']!='pending': raise HTTPException(410,'二维码已失效，请返回电脑重新获取。')
         return RedirectResponse(data['url'],status_code=302,headers=_NO_STORE)
     @public.get('/return/{state}')
     def callback(state:str, request:Request):
-        store().callback(state,request.query_params.get('bytedToken',''),request.query_params.get('resultCode',''))
+        public_store(state).callback(state,request.query_params.get('bytedToken',''),request.query_params.get('resultCode',''))
         return RedirectResponse('/auth/portrait/done',status_code=303,headers=_NO_STORE)
     @public.get('/done')
     def done():

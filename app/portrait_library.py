@@ -191,12 +191,39 @@ class PortraitLibrary:
 
     def ensure_auto_virtual(self, asset_ids):
         """Create once, then reconcile the same durable request after uncertainty."""
+        scope = ['auto-virtual-v1']
+        root = getattr(self.settings, 'config_root', None)
+        owner = getattr(self.settings, 'user_id', '')
+        try:
+            if not isinstance(owner, str) or (owner and not re.fullmatch(r'[a-f0-9]{32}', owner)):
+                raise ValueError('Invalid tenant ID')
+            storage = Path(self.settings.storage_dir).resolve()
+            if root is None:
+                # Pre-auth callers have neither a root nor an owner. A partial
+                # tenant context must never silently use the legacy namespace.
+                if owner:
+                    raise ValueError('Missing tenant root')
+            else:
+                if not isinstance(root, (str, Path)) or not str(root).strip():
+                    raise ValueError('Invalid tenant root')
+                root = Path(root).resolve()
+                if storage != root:
+                    if (not owner or not storage.is_relative_to(root)
+                            or storage != (root / 'users' / owner).resolve()):
+                        raise ValueError('Mismatched tenant storage')
+                    # Stable across storage moves; never recover a new tenant
+                    # using the old account/content-only name or request ID.
+                    scope = ['auto-virtual-tenant-v1', owner]
+                # The initial admin keeps root storage AND its old namespace,
+                # even after authentication adds a non-empty user_id.
+        except (TypeError, ValueError, OSError, RuntimeError):
+            raise ValueError('租户上下文无效，无法准备虚拟人物。') from None
         if not self.config.ready:
             raise ValueError(self.config.problem())
         primary = self._auto_assets(asset_ids)[0]
         resolved = self.resolve_virtual_assets(asset_ids)
         digest = hashlib.sha256(json.dumps(
-            ['auto-virtual-v1', self.account, primary['kind'], primary['sha256']],
+            scope + [self.account, primary['kind'], primary['sha256']],
             separators=(',', ':')).encode()).digest()
         request_id = 'auto-' + digest.hex()
         # Base32 retains the full digest while respecting the 60-character limit.

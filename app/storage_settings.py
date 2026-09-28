@@ -41,7 +41,8 @@ class StorageConfig:
 
 
 def config_path(settings):
-    return settings.storage_dir / 'private' / 'storage-settings.json'
+    from .tenancy import config_root
+    return config_root(settings) / 'private' / 'storage-settings.json'
 
 
 def load_config(settings):

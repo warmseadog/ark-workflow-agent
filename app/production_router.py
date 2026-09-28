@@ -14,6 +14,7 @@ from .media_errors import MediaPipelineError
 from .person_video import is_video, person_ids, validate_file, validate_pair
 from .reference_roles import ACCESSORY_LABELS, OPTIONAL_KINDS
 from .model_catalog import TASK_FIELDS, task_values, resolve_task_config, editor_options, capabilities
+from . import tenancy
 
 _MODEL_FIELDS = {'provider','protocol','mode','base_url','model','duration','fps','resolution','public_base_url'}
 _DRAFT_FIELDS = {'person_reference_mode','person_video_asset_id','name','person_id','source_asset_id','face_asset_ids','clothing_asset_ids','hairstyle_asset_ids','scene_asset_ids','hairstyle_enabled','hairstyle_mask','scene_enabled','scene_description','prompt','mask','model'}
@@ -25,6 +26,11 @@ _MASK_FIELDS = {'blur_style','style','shape','mask_mode','robust_tracking','mask
 def get_router(settings_getter, local_guard):
     router = APIRouter(prefix='/api/production', dependencies=[Depends(local_guard)])
     def store(): return ProductionStore(settings_getter().storage_dir)
+    def queue_limit():
+        effective=settings_getter()
+        if not tenancy.enabled(): return None
+        from .accounts import Accounts
+        return Accounts(tenancy.config_root(effective)).get_user(effective.user_id)['max_queued']
     def public_model():
         return editor_options(settings_getter())['defaults']
 
@@ -224,7 +230,16 @@ def get_router(settings_getter, local_guard):
         def operation():
             revision=payload.get('revision')
             if type(revision) is not int: raise ValueError('缺少草稿版本，请重新打开草稿。')
-            values=validate_changes({k:v for k,v in payload.items() if k!='revision'},store().get_draft(ident))
+            current=store().get_draft(ident)
+            if tenancy.enabled() and 'mask' in payload and payload['mask'] != current.get('mask'):
+                from .accounts import Accounts
+                effective=settings_getter()
+                if Accounts(tenancy.config_root(effective)).get_user(effective.user_id)['role']!='admin':
+                    # Equivalent alias/default normalization is harmless; actual configuration is admin-owned.
+                    try: same=production_worker.mask_options(payload['mask']) == production_worker.mask_options(current.get('mask',{}))
+                    except (ValueError,TypeError): same=False
+                    if not same:raise HTTPException(403,'打码设置由管理员在后台统一管理。')
+            values=validate_changes({k:v for k,v in payload.items() if k!='revision'},current)
             return decorate_draft(store().save_draft(ident,revision,values))
         return guarded(operation)
 
@@ -278,12 +293,13 @@ def get_router(settings_getter, local_guard):
             else:
                 portrait=prepare(settings_getter(),store(),draft,config)
                 if portrait: private['portrait']=portrait
-            run=store().create_run(draft_id,revision,key,private)
+            run=store().create_run(draft_id,revision,key,private,max_queued=queue_limit())
             production_worker.wake(settings_getter())
             return decorate_run(run)
         return guarded(operation)
 
     def legacy_runs():
+        if not tenancy.legacy_allowed(settings_getter()): return []
         from .jobs import store as jobs
         result=[]
         deleted = store().deleted_run_ids()
@@ -358,7 +374,7 @@ def get_router(settings_getter, local_guard):
     def resume_run(ident: str):
         def operation():
             store().require_visible(ident)
-            run=store().resume_run(ident)
+            run=store().resume_run(ident,max_queued=queue_limit())
             production_worker.wake(settings_getter())
             return decorate_run(run)
         return guarded(operation)
@@ -367,7 +383,7 @@ def get_router(settings_getter, local_guard):
     def retry_person_preparation(ident: str):
         def operation():
             store().require_visible(ident)
-            run = store().retry_preparation(ident)
+            run = store().retry_preparation(ident,max_queued=queue_limit())
             production_worker.wake(settings_getter())
             return decorate_run(run)
         return guarded(operation)

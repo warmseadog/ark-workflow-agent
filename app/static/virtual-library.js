@@ -9,7 +9,8 @@
     return data;
   }
   const admin = document.getElementById('section-people');
-  if (admin) {
+  const personal = Boolean(admin?.dataset.personalLibrary);
+  if (admin && !personal) {
     const card = document.createElement('div'); card.className = 'card';
     card.innerHTML = `<h3>素材库连接</h3>
       <p>真人与虚拟人物共用此连接。项目名称须与官方素材所属项目一致。</p>
@@ -76,6 +77,10 @@
       <p data-project></p>
     </details>`;
   document.body.append(dialog);
+  if (personal) {
+    dialog.querySelector('[data-show-import]').hidden=true;
+    dialog.querySelector('[data-more]').hidden=true;
+  }
   const status = dialog.querySelector('[data-status]'), createForm = dialog.querySelector('[data-create]');
   let working = false, createRequest = null, pollTimer = null, hasPending = false, watchedPhoto = null;
   function action(label, name, handler, className = 'secondary') {

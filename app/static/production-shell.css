@@ -24,6 +24,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .production-symbol { width: 30px; height: 30px; display: grid; place-items: center; background: var(--accent); color: #fff; font: 17px var(--serif); }
 .production-brand h1 { margin: 0 0 0 9px; padding-left: 20px; border-left: 1px solid var(--hair); font-size: 15px; font-weight: 500; }
 .production-header-note { color: var(--muted); font-size: 11px; }
+.production-header { flex-wrap:wrap; gap:12px; }
+.production-header .account-chrome { margin-left:auto; }
 .production-main { margin: 0 auto; padding: 20px 24px 24px; }
 .eyebrow { color: var(--accent); font-size: 10px; letter-spacing: .16em; }
 .primary, .secondary { min-height: 40px; padding: 0 17px; border: 1px solid var(--hair); cursor: pointer; font-size: 12px; }

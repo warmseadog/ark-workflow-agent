@@ -117,10 +117,16 @@ def build_download_command(url: str, destination: Path, settings: Settings) -> l
     return command
 
 
+def validate_import_source(url, settings):
+    if getattr(settings,'user_id','') and not platform_for_url(url):
+        raise MediaPipelineError('多用户工作台仅支持抖音、小红书、快手和 B 站分享链接；其他来源请先下载到本地再上传。')
+
+
 def download_video(url: str, destination: Path, settings: Settings | None = None) -> Path:
     """Use TikHub for social sites and preserve generic yt-dlp compatibility."""
     settings = settings or Settings.from_env()
     url = extract_video_url(url)
+    validate_import_source(url,settings)
     if platform_for_url(url):
         from .tikhub import download_tikhub_video
         return download_tikhub_video(url, destination, settings)

@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>方舟 · 我的人物库</title>
+<link rel="stylesheet" href="/static/model-settings.css"><link rel="stylesheet" href="/static/admin-settings.css">
+<link rel="stylesheet" href="/static/portrait.css"><link rel="stylesheet" href="/static/virtual-library.css">
+<link rel="stylesheet" href="/static/account.css?v=multiuser-1"><script src="/static/account.js?v=multiuser-1"></script>
+</head><body class="personal-library"><main style="margin-left:0"><header class="topbar"><strong>我的人物库</strong><a href="/" class="button">返回制作台</a></header>
+<div class="content"><h1>我的人物与照片</h1><p class="lead">这里的素材仅属于当前账户。真人需由本人完成官方授权；虚拟人物请上传你有权使用的素材。</p>
+<section id="section-people" data-personal-library="true" class="section"><div class="card"><p data-library-counts class="hint">正在读取…</p><div class="actions"><button id="manage-people" class="primary">管理人物与照片</button><button type="button" class="secondary" data-portrait-open="invite">新增真人授权</button></div></div></section>
+</div></main>{% include "portrait_panel.html" %}
+<script src="/static/virtual-library.js?v=multiuser-1"></script><script src="/static/portrait.js?v=multiuser-1"></script>
+</body></html>

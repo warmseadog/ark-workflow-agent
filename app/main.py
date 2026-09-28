@@ -19,6 +19,7 @@ from . import admin_settings, storage_settings, redaction_settings
 from .video_links import LABELS, platform_for_url
 
 from .config import settings
+from . import tenancy
 from .generation_settings import PRESETS, load_config, save_config, resolve_config
 from .model_connection import test_connection
 from .reference_media import get_video
@@ -48,6 +49,10 @@ app.include_router(get_workflow_router())
 
 
 def _local_config_request(request: Request) -> None:
+    if tenancy.enabled():
+        if not getattr(request.state,'user',None):
+            raise HTTPException(401,'请先登录。')
+        return
     if request.url.hostname not in {'127.0.0.1', 'localhost', '::1', 'testserver'}:
         raise HTTPException(status_code=403, detail='请通过本机地址打开模型配置。')
     if request.client and request.client.host not in {'127.0.0.1', '::1', 'testclient'}:
@@ -59,12 +64,26 @@ def _local_config_request(request: Request) -> None:
 
 
 from .production_router import get_router as get_production_router
-app.include_router(get_production_router(lambda: settings, _local_config_request))
+app.include_router(get_production_router(lambda: tenancy.current_settings(settings), _local_config_request))
 from .portrait_router import get_router as get_portrait_router
-app.include_router(get_portrait_router(lambda: settings, _local_config_request))
+app.include_router(get_portrait_router(lambda: tenancy.current_settings(settings), _local_config_request))
 from .portrait_sessions import routers as get_portrait_session_routers
-for portrait_session_router in get_portrait_session_routers(lambda: settings, _local_config_request):
+for portrait_session_router in get_portrait_session_routers(lambda: tenancy.current_settings(settings), _local_config_request):
     app.include_router(portrait_session_router)
+
+from .access_control import install as install_access_control
+install_access_control(app,lambda:settings)
+from .authentication import get_router as get_auth_router
+app.include_router(get_auth_router(lambda:settings,templates))
+from .user_admin import get_router as get_user_admin_router
+app.include_router(get_user_admin_router(lambda:settings,templates))
+from .preview_router import get_router as get_preview_router
+app.include_router(get_preview_router(lambda:tenancy.current_settings(settings),_local_config_request))
+
+@app.get('/people', response_class=HTMLResponse)
+def personal_people(request:Request):
+    _local_config_request(request)
+    return templates.TemplateResponse(request=request,name='people.html',context={'personal_library':True})
 
 class PromptTemplateInput(BaseModel):
     name: str = Field(min_length=1, max_length=60)
@@ -96,7 +115,8 @@ def inspect_video_link(request: Request, payload: LinkInput):
     _local_config_request(request)
     try:
         url = extract_video_url(payload.text)
-    except ValueError as exc:
+        media.validate_import_source(url,tenancy.current_settings(settings))
+    except (ValueError,media.MediaPipelineError) as exc:
         raise HTTPException(422, str(exc)) from None
     platform = platform_for_url(url)
     return {'url': url, 'platform': platform, 'label': LABELS.get(platform, '其他链接'),
@@ -110,11 +130,12 @@ def import_video_link(request: Request, payload: LinkInput):
         url = extract_video_url(payload.text)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
-    import_root = settings.storage_dir / 'imports'
+    effective = tenancy.current_settings(settings)
+    import_root = effective.storage_dir / 'imports'
     import_root.mkdir(parents=True, exist_ok=True)
     temporary = tempfile.TemporaryDirectory(prefix='video-', dir=import_root)
     try:
-        path = media.download_video(url, Path(temporary.name) / 'reference.mp4', settings)
+        path = media.download_video(url, Path(temporary.name) / 'reference.mp4', effective)
         size = path.stat().st_size
         if size == 0:
             raise media.MediaPipelineError('下载到的视频为空，请尝试其他链接。')
@@ -140,11 +161,11 @@ def import_video_link(request: Request, payload: LinkInput):
 @app.get('/api/prompt-templates')
 def get_prompt_templates(request: Request):
     _local_config_request(request)
-    return {'items': local_preferences.list_templates(settings)}
+    return {'items': local_preferences.list_templates(tenancy.current_settings(settings))}
 
 def _save_prompt(payload, template_id=None):
     try:
-        return local_preferences.save_template(settings, payload.name, payload.content, template_id)
+        return local_preferences.save_template(tenancy.current_settings(settings), payload.name, payload.content, template_id)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
     except LookupError as exc:
@@ -164,9 +185,11 @@ def update_prompt_template(request: Request, template_id: str, payload: PromptTe
 def delete_prompt_template(request: Request, template_id: str):
     _local_config_request(request)
     try:
-        local_preferences.delete_template(settings, template_id)
+        local_preferences.delete_template(tenancy.current_settings(settings), template_id)
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from None
     return {'deleted': True}
 
 
@@ -279,7 +302,8 @@ def test_model_settings(request: Request, payload: dict):
 
 @app.get('/api/reference-videos/{token}')
 def reference_video(token: str):
-    path = get_video(token, settings.storage_dir)
+    path = next((p for _,tenant in tenancy.tenant_settings(settings,include_disabled=True)
+                 if (p := get_video(token,tenant.storage_dir)) is not None),None)
     if path is None:
         raise HTTPException(status_code=404, detail='视频地址无效或已过期。')
     return FileResponse(path, media_type='video/mp4', headers={'Cache-Control': 'no-store'})

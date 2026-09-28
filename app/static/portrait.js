@@ -6,10 +6,10 @@
   let config = null, working = false, qrUrl = null, qrController = null, session = 0, sessionController = null;
   let pollTimer = null, activeVerification = null;
   let pendingRequestId = null;
-  try { pendingRequestId = sessionStorage.getItem('portrait-request-id'); } catch (_) {}
+  const requestKey = () => 'portrait-request-id'+(window.currentAccount ? ':'+window.currentAccount.id : '');
   function rememberRequest(value) {
     pendingRequestId = value;
-    try { if (value) sessionStorage.setItem('portrait-request-id', value); else sessionStorage.removeItem('portrait-request-id'); } catch (_) {}
+    try { if (value) sessionStorage.setItem(requestKey(), value); else sessionStorage.removeItem(requestKey()); } catch (_) {}
   }
   function message(id, text, error = false) {
     const el = byId(id); el.textContent = text; el.dataset.error = String(error);
@@ -142,11 +142,16 @@
   }
   byId('auto-retry').addEventListener('click', () => run('invite-status', () => startAutomatic(true)));
   async function open(mode) {
+    await window.accountReady;
+    try { pendingRequestId=sessionStorage.getItem(requestKey()); } catch (_) {}
     if (dialog.open) return;
     session++; const openedSession = session;
     sessionController = new AbortController();
     byId('assets').replaceChildren();
     byId('settings').open = false;
+    const ordinary=window.currentAccount && window.currentAccount.role!=='admin';
+    byId('settings').hidden=Boolean(ordinary);
+    byId('assets').closest('section').hidden=Boolean(ordinary);
     dialog.showModal();
     await run(mode === 'assets' ? 'assets-status' : 'invite-status', async () => {
       message('assets-status', '正在读取连接配置…');

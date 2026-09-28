@@ -79,6 +79,11 @@
     ready, request, refresh, choose, get items() { return [...people]; }, get selected() { return selected; },
     restore(id) { choose(id, false); },
     lock(value) { locked = value; picker.inert = value; if (value) picker.open = false; render(); },
+    async selectPerson(id) {
+      await refresh();
+      if (!people.some(person => person.id === id)) throw new Error('所选人物不在当前人物库中，请刷新后重试。');
+      choose(id, false);
+    },
     async selectGroup(groupId, personType = 'LivenessFace') {
       const data = await request('people/resolve','POST',{group_id:groupId,person_type:personType});
       await refresh(); choose(data.id,false);

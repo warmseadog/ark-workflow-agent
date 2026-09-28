@@ -11,6 +11,8 @@ _lock=threading.Lock()
 def source_path(settings,ident):
     root=(settings.storage_dir/'outputs').resolve()
     if ident.startswith('legacy-'):
+        from .tenancy import legacy_allowed
+        if not legacy_allowed(settings):raise LookupError('找不到任务。')
         from .jobs import store as jobs
         job=jobs.get(ident[7:])
         if not job or not job.output_name:raise LookupError('历史视频尚未就绪。')
@@ -58,6 +60,8 @@ def process_one(settings):
                 AND (p.id IS NULL OR p.status='queued') ORDER BY r.created_at DESC LIMIT 1""").fetchone()
             if row:ident=row['id']
             else:
+                from .tenancy import legacy_allowed
+                if not legacy_allowed(settings):return False
                 from .jobs import store as jobs
                 excluded={r[0] for r in db.execute("SELECT id FROM production_playbacks WHERE status!='queued' UNION SELECT id FROM production_deleted_runs")}
                 candidates=[job for job in jobs.list() if job.status=='succeeded' and job.output_name and 'legacy-'+job.id not in excluded]

@@ -31,6 +31,8 @@ class Settings:
     max_upload_mb: int
     ytdlp_cookies_from_browser: str
     ytdlp_cookie_file: Path | None
+    config_root: Path | None = None
+    user_id: str = ''
 
     @classmethod
     def from_env(cls) -> "Settings":

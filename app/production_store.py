@@ -208,7 +208,12 @@ class ProductionStore:
             row = db.execute('SELECT * FROM production_runs WHERE idempotency_key=?', (key,)).fetchone()
             return self._run(row) if row else None
 
-    def create_run(self, draft_id, revision, key, private):
+    @staticmethod
+    def check_queue_limit(db, limit):
+        if limit is not None and db.execute("SELECT COUNT(*) FROM production_runs WHERE status='queued'").fetchone()[0] >= limit:
+            raise Conflict('当前账户排队任务已达上限，请等待任务开始或撤销排队任务。')
+
+    def create_run(self, draft_id, revision, key, private, max_queued=None):
         ident, stamp = uuid.uuid4().hex, now()
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -217,6 +222,7 @@ class ProductionStore:
                 if row['draft_id'] != draft_id or row['revision'] != revision:
                     raise Conflict('提交标识已用于另一份输入，请核对任务列表。')
                 return self._run(row)
+            self.check_queue_limit(db,max_queued)
             draft = self._draft(db.execute('SELECT * FROM production_drafts WHERE id=?', (draft_id,)).fetchone())
             if draft['revision'] != revision:
                 raise Conflict('草稿发生变化，请保存后重新提交。')
@@ -258,7 +264,7 @@ class ProductionStore:
                 (json.dumps(data, ensure_ascii=False), next_check, ident))
         return True
 
-    def retry_preparation(self, ident):
+    def retry_preparation(self, ident, max_queued=None):
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
             if db.execute('SELECT 1 FROM production_deleted_runs WHERE id=?', (ident,)).fetchone():
@@ -273,6 +279,7 @@ class ProductionStore:
                 raise Conflict('此任务不能重新检查人物，请核对详情后复制为新草稿。')
             data.update(state='pending', retryable=False, attempts=0, started_at=None,
                 deadline_at=None, message='等待重新检查人物', updated_at=now(), retry_requested=True)
+            self.check_queue_limit(db,max_queued)
             db.execute('UPDATE production_person_preparations SET data=?,next_check=0 WHERE run_id=?',
                 (json.dumps(data, ensure_ascii=False), ident))
             db.execute("UPDATE production_runs SET status='queued',stage='queued',error=NULL,error_kind=NULL,message='等待重新检查人物',updated_at=? WHERE id=?", (now(), ident))
@@ -393,7 +400,7 @@ class ProductionStore:
             db.execute("UPDATE production_runs SET status='cancelled',message='已撤销排队',updated_at=? WHERE id=?",(now(),ident))
         return self.get_run(ident)
 
-    def resume_run(self, ident):
+    def resume_run(self, ident, max_queued=None):
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
             row=db.execute('SELECT * FROM production_runs WHERE id=?',(ident,)).fetchone()
@@ -401,6 +408,7 @@ class ProductionStore:
                 raise LookupError('找不到任务。')
             if row['status'] != 'needs_attention' or not (row['provider_task_id'] or row['result_url']):
                 raise Conflict('此任务无法直接恢复，请核对详情后复制为新草稿。')
+            self.check_queue_limit(db,max_queued)
             db.execute("UPDATE production_runs SET status='queued',error=NULL,message='等待恢复查询',updated_at=? WHERE id=?",(now(),ident))
         return self.get_run(ident)
 

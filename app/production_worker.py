@@ -57,7 +57,7 @@ def execute_run(settings, store, run):
                         from .person_preparation import prepare_run
                         image_asset_uris = prepare_run(settings, store, run)
                     else:
-                        image_asset_uris=verify(private['portrait'],store)
+                        image_asset_uris=verify(private['portrait'],store,settings=settings)
                 except PortraitPending as pending:
                     store.update_run(ident,status='queued',stage='authorizing',message=str(pending),progress=2)
                     return
@@ -142,11 +142,101 @@ def execute_run(settings, store, run):
 
 class QueueManager:
     def __init__(self, settings):
-        self.settings = settings
-        self.store = ProductionStore(settings.storage_dir)
+        from .tenancy import root_settings
+        self.settings = root_settings(settings)
+        # Keep the legacy root store available to existing callers.
+        self.store = ProductionStore(self.settings.storage_dir)
         self.stop = threading.Event()
         self.threads = []
         self.lockfile = None
+        self._dispatch_lock = threading.Lock()
+        self._stores = {self._tenant_key(self.settings): self.store}
+        self._initialized = set()
+        self._active = {}
+        self._last_tenant = {}
+
+    @staticmethod
+    def _tenant_key(settings):
+        return str(settings.storage_dir.resolve())
+
+    def _ready_tenants(self):
+        """Refresh accounts and recover each store once, under _dispatch_lock.
+
+        Recovery includes disabled accounts, but only enabled, fully recovered
+        stores are eligible for work. A failed recovery is retried before use;
+        no worker can start on a partially initialized tenant.
+        """
+        from .tenancy import tenant_settings
+        from .portrait_library import PortraitLibrary
+        ready = []
+        for user, settings in tenant_settings(self.settings, include_disabled=True):
+            try:
+                key = self._tenant_key(settings)
+                if key not in self._initialized:
+                    store = self._stores.get(key)
+                    if store is None:
+                        store = ProductionStore(settings.storage_dir)
+                        self._stores[key] = store
+                    store.recover()
+                    PortraitLibrary(settings).recover()
+                    with store.connection() as db:
+                        db.execute("UPDATE production_playbacks SET status='queued' WHERE status='processing'")
+                    self._initialized.add(key)
+                if user.get('enabled', True):
+                    ready.append((key, user, settings, self._stores[key]))
+            except Exception:
+                # A broken tenant must not prevent the others from progressing.
+                continue
+        return ready
+
+    def _rotated(self, tenants, kind):
+        keys = [entry[0] for entry in tenants]
+        last = self._last_tenant.get(kind)
+        start = keys.index(last) + 1 if last in keys else 0
+        return tenants[start:] + tenants[:start]
+
+    def next_job(self):
+        """Claim (tenant_settings, store, run), or None; pair with release().
+
+        Selection, durable claim and slot reservation are serialized across both
+        video workers. The cursor advances only on a successful video claim.
+        """
+        with self._dispatch_lock:
+            if sum(self._active.values()) >= 2:
+                return None
+            for key, user, settings, store in self._rotated(self._ready_tenants(), 'video'):
+                try:
+                    limit = max(0, int(user.get('max_concurrent', 1)))
+                    if self._active.get(key, 0) >= limit:
+                        continue
+                    run = store.claim_next()
+                except Exception:
+                    continue
+                if run:
+                    self._active[key] = self._active.get(key, 0) + 1
+                    self._last_tenant['video'] = key
+                    return settings, store, run
+        return None
+
+    def release(self, settings):
+        """Release one video reservation, including after errors or requeueing."""
+        key = self._tenant_key(settings)
+        with self._dispatch_lock:
+            remaining = self._active.get(key, 0) - 1
+            if remaining > 0:
+                self._active[key] = remaining
+            else:
+                self._active.pop(key, None)
+
+    def _next_auxiliary_settings(self, kind):
+        with self._dispatch_lock:
+            tenants = self._rotated(self._ready_tenants(), kind)
+            if tenants:
+                key, _, settings, _ = tenants[0]
+                # Advance even when processing finds no work or raises.
+                self._last_tenant[kind] = key
+                return settings
+        return None
 
     def start(self):
         # A process-scoped lock prevents reloads/multiple API workers from recovering
@@ -169,10 +259,13 @@ class QueueManager:
             handle.close()
             return False
         self.lockfile = handle
-        self.store.recover()
-        from .portrait_library import PortraitLibrary
-        PortraitLibrary(self.settings).recover()
-        with self.store.connection() as db:db.execute("UPDATE production_playbacks SET status='queued' WHERE status='processing'")
+        try:
+            with self._dispatch_lock:
+                self._ready_tenants()
+        except Exception:
+            handle.close()
+            self.lockfile = None
+            raise
         playback_thread=threading.Thread(target=self.playback_loop,daemon=True,name='playback-worker')
         playback_thread.start();self.threads.append(playback_thread)
         thread = threading.Thread(target=self.portrait_loop, daemon=True, name="portrait-worker")
@@ -185,23 +278,33 @@ class QueueManager:
     def playback_loop(self):
         from .playback import process_one
         while not self.stop.is_set():
-            try:process_one(self.settings)
+            try:
+                settings = self._next_auxiliary_settings('playback')
+                if settings is not None:
+                    process_one(settings)
             except Exception:pass
             self.stop.wait(3)
 
     def portrait_loop(self):
         from .portrait_library import PortraitLibrary
         while not self.stop.is_set():
-            try: PortraitLibrary(self.settings).process_one()
+            try:
+                settings = self._next_auxiliary_settings('portrait')
+                if settings is not None:
+                    PortraitLibrary(settings).process_one()
             except Exception: pass
             self.stop.wait(1)
 
     def loop(self):
         while not self.stop.is_set():
             try:
-                run = self.store.claim_next()
-                if run:
-                    execute_run(self.settings, self.store, run)
+                job = self.next_job()
+                if job:
+                    settings, store, run = job
+                    try:
+                        execute_run(settings, store, run)
+                    finally:
+                        self.release(settings)
                     continue
             except Exception:
                 # A transient local database error must not kill the dispatcher.
@@ -210,6 +313,8 @@ class QueueManager:
 
 
 def wake(settings):
+    from .tenancy import root_settings
+    settings = root_settings(settings)
     key = str(settings.storage_dir.resolve())
     with _managers_lock:
         old = _managers.get(key)
@@ -223,6 +328,8 @@ def wake(settings):
 
 
 def shutdown(settings):
+    from .tenancy import root_settings
+    settings = root_settings(settings)
     key = str(settings.storage_dir.resolve())
     with _managers_lock:
         manager = _managers.get(key)

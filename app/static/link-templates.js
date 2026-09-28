@@ -30,7 +30,7 @@
   }
   function controls() {
     document.querySelectorAll('[data-template-action]').forEach(button => {
-      button.disabled = busy() || saving || !loaded || (['template-save', 'template-delete', 'template-delete-accept'].includes(button.id) && !selected);
+      button.disabled = busy() || saving || !loaded || (['template-save', 'template-delete', 'template-delete-accept'].includes(button.id) && (!selected || items.find(item=>item.id===selected)?.read_only));
     });
     list.querySelectorAll('button').forEach(button => button.disabled = busy() || saving);
     name.disabled = prompt.disabled = busy() || saving;
@@ -52,7 +52,7 @@
         selected = item.id; name.value = item.name; prompt.value = item.content;
         baseline = {name:item.name, content:item.content};
         byId('template-delete-confirm').hidden = true;
-        stash(true); renderList(); message(templateStatus, '已应用模板，可编辑名称和提示词后保存修改。');
+        stash(true); renderList(); message(templateStatus, item.read_only ? '已应用系统模板；修改后可另存为个人模板。' : '已应用模板，可编辑名称和提示词后保存修改。');
       });
       list.append(button);
     });

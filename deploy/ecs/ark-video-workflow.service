@@ -9,7 +9,7 @@ User=ark-video-workflow
 Group=ark-video-workflow
 WorkingDirectory=/opt/ark-video-workflow/current
 EnvironmentFile=/opt/ark-video-workflow/config/app.env
-ExecStart=/opt/ark-video-workflow/venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 18080 --workers 1 --no-proxy-headers --no-access-log
+ExecStart=/opt/ark-video-workflow/venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 18080 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1 --no-access-log
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=90

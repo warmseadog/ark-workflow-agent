@@ -49,7 +49,8 @@ class PortraitConfig:
 
 
 def config_path(settings):
-    return settings.storage_dir / 'private' / 'portrait.json'
+    from .tenancy import config_root
+    return config_root(settings) / 'private' / 'portrait.json'
 
 
 def _stored_config(settings):
