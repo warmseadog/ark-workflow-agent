@@ -76,6 +76,17 @@ def check(width):
                 expect(page.locator('#studio-generate-submit')).to_be_enabled()
                 assert page.locator('#generation-prompt').input_value().count('@Video2')>=1
                 assert '@Image1人物参考图' not in page.locator('#generation-prompt').input_value()
+                from app.local_preferences import DEFAULT_PROMPTS
+                for _, template in DEFAULT_PROMPTS:
+                    normalized=page.evaluate("""text => {
+                      const el=document.getElementById('generation-prompt');el.value=text;
+                      window.productionPrompt.sync();return el.value;
+                    }""",template)
+                    body=normalized.split('【素材联动】')[0]
+                    assert '@Video2' in body and '@Image2' not in body,body
+                    assert '@Image1 服装主参考' in normalized and '严格参考' in normalized
+                expect(page.locator('#prompt-reference-status')).to_have_text('已启用严格参考')
+
                 page.locator('#person-video-panel').scroll_into_view_if_needed()
                 page.locator('#person-video-panel').locator('..').screenshot(path=str(ROOT/'storage'/f'person-video-panel-{width}.png'))
                 page.locator('input[name=video]').set_input_files({'name':'过长动作.mp4','mimeType':'video/mp4','buffer':clips[13]})

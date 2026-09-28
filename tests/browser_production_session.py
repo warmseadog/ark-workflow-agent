@@ -1,3 +1,5 @@
+import re
+from app.reference_prompt import strip_reference_rules
 """Offline browser regression: durable drafts, snapshot queue and uncertain submit recovery.
 All requests are intercepted; this never touches live sessions or paid providers.
 """
@@ -126,7 +128,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         page.route('**/*', handle)
         page.goto('http://127.0.0.1:18743/')
         expect(page.locator('#draft-save-status')).to_contain_text('已保存')
-        expect(page.locator('#generation-prompt')).to_have_value('服务器保存的提示词')
+        expect(page.locator('#generation-prompt')).to_have_value(re.compile('^'+re.escape('服务器保存的提示词')+r'(?:\n\n【素材联动】[\s\S]*【联动结束】)?$'))
         if portrait_people and not drafts['d1'].get('person_id'):
             page.locator('#person-picker > summary').click()
             expect(page.locator('[data-person-id=p1]')).to_contain_text('1 张照片可用')
@@ -282,8 +284,8 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
                 assert runs['r3']['snapshot']['prompt']==visible,'Copied snapshot lost displayed role block'
                 runs['r1']['snapshot'].update(hairstyle_asset_ids=[],scene_asset_ids=[],scene_description='',scene_enabled=False,prompt='plain old draft')
                 page.locator('[data-run-id=r1] .run-menu > summary').click(); page.locator('[data-run-id=r1] [data-run-action=copy]').click()
-                expect(page.locator('#generation-prompt')).to_have_value('plain old draft')
-                expect(page.locator('#prompt-reference-status')).to_have_text('可选，展开编辑')
+                expect(page.locator('#generation-prompt')).to_have_value(re.compile(r'^plain old draft\n\n【素材联动】[\s\S]*【联动结束】$'))
+                expect(page.locator('#prompt-reference-status')).to_have_text('已启用严格参考')
 
             page.screenshot(path=str(ROOT/'storage'/f'scene-hairstyle-{width}.png'),full_page=True)
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
@@ -298,8 +300,8 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         first_card=page.locator('[data-run-id=r1]')
         first_card.locator('.run-menu > summary').click(); first_card.locator('[data-run-action=details]').click()
         expect(first_card.locator('.run-detail-assets figure')).to_have_count(3)
-        expect(first_card.locator('.run-detail-assets figcaption')).to_have_text(['参考视频','人物参考图','衣服参考图'])
-        detail_text=first_card.locator('details').inner_text()
+        expect(first_card.locator('.run-detail-assets figcaption')).to_have_text(['动作参考视频','人物参考图','衣服参考图'])
+        detail_text=first_card.locator('.run-detail-panel').inner_text()
         assert not any(x in detail_text for x in ['任务编号','服务商任务编号','Request ID','模型参数','打码参数','base_url','provider'])
         expect(first_card.locator('details pre')).to_have_count(0)
         preview_toggle=first_card.locator('[data-run-action=preview-redacted]')
@@ -314,7 +316,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         expect(first_card.locator('[data-redacted-preview]')).to_be_hidden()
         assert first_card.locator('[data-redacted-preview] video').evaluate('(el)=>el.paused')
         first_card.locator('.run-menu > summary').click(); first_card.locator('[data-run-action=details]').click()
-        assert runs['r1']['snapshot']['prompt'] == '任务 A 的提示词'
+        assert strip_reference_rules(runs['r1']['snapshot']['prompt']) == '任务 A 的提示词'
         assert isinstance(runs['r1']['snapshot']['mask']['mask_scale'], (int,float))
         expect(page.locator('.draft-toolbar')).to_have_count(0)
         if portrait_people:
@@ -327,8 +329,8 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         page.locator('#generation-prompt').fill('任务 B 的提示词')
         page.locator('#studio-generate-submit').click()
         expect(page.locator('[data-run-id]')).to_have_count(2)
-        assert runs['r1']['snapshot']['prompt'] == '任务 A 的提示词'
-        assert runs['r2']['snapshot']['prompt'] == '任务 B 的提示词'
+        assert strip_reference_rules(runs['r1']['snapshot']['prompt']) == '任务 A 的提示词'
+        assert strip_reference_rules(runs['r2']['snapshot']['prompt']) == '任务 B 的提示词'
         if portrait_people:
             assert runs['r2']['snapshot']['person_id']=='p2'
             assert runs['r1']['snapshot']['person_id']=='p1'
@@ -337,7 +339,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         assert len(uploads)==(2 if portrait_people else 3), uploads
         page.reload()
         expect(page.locator('#draft-save-status')).to_contain_text('已保存')
-        expect(page.locator('#generation-prompt')).to_have_value('任务 B 的提示词')
+        expect(page.locator('#generation-prompt')).to_have_value(re.compile('^'+re.escape('任务 B 的提示词')+r'(?:\n\n【素材联动】[\s\S]*【联动结束】)?$'))
         expect(page.locator('#face-reference-preview img')).to_have_count(1)
         if portrait_people:
             expect(page.locator('#person-current')).to_contain_text('小张')
@@ -348,7 +350,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         expect(page.locator('[data-run-id]')).to_have_count(2)
         page.locator('#flow-stage-generation > summary').click()
         page.locator('#generation-prompt').fill('任务 A 的提示词')
-        expect(page.locator('#generation-prompt')).to_have_value('任务 A 的提示词')
+        expect(page.locator('#generation-prompt')).to_have_value(re.compile('^'+re.escape('任务 A 的提示词')+r'(?:\n\n【素材联动】[\s\S]*【联动结束】)?$'))
         assert len(uploads)==(2 if portrait_people else 3)
         # Losing an accepted POST response must retain the exact request key across reload.
         switches['lose_response'] = True
@@ -367,11 +369,11 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         switches['conflict'] = True
         page.locator('#generation-prompt').fill('冲突后仍保留的内容')
         expect(page.locator('#draft-recover')).to_be_visible()
-        expect(page.locator('#generation-prompt')).to_have_value('冲突后仍保留的内容')
+        expect(page.locator('#generation-prompt')).to_have_value(re.compile('^'+re.escape('冲突后仍保留的内容')+r'(?:\n\n【素材联动】[\s\S]*【联动结束】)?$'))
         switches['conflict'] = False
         page.locator('#draft-recover').click()
         expect(page.locator('#draft-save-status')).to_contain_text('已保存')
-        assert drafts['d2']['prompt'] == '冲突后仍保留的内容'
+        assert strip_reference_rules(drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['prompt']) == '冲突后仍保留的内容'
         assert len(uploads)==(2 if portrait_people else 3)
         page.locator('#redaction-settings > summary').click()
         page.locator('[name=mask_scale]').fill('1.6')
@@ -382,23 +384,23 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         page.locator('#model-settings-form [name=duration]').fill('6')
         page.locator('#close-model-settings').click()
         page.locator('[data-prompt-template=t1]').click()
-        expect(page.locator('#generation-prompt')).to_have_value('模板新提示词')
+        expect(page.locator('#generation-prompt')).to_have_value(re.compile('^'+re.escape('模板新提示词')+r'(?:\n\n【素材联动】[\s\S]*【联动结束】)?$'))
         expect(page.locator('#draft-save-status')).to_contain_text('已保存')
-        assert drafts['d2']['model']['duration']==6
-        assert drafts['d2']['mask']['mask_scale']==1.6
+        assert drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['model']['duration']==6
+        assert drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['mask']['mask_scale']==1.6
         page.locator('#toggle-video-url').click()
         page.locator('[name=video_url]').fill('https://example.test/video')
         page.locator('#confirm-video-url').click()
         expect(page.locator('#source-file-name')).to_contain_text('imported.mp4')
         expect(page.locator('#draft-save-status')).to_contain_text('已保存')
-        assert assets[drafts['d2']['source_asset_id']]['name']=='imported.mp4'
+        assert assets[drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['source_asset_id']]['name']=='imported.mp4'
         assert len(uploads)==(2 if portrait_people else 3)
         runs['r2'].update(status='failed', error_kind='material_rejected', error='sensitive content', request_id='req-fixture')
         page.locator('#runs-refresh').click()
-        expect(page.locator('[data-run-id=r2]')).to_contain_text('sensitive content')
+        expect(page.locator('[data-run-id=r2]')).to_have_attribute('data-state','failed')
         expect(page.locator('[data-run-id=r2] [data-run-action=resume]')).to_have_count(0)
         page.locator('[data-run-id=r2] .run-menu > summary').click(); page.locator('[data-run-id=r2] [data-run-action=details]').click()
-        expect(page.locator('[data-run-id=r2] .run-error-detail')).to_contain_text('req-fixture')
+        expect(page.locator('[data-run-id=r2] .run-error-detail')).to_contain_text('sensitive content')
         page.locator('[data-run-id=r1] .run-menu > summary').click(); page.locator('[data-run-id=r1] [data-run-action=cancel]').click()
         expect(page.locator('[data-run-id=r1]')).to_contain_text('已取消')
         expect(page.locator('[data-run-id=r2] > details')).to_have_attribute('open','')
@@ -509,13 +511,13 @@ def integration():
                     page.reload()
                     expect(page.locator('#draft-save-status')).to_contain_text('已保存')
                     assert page.evaluate("localStorage.getItem('production-current-draft-v1')")==selected
-                    expect(page.locator('#generation-prompt')).to_have_value('真实本地测试 B')
+                    expect(page.locator('#generation-prompt')).to_have_value(re.compile('^'+re.escape('真实本地测试 B')+r'(?:\n\n【素材联动】[\s\S]*【联动结束】)?$'))
                     expect(page.locator('#face-reference-preview img')).to_have_count(1)
                     expect(page.locator('[data-run-id]')).to_have_count(2)
                     expect(page.locator('[data-state=succeeded]')).to_have_count(2,timeout=120000)
                     expect(page.locator('.run-actions a[download]')).to_have_count(2)
                     result=page.request.get(url+'/api/production/runs').json()['items']
-                    assert {r['snapshot']['prompt'] for r in result}=={'真实本地测试 A','真实本地测试 B'}
+                    assert {strip_reference_rules(r['snapshot']['prompt']) for r in result}=={'真实本地测试 A','真实本地测试 B'}
                     assert all(r['snapshot']['model']['mode']=='mock' for r in result)
                     assert not errors,errors
                     page.screenshot(path=str(ROOT/'storage/durable-production-desktop.png'),full_page=True)

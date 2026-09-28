@@ -181,10 +181,8 @@ class VideoProvider:
                 raise ProviderError('参考视频超过 50 MB，请压缩或缩短视频后重试。')
             if sum(p.stat().st_size for p, _ in references) > 45 * 1024 * 1024:
                 raise ProviderError('参考图片总大小过大，请压缩图片后重试。')
-        from .reference_prompt import strip_reference_rules
-        prompt = strip_reference_rules(prompt)
-        if person_video is not None:
-            prompt = prompt.replace('@Image1人物参考图','@Video2人物参考视频').replace('@Image2衣服参考图','@Image1衣服参考图').replace('@Image2服装参考图','@Image1服装参考图')
+        from .reference_prompt import strip_reference_rules, normalize_reference_mentions, strict_reference_rules
+        prompt = normalize_reference_mentions(strip_reference_rules(prompt), person_video is not None)
         mapping = '；'.join(f'@Image{i}（图片{i}）为{kind}参考图' for i, (_, kind) in enumerate(references, 1))
         # Existing saved templates may still contain the original scene instruction.
         # Normalize the built-in phrases only; preserve custom text and give roles explicit priority.
@@ -200,6 +198,7 @@ class VideoProvider:
         if person_video is not None:
             structured=structured.replace('主人物参考图','人物参考视频 @Video2')
             structured+='人物身份分工优先：@Video2（视频2）仅提供人物脸部身份与外貌；@Video1 仅提供动作、镜头与节奏，不采用视频2的动作、服装、背景、声音或台词。衣服以衣服参考图为准。'
+        structured += '\n' + strict_reference_rules(references, person_video is not None)
         self.progress('正在上传参考素材', 65)
         if self.config.protocol == 'toapis':
             with video.open('rb') as source:
