@@ -35,3 +35,14 @@
 - 最终全量回归：614 passed、1 skipped（Windows 无创建符号链接权限）、1 条第三方弃用警告，134.94 秒；代码编译与 Git 空白检查通过。模型选择浏览器回归的三种屏幕宽度全部通过。
 
 测试替换了模型供应商传输，不发起付费视频生成；上线核验也不会自动消耗生成额度。
+
+## 生产交付记录
+
+- 功能提交：本地 main `08edb94`；改造前恢复点 `2682ee5`。未推送远程仓库。
+- 已部署版本：`/opt/ark-video-workflow/releases/20260928T145154Z-multiuser`。
+- 部署前备份：`/opt/ark-video-workflow/data/backups/before-multiuser-20260928T145154Z`；旧 release 仍保留。
+- 95 个发布文件校验通过；原有草稿、任务、素材、人物、结果和私有配置指纹保持一致。
+- 部署后服务 active/running，NRestarts=0；另一服务仍 active，部署前后 PID 未变。
+- 公网 HTTPS 实测通过：证书验证、登录页、管理员登录、Secure/HttpOnly/SameSite Cookie、强制首登改密、错误 Origin 拒绝、匿名接口拒绝、退出撤销。
+- 本机 Python requests 在 TCP 连接阶段超时，未进入应用；改用已通过可达性检查的 curl 完成相同公网验收，不改动服务器网络或应用逻辑。
+- 初始管理员密码仅在被 Git 忽略且限制本机权限的 `storage/multiuser-admin-handoff.json` 交付，未写入本记录。
