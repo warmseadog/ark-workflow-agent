@@ -37,6 +37,7 @@ if not WORKFLOW_DB.is_absolute():
     WORKFLOW_DB = PREVIOUS/WORKFLOW_DB
 WORKFLOW_DB = WORKFLOW_DB.resolve()
 assert WORKFLOW_DB.is_relative_to(DATA), 'Workflow database is outside reviewed data root; stop for migration review'
+library_path = os.fsdecode(service_env.get(b'LD_LIBRARY_PATH', b''))
 del service_env
 
 def databases():
@@ -173,7 +174,13 @@ with tempfile.TemporaryDirectory(prefix='ark-policy-probe-') as directory:
         client.close()
 print(json.dumps({'isolated_policy_probe':'passed'}))
 '''
-run('runuser', '-u', 'ark-video-workflow', '--', str(ROOT/'venv/bin/python'), '-c', probe, cwd=release)
+try:
+    # Match the live service's native-library search path without inheriting its
+    # provider credentials or production database environment into the probe.
+    run('runuser', '-u', 'ark-video-workflow', '--', 'env', 'LD_LIBRARY_PATH=' + library_path,
+        str(ROOT/'venv/bin/python'), '-c', probe, cwd=release)
+except subprocess.CalledProcessError as error:
+    raise RuntimeError('Isolated probe failed before maintenance:\n' + error.stderr.decode(errors='replace')) from None
 other_pid = ctl('show', 'director-prompt-h5.service', '-p', 'MainPID', '--value')
 switched = False
 stopped = False
