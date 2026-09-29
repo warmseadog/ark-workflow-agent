@@ -5,6 +5,13 @@
   let taskVersion = 0;
   let taskPage = 1;
   let activeFilter = {user_id:'', status:''};
+  let taskTimer = null;
+  let taskAccountId = null;
+  function stopTaskTimer() { clearTimeout(taskTimer); taskTimer = null; }
+  function canRefreshTasks() {
+    const account = window.currentAccount;
+    return !document.hidden && taskAccountId !== null && account?.id === taskAccountId && (account.is_admin || account.role === 'admin');
+  }
   const statusLabels = {queued:'排队中', running:'生成中', succeeded:'已完成', failed:'失败', needs_attention:'需要处理', cancelled:'已取消'};
   function element(tag, value, className) {
     const node = document.createElement(tag);
@@ -23,7 +30,9 @@
   async function request(path, method = 'GET', payload) {
     const options = {method, cache:'no-store'};
     if (payload !== undefined) { options.headers = {'Content-Type':'application/json'}; options.body = JSON.stringify(payload); }
-    return window.accountUI.readJSON(await fetch(path, options));
+    const response = await fetch(path, options);
+    try { return await window.accountUI.readJSON(response); }
+    catch (error) { error.status = response.status; throw error; }
   }
   function quota(value, name, username) {
     const input = document.createElement('input');
@@ -40,7 +49,11 @@
     for (const user of users) {
       const row = element('tr');
       cell(row, user.username);
-      cell(row, user.is_admin || user.role === 'admin' ? '管理员' : '普通用户');
+      const role = document.createElement('select'); role.className = 'role-select';
+      role.setAttribute('aria-label', `${user.username}的角色`);
+      role.add(new Option('普通用户', 'user')); role.add(new Option('管理员', 'admin'));
+      role.value = user.role === 'admin' || user.is_admin ? 'admin' : 'user';
+      cell(row, role);
       const enabled = document.createElement('input'); enabled.type = 'checkbox'; enabled.checked = user.enabled !== false;
       enabled.setAttribute('aria-label', `启用账号 ${user.username}`);
       cell(row, enabled);
@@ -52,14 +65,17 @@
         if (!concurrent.reportValidity() || !queued.reportValidity()) return;
         save.disabled = true; message('users-status', '');
         try {
-          await request(`/api/admin/users/${encodeURIComponent(user.id)}`, 'PATCH', {enabled:enabled.checked, max_concurrent:Number(concurrent.value), max_queued:Number(queued.value)});
+          await request(`/api/admin/users/${encodeURIComponent(user.id)}`, 'PATCH', {enabled:enabled.checked, role:role.value, max_concurrent:Number(concurrent.value), max_queued:Number(queued.value)});
+          if (String(user.id) === String(window.currentAccount?.id) && role.value !== window.currentAccount.role) {
+            window.accountUI.finishSession(); return;
+          }
           message('users-status', `已保存 ${user.username} 的账号设置。`, true);
           void loadAudit();
         } catch (error) { message('users-status', error.message); }
         finally { save.disabled = false; }
       });
       const resetForm = element('form', null, 'row-actions');
-      const password = document.createElement('input'); password.type = 'password'; password.autocomplete = 'new-password'; password.minLength = 8; password.maxLength = 1024; password.required = true; password.placeholder = '输入新临时密码';
+      const password = document.createElement('input'); password.type = 'password'; password.autocomplete = 'new-password'; password.minLength = 6; password.maxLength = 1024; password.required = true; password.placeholder = '新密码（至少 6 位）';
       password.setAttribute('aria-label', `重置 ${user.username} 的密码`);
       const reset = button('重置'); reset.type = 'submit';
       resetForm.append(password, reset); cell(row, resetForm);
@@ -69,7 +85,7 @@
         try {
           await request(`/api/admin/users/${encodeURIComponent(user.id)}/reset-password`, 'POST', {password:password.value});
           password.value = '';
-          message('users-status', `已重置 ${user.username} 的密码，下次登录需修改密码。`, true);
+          message('users-status', `已重置 ${user.username} 的密码，请使用新密码重新登录。`, true);
           void loadAudit();
         } catch (error) { password.value = ''; message('users-status', error.message); }
         finally { reset.disabled = false; }
@@ -101,21 +117,45 @@
     return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString('zh-CN', {hour12:false});
   }
   function username(id) { return users.find(user => String(user.id) === String(id))?.username || '—'; }
-  async function loadTasks() {
+  function elapsed(seconds) {
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return '—';
+    const total = Math.floor(seconds), hours = Math.floor(total / 3600), minutes = Math.floor(total % 3600 / 60);
+    return `${hours ? hours + '小时' : ''}${hours || minutes ? minutes + '分' : ''}${total % 60}秒`;
+  }
+  function taskTiming(timing) {
+    const total = timing?.available ? elapsed(timing.total_seconds) : '—';
+    const node = element('span', total === '—' ? total : `${timing.is_live ? '已耗时 ' : ''}${total}`);
+    if (total !== '—') {
+      const parts = [`排队 ${elapsed(timing.queue_seconds)}`, `执行 ${elapsed(timing.execution_seconds)}`];
+      if (typeof timing.paused_seconds === 'number' && timing.paused_seconds > 0) parts.push(`暂停 ${elapsed(timing.paused_seconds)}`);
+      if (timing.interrupted) parts.push('任务曾中断');
+      node.title = parts.join(' · ');
+      node.setAttribute('aria-label', `${node.textContent}；${node.title}`);
+    }
+    return node;
+  }
+  async function loadTasks(background = false) {
+    stopTaskTimer();
+    if (!canRefreshTasks()) return;
     const version = ++taskVersion;
-    const submit = $('task-filter').querySelector('button'); submit.disabled = true;
-    $('tasks-previous').disabled = true; $('tasks-next').disabled = true;
-    $('tasks-duration-note').hidden = true;
+    let needsRefresh = false;
+    const submit = $('task-filter').querySelector('button');
+    if (!background) {
+      submit.disabled = true;
+      $('tasks-previous').disabled = true; $('tasks-next').disabled = true;
+      $('tasks-duration-note').hidden = true;
+      empty($('admin-tasks-list'), 7, '正在读取任务…');
+      document.querySelectorAll('[data-stat]').forEach(node => { node.textContent = '—'; });
+    }
     message('tasks-status', '');
-    empty($('admin-tasks-list'), 6, '正在读取任务…');
-    document.querySelectorAll('[data-stat]').forEach(node => { node.textContent = '—'; });
     try {
       const query = new URLSearchParams({...activeFilter, page:String(taskPage), page_size:'50'});
       const data = await request(`/api/admin/tasks?${query}`);
       if (version !== taskVersion) return;
       const body = $('admin-tasks-list'); body.replaceChildren();
       const items = data.items || [];
-      if (!items.length) empty(body, 6, '没有符合条件的任务。');
+      needsRefresh = items.some(task => task.status === 'queued' || task.status === 'running');
+      if (!items.length) empty(body, 7, '没有符合条件的任务。');
       for (const task of items) {
         const row = element('tr');
         cell(row, task.name || task.snapshot?.name || '未命名任务');
@@ -124,6 +164,7 @@
         cell(row, date(task.created_at));
         const duration = task.generated_seconds ?? task.duration ?? task.snapshot?.model?.duration;
         cell(row, Number(duration) > 0 ? `${number(duration)} 秒` : '—');
+        cell(row, taskTiming(task.timing));
         cell(row, task.model || task.snapshot?.model?.model || '—'); body.append(row);
       }
       document.querySelectorAll('[data-stat]').forEach(node => {
@@ -138,10 +179,23 @@
       $('tasks-page').textContent = `第 ${taskPage} / ${pages} 页 · 共 ${total} 条`;
       $('tasks-previous').disabled = taskPage <= 1; $('tasks-next').disabled = taskPage >= pages;
     } catch (error) {
+      needsRefresh = false;
+      if (error.name === 'AccountSessionError' || error.status === 401 || error.status === 403) {
+        taskAccountId = null; stopTaskTimer();
+      }
       if (version !== taskVersion) return;
-      empty($('admin-tasks-list'), 6, '任务未能加载，请重试。'); message('tasks-status', error.message);
+      empty($('admin-tasks-list'), 7, '任务未能加载，请重试。'); message('tasks-status', error.message);
+      document.querySelectorAll('[data-stat]').forEach(node => { node.textContent = '—'; });
+      $('tasks-duration-note').hidden = true;
       $('tasks-pagination').hidden = true;
-    } finally { if (version === taskVersion) submit.disabled = false; }
+    } finally {
+      if (version === taskVersion) {
+        submit.disabled = false;
+        // Only the latest successful response schedules another request. Timing
+        // stays server-authored, and terminal results do not keep polling.
+        if (needsRefresh && canRefreshTasks()) taskTimer = setTimeout(() => { void loadTasks(true); }, 10000);
+      }
+    }
   }
   async function loadAudit() {
     $('audit-refresh').disabled = true; message('audit-status', '');
@@ -165,7 +219,7 @@
     if (fields.disabled) return;
     fields.disabled = true; message('create-user-status', '');
     try {
-      await request('/api/admin/users', 'POST', {username:form.elements.username.value.trim(), password:form.elements.password.value, max_concurrent:Number(form.elements.max_concurrent.value), max_queued:Number(form.elements.max_queued.value)});
+      await request('/api/admin/users', 'POST', {username:form.elements.username.value.trim(), password:form.elements.password.value, role:form.elements.role.value, max_concurrent:Number(form.elements.max_concurrent.value), max_queued:Number(form.elements.max_queued.value)});
       form.reset(); message('create-user-status', '账号已创建，请将初始密码单独告知用户。', true);
       await Promise.all([loadUsers(), loadAudit()]);
     } catch (error) { form.elements.password.value = ''; message('create-user-status', error.message); }
@@ -180,11 +234,17 @@
   });
   $('tasks-previous').addEventListener('click', () => { if (taskPage > 1) { taskPage--; void loadTasks(); } });
   $('tasks-next').addEventListener('click', () => { taskPage++; void loadTasks(); });
+  document.addEventListener('visibilitychange', () => {
+    stopTaskTimer();
+    if (canRefreshTasks()) void loadTasks(true);
+  });
+  window.addEventListener('pagehide', () => { taskAccountId = null; stopTaskTimer(); });
   window.accountReady.then(async account => {
     if (!account.auth_enabled || !(account.user?.is_admin || account.user?.role === 'admin')) {
       message('users-access-error', '此页面仅供已登录的管理员使用。'); return;
     }
     $('users-workspace').hidden = false;
-    await loadUsers(); await Promise.all([loadTasks(), loadAudit()]);
+    await loadUsers(); taskAccountId = account.user.id;
+    await Promise.all([loadTasks(), loadAudit()]);
   }).catch(error => { message('users-access-error', error.message); });
 })();

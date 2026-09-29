@@ -3,9 +3,8 @@
   const form = document.getElementById('login-form');
   const button = document.getElementById('login-submit');
   const error = document.getElementById('login-error');
-  const destination = user => user?.must_change_password ? '/account/password' : '/';
   window.accountReady.then(account => {
-    if (!account.auth_enabled || account.user) window.location.replace(destination(account.user));
+    if (!account.auth_enabled || account.user) window.location.replace('/');
   }).catch(reason => { error.textContent = reason.message; error.hidden = false; });
   form.addEventListener('submit', async event => {
     event.preventDefault();
@@ -18,7 +17,7 @@
       }));
       form.elements.password.value = '';
       window.accountUI.announceLogin(data.user);
-      window.location.replace(destination(data.user));
+      window.location.replace('/');
     } catch (reason) {
       error.textContent = reason.message; error.hidden = false;
       form.elements.password.value = ''; form.elements.password.focus();

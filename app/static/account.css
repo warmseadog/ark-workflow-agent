@@ -43,7 +43,7 @@ html:not([data-account-role="admin"]) .standalone-production a[href^="/admin/"] 
 .account-panel { margin-top:22px; padding:24px; background:#fbf9f5; border:1px solid #d7d0c5; border-radius:8px; min-width:0; }
 .account-section-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
 .account-section-heading p { margin:4px 0 0; color:#777166; font-size:12px; }
-.account-form-grid { display:grid; grid-template-columns:1.2fr 1.4fr 1fr 1fr auto; align-items:end; gap:12px; }
+.account-form-grid { display:grid; grid-template-columns:1.1fr 1.4fr 1fr .9fr .9fr auto; align-items:end; gap:12px; }
 .account-form-grid label { margin-top:0; }
 .account-form-grid button { min-height:40px; }
 .account-table-wrap { overflow-x:auto; max-width:100%; border:1px solid #e0d9cf; border-radius:5px; }
@@ -55,6 +55,7 @@ html:not([data-account-role="admin"]) .standalone-production a[href^="/admin/"] 
 .account-users-table { min-width:880px; }
 .account-tasks-table { min-width:700px; }
 .account-page td .quota-input { width:76px; }
+.account-page td .role-select { width:110px; }
 .account-page .row-actions { display:flex; gap:8px; align-items:center; }
 .account-page .row-actions input { width:150px; }
 .account-inline-check { display:flex !important; align-items:center; gap:6px; margin:0 !important; white-space:nowrap; }
@@ -82,7 +83,7 @@ html:not([data-account-role="admin"]) .standalone-production a[href^="/admin/"] 
   .accounts-main { padding:24px 16px 40px; }
   .account-panel { padding:16px; }
   .account-form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .account-form-grid > :nth-child(-n+2),.account-form-grid > button { grid-column:1/-1; }
+  .account-form-grid > :nth-child(-n+3),.account-form-grid > button { grid-column:1/-1; }
   .account-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .account-stats > div:last-child { grid-column:1/-1; }
   .account-filter label { min-width:0; flex:1 1 130px; }

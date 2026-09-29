@@ -8,7 +8,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse
-from .production_store import ProductionStore, Conflict
+from .production_store import ProductionStore, Conflict, unknown_timing
 from . import generation_settings, storage_settings, admin_settings, media, production_worker, redaction_settings
 from .media_errors import MediaPipelineError
 from .person_video import is_video, person_ids, validate_file, validate_pair
@@ -208,7 +208,7 @@ def get_router(settings_getter, local_guard):
             if payload.get('copy_from'):
                 old=store().get_draft(payload['copy_from'])
                 values={k:v for k,v in old.items() if k in _DRAFT_FIELDS}
-                values['name']=values.get('name','视频')+' 副本'
+                values.pop('name', None)
             else:
                 values={'model':public_model(),'mask':redaction_settings.load_config(settings_getter()),
                         'prompt':'保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图；应用@Image2服装参考图，保持自然稳定。'}
@@ -309,7 +309,8 @@ def get_router(settings_getter, local_guard):
             value.update(id='legacy-'+job.id, name='历史视频 '+job.created_at[:16].replace('T',' '), legacy=True,
                          stage='complete' if job.status=='succeeded' else 'legacy',snapshot={},draft_id=None,
                          error_kind='material_rejected' if 'may contain real person' in (job.error or '') else None,
-                         request_id=None,provider_task_id=None,can_delete=job.status not in {'running','queued'})
+                         request_id=None,provider_task_id=None,can_delete=job.status not in {'running','queued'},
+                         timing=unknown_timing())
             if value['error_kind']=='material_rejected': value['message']='人物参考图未通过模型检查，请复制为草稿后修改。'
             value['name']=store().run_name(value['id'],value['name'])
             result.append(value)
@@ -397,7 +398,7 @@ def get_router(settings_getter, local_guard):
                 job=jobs.get(ident[7:])
                 if not job: raise LookupError('找不到历史任务。')
                 work=settings_getter().storage_dir/'work'/job.id
-                values={'name':'历史视频 副本','model':public_model()}
+                values={'model':public_model()}
                 sources=list(work.glob('source.*'))
                 if sources: values['source_asset_id']=register(sources[0],sources[0].name,'video')['id']
                 for kind in ('face','clothing'):
@@ -405,7 +406,7 @@ def get_router(settings_getter, local_guard):
             else:
                 old=store().get_run(ident)['snapshot']
                 values={k:v for k,v in old.items() if k in _DRAFT_FIELDS}
-                values['name']=store().get_run(ident)['name']+' 副本'
+                values.pop('name', None)
                 preparation = store().get_preparation(ident)
                 if preparation and preparation.get('person_id'):
                     from .portrait_library import PortraitLibrary

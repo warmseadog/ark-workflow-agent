@@ -9,6 +9,38 @@ window.createProductionRuns = ({api,changeDraft,accessoryLabels}) => {
   const node=(tag,text,cls)=>{const el=document.createElement(tag);if(text)el.textContent=text;if(cls)el.className=cls;return el;};
   const button=(label,fn,cls='run-text-button')=>{const el=node('button',label,cls);el.type='button';el.addEventListener('click',fn);return el;};
   const notice=error=>{status.textContent=error.message || String(error);};
+  function elapsed(seconds){
+    if(seconds==null || !Number.isFinite(seconds))return '未记录';
+    const value=Math.max(0,Math.floor(seconds)),hours=Math.floor(value/3600),minutes=Math.floor(value%3600/60),rest=value%60;
+    return (hours?hours+' 小时 ':'')+(hours||minutes?minutes+' 分 ':'')+rest+' 秒';
+  }
+  function wallTime(item){
+    const timing=item.timing;
+    if(!timing?.available)return '耗时未记录';
+    const label=timing.is_live||item.status==='needs_attention'?'已耗时 ':'总耗时 ';
+    return label+elapsed(timing.total_seconds)+(item.status==='needs_attention'?'（待处理）':'');
+  }
+  function timingDetails(holder,item){
+    holder.replaceChildren();
+    const timing=item.timing;
+    if(!timing?.available){holder.append(node('p','历史记录未采集耗时。'));return;}
+    holder.append(node('p',wallTime(item)),node('p','排队 '+elapsed(timing.queue_seconds)+' · 执行 '+elapsed(timing.execution_seconds)+' · 等待处理 '+elapsed(timing.paused_seconds)));
+    const date=value=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});
+    if(timing.started_at)holder.append(node('p','首次开始（北京时间）：'+date(timing.started_at)));
+    if(timing.finished_at)holder.append(node('p','结束（北京时间）：'+date(timing.finished_at)));
+    if(timing.paused_at)holder.append(node('p','等待处理起始（北京时间）：'+date(timing.paused_at)));
+    if(timing.interrupted)holder.append(node('p','运行曾中断，执行耗时无法准确计算；总耗时包含中断间隔。'));
+  }
+  function updateTiming(row,item){
+    row.querySelector('.run-wall-time').textContent=wallTime(item);
+    const details=row.querySelector('.run-timing-details');if(details)timingDetails(details,item);
+    // Open detail/media panels survive polls, while their state and timing stay current.
+    row.dataset.state=item.status;
+    const state=row.querySelector('.run-state');
+    state.textContent=(names[item.status]||item.status)+(['queued','running'].includes(item.status)?' '+(item.progress||0)+'%':'');
+    state.title=item.message||'';
+    if(item.person_preparation?.message)state.append(node('small',item.person_preparation.message,'run-preparation-message'));
+  }
   function schedule(){clearTimeout(pollTimer);pollTimer=setTimeout(()=>{if(!document.hidden&&!loading)refresh();else schedule();},active?5000:30000);}
   function refreshPreparedPeople(){
     const directory=window.portraitPeople;if(!directory||refreshingPeople)return;
@@ -45,6 +77,7 @@ window.createProductionRuns = ({api,changeDraft,accessoryLabels}) => {
       if(!row || (row.dataset.version!==fingerprint && !row.querySelector('.run-name-edit') && !row.querySelector('.run-menu[open]') && !row.querySelector('.run-detail-panel[open]'))){
         const replacement=createRow(item);if(row)row.replaceWith(replacement);row=replacement;row.dataset.version=fingerprint;
       }
+      updateTiming(row,item);
       if(list.children[index]!==row)list.insertBefore(row,list.children[index]||null);
     });
     pageLabel.textContent=page+' / '+pages;document.getElementById('runs-pagination').hidden=!total;
@@ -57,7 +90,8 @@ window.createProductionRuns = ({api,changeDraft,accessoryLabels}) => {
     const date=new Date(item.created_at);const time=node('time',Number.isNaN(date.getTime())?'—':date.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}),'run-time');
     const state=node('span',(names[item.status]||item.status)+(['queued','running'].includes(item.status)?' '+(item.progress||0)+'%':''),'run-state');state.title=item.message||'';
     if(item.person_preparation?.message)state.append(node('small',item.person_preparation.message,'run-preparation-message'));
-    const duration=node('span',item.duration===-1?'跟随原视频':item.duration>0?item.duration+' 秒':'—','run-duration');
+    const duration=node('span','','run-duration');
+    duration.append(node('span',item.duration===-1?'视频跟随原片':item.duration>0?'视频 '+item.duration+' 秒':'视频时长未记录'),node('small',wallTime(item),'run-wall-time'));
     const actions=node('div','','run-actions');
     if(item.download_url){const play=button('播放',()=>openPlayer(item));play.dataset.runAction='play';actions.append(play);const download=node('a','下载','run-text-button');download.href=item.download_url;download.download='';actions.append(download);}
     const more=node('details','','run-menu');more.append(node('summary','更多'));
@@ -97,6 +131,7 @@ window.createProductionRuns = ({api,changeDraft,accessoryLabels}) => {
     edit.append(input,saveButton,cancelButton);title.replaceChildren(edit,error);input.focus();input.select();
   }
   function fillDetails(panel,item){
+    const timing=node('div','','run-timing-details');timingDetails(timing,item);panel.append(timing);
     panel.append(node('p',item.message||names[item.status]||''));
     if(item.person_preparation){
       const preparation=node('div','','run-person-preparation');

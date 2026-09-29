@@ -1,4 +1,4 @@
-"""Auth HTTP endpoints; main owns auth/CSRF/forced-password-change middleware.
+"""Auth HTTP endpoints; main owns authentication/CSRF/permission middleware.
 
 Middleware sets request.state.user to a public user and request.state.session
 to Accounts.authenticate's result. settings_getter must return BASE settings.
@@ -8,6 +8,7 @@ from __future__ import annotations
 from functools import lru_cache
 import os
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
@@ -86,22 +87,26 @@ class _Login(_Input):
 
 class _PasswordChange(_Input):
     current_password: SecretStr = Field(max_length=1024)
-    new_password: SecretStr = Field(min_length=8, max_length=1024)
+    new_password: SecretStr = Field(min_length=6, max_length=1024)
 
 
 class _CreateUser(_Login):
+    password: SecretStr = Field(min_length=6, max_length=1024)
+    role: Literal['admin', 'user'] = 'user'
     max_concurrent: StrictInt = Field(default=1, ge=1, le=10000)
     max_queued: StrictInt = Field(default=10, ge=0, le=10000)
 
 
 class _UpdateUser(_Input):
+    # PATCH passes only explicitly supplied fields; omission preserves the role.
+    role: Literal['admin', 'user'] = 'user'
     enabled: StrictBool | None = None
     max_concurrent: StrictInt | None = Field(default=None, ge=1, le=10000)
     max_queued: StrictInt | None = Field(default=None, ge=0, le=10000)
 
 
 class _ResetPassword(_Input):
-    password: SecretStr = Field(min_length=8, max_length=1024)
+    password: SecretStr = Field(min_length=6, max_length=1024)
 
 
 def get_router(settings_getter, templates) -> APIRouter:
@@ -188,12 +193,13 @@ def get_router(settings_getter, templates) -> APIRouter:
     def create_user(request: Request, payload: _CreateUser):
         actor = current_user(request, admin=True)
         return {'user': accounts().create_user(payload.username, payload.password.get_secret_value(),
-                                               actor['id'], payload.max_concurrent, payload.max_queued)}
+                                               actor['id'], payload.max_concurrent, payload.max_queued, role=payload.role)}
 
     @router.patch('/api/admin/users/{user_id}')
     def update_user(user_id: str, request: Request, payload: _UpdateUser):
         actor = current_user(request, admin=True)
-        return {'user': accounts().update_user(user_id, actor['id'], **payload.model_dump(exclude_none=True))}
+        return {'user': accounts().update_user(user_id, actor['id'],
+                                               **payload.model_dump(exclude_none=True, exclude_unset=True))}
 
     @router.post('/api/admin/users/{user_id}/reset-password')
     def reset_password(user_id: str, request: Request, payload: _ResetPassword):

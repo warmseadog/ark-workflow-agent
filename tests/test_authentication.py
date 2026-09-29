@@ -121,7 +121,7 @@ def test_admin_endpoints_enforce_permissions_and_wrap_results(auth_app):
     assert client.patch(f'/api/admin/users/{admin["id"]}', json={'enabled': False}).status_code == 409
     assert client.patch(f'/api/admin/users/{user_id}', json={'enabled': True}).status_code == 200
     response = client.post(f'/api/admin/users/{user_id}/reset-password', json={'password': NEW_PASSWORD})
-    assert response.status_code == 200 and response.json()['user']['must_change_password']
+    assert response.status_code == 200 and not response.json()['user']['must_change_password']
     assert client.get('/api/admin/audit?limit=2').json()['items']
     assert login(client, 'alice', NEW_PASSWORD).status_code == 200
     for method, path, payload in [
@@ -141,10 +141,10 @@ def test_disabled_auth_me_contract_and_closed_admin_endpoints(auth_app, monkeypa
     assert client.get('/api/admin/users').status_code == 403
 
 
-def test_invalid_payload_does_not_echo_password_or_accept_role(auth_app):
+def test_invalid_payload_does_not_echo_password_or_accept_invalid_role(auth_app):
     client, _, _ = auth_app
     login(client)
-    response = client.post('/api/admin/users', json={'username': 'alice', 'password': PASSWORD, 'role': 'admin'})
+    response = client.post('/api/admin/users', json={'username': 'alice', 'password': PASSWORD, 'role': 'owner'})
     assert response.status_code == 422 and PASSWORD not in response.text
     response = client.post('/api/auth/password', json={'current_password': PASSWORD, 'new_password': 123})
     assert response.status_code == 422 and PASSWORD not in response.text
@@ -180,3 +180,55 @@ def test_origin_port_zero_is_not_same_origin(auth_app):
     response = client.post('/api/auth/login', json={'username': 'admin', 'password': PASSWORD},
                            headers={'Origin': 'http://testserver:0'})
     assert response.status_code == 403
+
+
+def test_api_admin_creation_role_patch_and_six_digit_passwords(auth_app):
+    client, accounts, admin = auth_app
+    login(client)
+    response = client.post('/api/admin/users', json={'username': 'second', 'password': '123456', 'role': 'admin'})
+    assert response.status_code == 201, response.text
+    user = response.json()['user']
+    assert user['role'] == 'admin' and not user['legacy_owner']
+    assert not user['must_change_password']
+    path = f'/api/admin/users/{user["id"]}'
+    # A quota-only PATCH must not silently reset an administrator's role.
+    assert client.patch(path, json={'max_queued': 3}).json()['user']['role'] == 'admin'
+    token = accounts.login('second', '123456', '127.0.0.1')['token']
+    assert client.patch(path, json={'role': 'user'}).json()['user']['role'] == 'user'
+    from app.accounts import AccountError
+    with pytest.raises(AccountError) as caught:
+        accounts.authenticate(token)
+    assert caught.value.status_code == 401
+    assert client.patch(f'/api/admin/users/{admin["id"]}', json={'role': 'user'}).status_code == 409
+    response = client.post(path + '/reset-password', json={'password': '654321'})
+    assert response.status_code == 200 and not response.json()['user']['must_change_password']
+    assert login(client, 'second', '654321').status_code == 200
+    assert client.patch(path, json={'role': 'admin'}).status_code == 403
+    assert client.post('/api/admin/users', json={'username': 'third', 'password': '123456', 'role': 'admin'}).status_code == 403
+    response = client.post('/api/auth/password', json={'current_password': '654321', 'new_password': '456789'})
+    assert response.status_code == 200 and response.json() == {'needs_login': True}
+    assert 'ark_session' not in client.cookies
+    assert login(client, 'second', '456789').status_code == 200
+    assert not client.get('/api/auth/me').json()['user']['must_change_password']
+
+
+@pytest.mark.parametrize('role', ['owner', 'ADMIN', '', None, True, 1, ['admin']])
+def test_api_roles_reject_invalid_values_for_create_and_patch(auth_app, role):
+    client, accounts, admin = auth_app
+    login(client)
+    response = client.post('/api/admin/users', json={'username': 'invalid', 'password': PASSWORD, 'role': role})
+    assert response.status_code == 422 and PASSWORD not in response.text
+    assert client.patch(f'/api/admin/users/{admin["id"]}', json={'role': role}).status_code == 422
+    assert accounts.get_user(admin['id'])['role'] == 'admin'
+    assert len(accounts.list_users()) == 1
+
+
+@pytest.mark.parametrize('password', ['12345', 'a' * 1025])
+def test_api_password_boundaries_are_atomic(auth_app, password):
+    client, accounts, admin = auth_app
+    login(client)
+    assert client.post('/api/admin/users', json={'username': 'bad', 'password': password}).status_code == 422
+    assert client.post(f'/api/admin/users/{admin["id"]}/reset-password', json={'password': password}).status_code == 422
+    assert client.post('/api/auth/password', json={'current_password': PASSWORD, 'new_password': password}).status_code == 422
+    assert client.get('/api/auth/me').status_code == 200
+    assert len(accounts.list_users()) == 1

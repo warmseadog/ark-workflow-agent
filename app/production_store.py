@@ -12,12 +12,23 @@ from threading import RLock
 _connection_setup_lock = RLock()
 
 
-def default_name(person='视频'):
-    return (person[:80] or '视频') + '-' + datetime.now(timezone(timedelta(hours=8))).strftime('%m%d-%H%M%S')
+def default_name(person=None):
+    return datetime.fromisoformat(now()).astimezone(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
 
 
 def now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def unknown_timing():
+    """No historical durations are inferred from mutable updated_at values."""
+    return dict(available=False, started_at=None, finished_at=None, paused_at=None,
+                queue_seconds=None, execution_seconds=None, paused_seconds=None,
+                total_seconds=None, is_live=False, interrupted=False)
+
+
+def _elapsed(start, end):
+    return max(0.0, (datetime.fromisoformat(end)-datetime.fromisoformat(start)).total_seconds())
 
 
 class Conflict(ValueError):
@@ -56,6 +67,11 @@ class ProductionStore:
                 result_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS production_person_preparations (
                 run_id TEXT PRIMARY KEY, data TEXT NOT NULL, next_check REAL NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS production_run_timing (
+                run_id TEXT PRIMARY KEY, created_at TEXT NOT NULL,
+                started_at TEXT, finished_at TEXT, state TEXT NOT NULL, state_since TEXT NOT NULL,
+                queue_seconds REAL NOT NULL DEFAULT 0, execution_seconds REAL DEFAULT 0,
+                paused_seconds REAL NOT NULL DEFAULT 0, interrupted INTEGER NOT NULL DEFAULT 0);
             CREATE INDEX IF NOT EXISTS production_runs_order ON production_runs(created_at DESC,id DESC);
             """)
 
@@ -90,6 +106,66 @@ class ProductionStore:
             raise LookupError('找不到草稿。')
         return {**json.loads(row['data']), 'id': row['id'], 'revision': row['revision'],
                 'created_at': row['created_at'], 'updated_at': row['updated_at']}
+
+    def run_timings(self, idents):
+        """Return {id: timing}, including explicit unknowns for legacy/old rows.
+
+        Seconds are wall-clock seconds, unrelated to video duration. Queue and
+        execution accrue only in those states. Stopped states freeze; resuming
+        includes the intervening wait in paused_seconds and total_seconds.
+        An interrupted running interval has no trustworthy end, so execution
+        stays unknown, even after recovery. The overall wall span remains known.
+        """
+        ids = list(dict.fromkeys(idents))
+        result = {ident: unknown_timing() for ident in ids}
+        stamp = now()
+        with self.connection() as db:
+            for offset in range(0, len(ids), 500):
+                batch = ids[offset:offset+500]
+                rows = db.execute('SELECT * FROM production_run_timing WHERE run_id IN ('+
+                                  ','.join('?' for _ in batch)+')', batch).fetchall()
+                for row in rows:
+                    live = row['state'] in {'queued', 'running'}
+                    end = stamp if live else row['state_since']
+                    queue, execution = row['queue_seconds'], row['execution_seconds']
+                    if row['state'] == 'queued':
+                        queue += _elapsed(row['state_since'], end)
+                    elif row['state'] == 'running' and execution is not None:
+                        execution += _elapsed(row['state_since'], end)
+                    result[row['run_id']] = dict(
+                        available=True, started_at=row['started_at'], finished_at=row['finished_at'],
+                        paused_at=row['state_since'] if row['state'] == 'needs_attention' else None,
+                        queue_seconds=round(queue, 3),
+                        execution_seconds=round(execution, 3) if execution is not None else None,
+                        paused_seconds=round(row['paused_seconds'], 3),
+                        total_seconds=round(_elapsed(row['created_at'], end), 3),
+                        is_live=live, interrupted=bool(row['interrupted']))
+        return result
+
+    def run_timing(self, ident):
+        return self.run_timings([ident])[ident]
+
+    @staticmethod
+    def _transition_timing(db, ident, state, stamp, *, interrupted=False):
+        # Call in the SAME write transaction as the state change. Old records
+        # deliberately have no timing row, and are never silently backfilled.
+        row = db.execute('SELECT * FROM production_run_timing WHERE run_id=?', (ident,)).fetchone()
+        if row is None or row['state'] == state:
+            return
+        queue, execution, paused = row['queue_seconds'], row['execution_seconds'], row['paused_seconds']
+        delta = _elapsed(row['state_since'], stamp)
+        if row['state'] == 'queued':
+            queue += delta
+        elif row['state'] == 'running':
+            execution = None if interrupted or execution is None else execution + delta
+        else:
+            paused += delta
+        started = row['started_at'] or (stamp if state == 'running' else None)
+        finished = stamp if state in {'succeeded', 'failed', 'cancelled'} else None
+        db.execute('''UPDATE production_run_timing SET started_at=?,finished_at=?,state=?,state_since=?,
+                      queue_seconds=?,execution_seconds=?,paused_seconds=?,interrupted=? WHERE run_id=?''',
+                   (started, finished, state, stamp, queue, execution, paused,
+                    int(interrupted or row['interrupted']), ident))
 
     def create_draft(self, values):
         ident, stamp = uuid.uuid4().hex, now()
@@ -197,6 +273,7 @@ class ProductionStore:
             value.pop('result_url')
             value.pop('idempotency_key')
         value['legacy'] = False
+        value['timing'] = self.run_timing(value['id'])
         return value
 
     def get_run(self, ident, private=False):
@@ -229,6 +306,8 @@ class ProductionStore:
             db.execute('INSERT INTO production_runs\n                (id,draft_id,revision,idempotency_key,snapshot,private,status,stage,message,created_at,updated_at)\n                VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                 (ident,draft_id,revision,key,json.dumps(draft,ensure_ascii=False),json.dumps(private,ensure_ascii=False),
                  'queued','queued','等待处理',stamp,stamp))
+            db.execute('INSERT INTO production_run_timing (run_id,created_at,state,state_since) VALUES (?,?,?,?)',
+                       (ident, stamp, 'queued', stamp))
             if private.get('person_preparation'):
                 intent = private['person_preparation']
                 data = {'state': 'pending', 'account': intent['account'],
@@ -282,7 +361,9 @@ class ProductionStore:
             self.check_queue_limit(db,max_queued)
             db.execute('UPDATE production_person_preparations SET data=?,next_check=0 WHERE run_id=?',
                 (json.dumps(data, ensure_ascii=False), ident))
-            db.execute("UPDATE production_runs SET status='queued',stage='queued',error=NULL,error_kind=NULL,message='等待重新检查人物',updated_at=? WHERE id=?", (now(), ident))
+            stamp = now()
+            self._transition_timing(db, ident, 'queued', stamp)
+            db.execute("UPDATE production_runs SET status='queued',stage='queued',error=NULL,error_kind=NULL,message='等待重新检查人物',updated_at=? WHERE id=?", (stamp, ident))
         return self.get_run(ident)
 
     def run_name(self, ident, fallback):
@@ -322,6 +403,7 @@ class ProductionStore:
             pages=max(1,(count['total']+page_size-1)//page_size);page=min(page,pages)
             rows=db.execute(sql+'SELECT * FROM visible ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?',(page_size,(page-1)*page_size)).fetchall()
         result=[]
+        timings = self.run_timings(row['id'] for row in rows)
         for row in rows:
             item=dict(row);item['name']=item.pop('display_name');item['legacy']=bool(item['legacy']);remote=item.pop('has_remote')
             item['can_resume']=not item['legacy'] and item['status']=='needs_attention' and bool(remote)
@@ -331,6 +413,7 @@ class ProductionStore:
             item['person_preparation'] = self.public_preparation(preparation)
             item['can_retry_preparation'] = bool(preparation and preparation.get('retryable')
                 and item['status'] in {'failed', 'needs_attention'} and not remote)
+            item['timing'] = timings[item['id']]
             result.append(item)
         return {'items':result,'total':count['total'],'active_count':count['active'],'page':page,'pages':pages,'page_size':page_size}
 
@@ -362,7 +445,9 @@ class ProductionStore:
                 if not run['can_delete']:
                     raise Conflict('任务正在处理，请等待结束后删除。')
                 if run['status'] == 'queued':
-                    db.execute("UPDATE production_runs SET status='cancelled',message='已撤销并删除任务',updated_at=? WHERE id=?", (now(), ident))
+                    stamp = now()
+                    self._transition_timing(db, ident, 'cancelled', stamp)
+                    db.execute("UPDATE production_runs SET status='cancelled',message='已撤销并删除任务',updated_at=? WHERE id=?", (stamp, ident))
             db.execute('INSERT INTO production_deleted_runs VALUES (?,?)', (ident, now()))
 
     def update_run(self, ident, **changes):
@@ -371,6 +456,10 @@ class ProductionStore:
             raise ValueError('Invalid task fields')
         changes['updated_at'] = now()
         with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT status FROM production_runs WHERE id=?', (ident,)).fetchone()
+            if row and row['status'] != 'cancelled' and 'status' in changes:
+                self._transition_timing(db, ident, changes['status'], changes['updated_at'])
             db.execute('UPDATE production_runs SET '+','.join(k+'=?' for k in changes)+" WHERE id=? AND status!='cancelled'",
                        (*changes.values(), ident))
         return self.get_run(ident)
@@ -386,7 +475,9 @@ class ProductionStore:
                 ((datetime.now(timezone.utc)-timedelta(seconds=10)).isoformat(), time.time())).fetchone()
             if not row:
                 return None
-            db.execute("UPDATE production_runs SET status='running',updated_at=? WHERE id=?", (now(),row['id']))
+            stamp = now()
+            self._transition_timing(db, row['id'], 'running', stamp)
+            db.execute("UPDATE production_runs SET status='running',updated_at=? WHERE id=?", (stamp,row['id']))
         return self.get_run(row['id'], private=True)
 
     def cancel_run(self, ident):
@@ -397,7 +488,9 @@ class ProductionStore:
                 raise LookupError('找不到任务。')
             if row['status'] != 'queued' or row['provider_task_id'] or row['result_url']:
                 raise Conflict('只能撤销尚未开始的排队任务。')
-            db.execute("UPDATE production_runs SET status='cancelled',message='已撤销排队',updated_at=? WHERE id=?",(now(),ident))
+            stamp = now()
+            self._transition_timing(db, ident, 'cancelled', stamp)
+            db.execute("UPDATE production_runs SET status='cancelled',message='已撤销排队',updated_at=? WHERE id=?",(stamp,ident))
         return self.get_run(ident)
 
     def resume_run(self, ident, max_queued=None):
@@ -409,7 +502,9 @@ class ProductionStore:
             if row['status'] != 'needs_attention' or not (row['provider_task_id'] or row['result_url']):
                 raise Conflict('此任务无法直接恢复，请核对详情后复制为新草稿。')
             self.check_queue_limit(db,max_queued)
-            db.execute("UPDATE production_runs SET status='queued',error=NULL,message='等待恢复查询',updated_at=? WHERE id=?",(now(),ident))
+            stamp = now()
+            self._transition_timing(db, ident, 'queued', stamp)
+            db.execute("UPDATE production_runs SET status='queued',error=NULL,message='等待恢复查询',updated_at=? WHERE id=?",(stamp,ident))
         return self.get_run(ident)
 
     def recover(self):
@@ -417,6 +512,9 @@ class ProductionStore:
             db.execute('BEGIN IMMEDIATE')
             for row in db.execute("SELECT * FROM production_runs WHERE status='running'").fetchall():
                 uncertain = row['stage']=='submitting' and not row['provider_task_id']
+                stamp = now()
+                state = 'needs_attention' if uncertain else 'queued'
+                self._transition_timing(db, row['id'], state, stamp, interrupted=True)
                 db.execute('UPDATE production_runs SET status=?,error_kind=?,message=?,updated_at=? WHERE id=?',
-                    ('needs_attention' if uncertain else 'queued', 'submission_uncertain' if uncertain else None,
-                     '提交结果待确认，请核对服务商记录，避免重复提交' if uncertain else '服务已恢复，等待继续处理',now(),row['id']))
+                    (state, 'submission_uncertain' if uncertain else None,
+                     '提交结果待确认，请核对服务商记录，避免重复提交' if uncertain else '服务已恢复，等待继续处理',stamp,row['id']))

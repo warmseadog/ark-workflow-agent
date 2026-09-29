@@ -244,7 +244,7 @@
 
 /* Task list: compact rows, stable title editor, single on-demand player. */
 #production-run-list { display:block; }
-.run-list-header,.production-run.run-row { display:grid; grid-template-columns:minmax(180px,1fr) 116px 108px 70px 160px; gap:16px; align-items:center; }
+.run-list-header,.production-run.run-row { display:grid; grid-template-columns:minmax(180px,1fr) 116px 108px minmax(110px,150px) 160px; gap:16px; align-items:center; }
 .run-list-header { padding:12px 14px; font-size:12px; color:var(--muted); background:#eeeae3; }
 .production-run.run-row { padding:15px 14px; margin:0; border:0; border-bottom:1px solid var(--hair); border-radius:0; background:transparent; }
 .run-title-cell { display:flex; align-items:center; gap:6px; min-width:0; flex-wrap:wrap; }
@@ -252,6 +252,10 @@
 .run-rename { border:0; background:transparent; color:var(--muted); padding:5px; font-size:19px; line-height:1; cursor:pointer; }
 .run-rename:hover { color:var(--accent); }
 .run-time,.run-duration { font-size:12px; color:var(--muted); }
+.run-duration { display:grid; gap:5px; overflow-wrap:anywhere; }
+.run-wall-time { font-size:12px; color:var(--ink); }
+.run-timing-details { font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
+.run-timing-details p { margin:5px 0; }
 .run-state { justify-self:start; white-space:nowrap; }
 .run-row .run-actions { display:flex; gap:12px; justify-content:flex-end; align-items:center; flex-wrap:nowrap; margin:0; }
 .run-text-button { padding:4px 0; border:0; background:none; color:var(--accent); cursor:pointer; font-size:12px; white-space:nowrap; text-decoration:none; }

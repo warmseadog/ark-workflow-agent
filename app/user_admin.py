@@ -49,6 +49,7 @@ def get_router(settings_getter,templates):
             with store.connection() as db:
                 rows=db.execute('SELECT id,status,stage,message,progress,snapshot,created_at,updated_at FROM production_runs ORDER BY created_at DESC').fetchall()
                 metadata={row['id']:json.loads(row['metadata'] or '{}') for row in db.execute('SELECT id,metadata FROM production_playbacks')}
+            timings=store.run_timings(row['id'] for row in rows)
             stats['submitted']+=len(rows)
             stats['storage_bytes']+=disk_usage(effective.storage_dir)
             for row in rows:
@@ -61,7 +62,8 @@ def get_router(settings_getter,templates):
                 snapshot=json.loads(row['snapshot'])
                 items.append({key:row[key] for key in ('id','status','stage','message','progress','created_at','updated_at')} |
                     {'user_id':user['id'],'username':user['username'],'name':store.run_name(row['id'],snapshot.get('name','视频')),
-                     'model':snapshot.get('model',{}).get('model',''),'duration':metadata.get(row['id'],{}).get('duration')})
+                     'model':snapshot.get('model',{}).get('model',''),'duration':metadata.get(row['id'],{}).get('duration'),
+                     'timing':timings[row['id']]})
         items.sort(key=lambda item:(item['created_at'],item['id']),reverse=True)
         accounts.audit(actor['id'],'view_user_tasks',user_id or 'all')
         start=(page-1)*page_size

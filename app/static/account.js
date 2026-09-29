@@ -3,7 +3,6 @@
   'use strict';
   const originalFetch = window.fetch.bind(window);
   const loginPage = window.location.pathname === '/login';
-  const passwordPage = window.location.pathname === '/account/password';
   const cacheNames = ['production-current-draft-v1', 'production-pending-submit-v1'];
   const identityEventKey = 'ark-account-identity';
   let identity = null;
@@ -47,14 +46,6 @@
       redirect('/login');
       throw authError('登录已失效，请重新登录。');
     }
-    if (response.status === 403) {
-      const data = await response.clone().json().catch(() => ({}));
-      const code = data.code || data.detail?.code || data.detail?.error || data.detail;
-      if (code === 'password_change_required') {
-        redirect('/account/password');
-        throw authError('请先修改密码，再继续使用工作台。');
-      }
-    }
     return response;
   }
 
@@ -97,10 +88,6 @@
     if (identity.auth_enabled && !identity.user && !loginPage) {
       redirect('/login');
       throw authError('请先登录工作台。');
-    }
-    if (identity.user?.must_change_password && !passwordPage && !loginPage) {
-      redirect('/account/password');
-      throw authError('请先修改初始密码。');
     }
     return identity;
   })();

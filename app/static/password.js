@@ -6,8 +6,6 @@
   const button = form.querySelector('[type="submit"]');
   window.accountReady.then(account => {
     if (!account.auth_enabled) { window.location.replace('/'); return; }
-    document.getElementById('password-back').hidden = Boolean(account.user?.must_change_password);
-    if (account.user?.must_change_password) document.getElementById('password-intro').textContent = '首次登录或密码已被重置。请先设置自己的新密码，再开始创作。';
     fields.disabled = false;
   }).catch(reason => { error.textContent = reason.message; error.hidden = false; });
   form.addEventListener('submit', async event => {

@@ -96,7 +96,7 @@ def test_normal_account_cannot_access_global_admin_or_legacy(accounts_clients):
     assert a.put('/api/production/drafts/'+draft['id'],json={'revision':draft['revision'],'mask':changed}).status_code==403
 
 
-def test_csrf_disable_reset_and_forced_password_change(accounts_clients):
+def test_csrf_disable_reset_without_forced_password_change(accounts_clients):
     accounts,users,(admin,a,b)=accounts_clients
     assert a.post('/api/production/drafts',headers={'X-CSRF-Token':'wrong'},json={}).status_code==403
     assert a.post('/api/production/drafts',headers={'Origin':'https://evil.example'},json={}).status_code==403
@@ -106,8 +106,57 @@ def test_csrf_disable_reset_and_forced_password_change(accounts_clients):
     assert b.get('/api/production/drafts').status_code==401
     response=b.post('/api/auth/login',headers={'Origin':'http://testserver'},json={'username':'bob','password':'replacement-password'})
     assert response.status_code==200
-    assert b.get('/api/production/drafts').status_code==403
-    assert b.get('/api/auth/me').json()['user']['must_change_password'] is True
+    assert b.get('/api/production/drafts').status_code==200
+    assert b.get('/api/auth/me').json()['user']['must_change_password'] is False
+    b.headers['X-CSRF-Token']=response.json()['csrf_token']
+    assert b.post('/api/production/drafts',json={}).status_code==200
+
+
+def test_initial_login_needs_no_password_change_and_still_enforces_csrf(protected):
+    from app.accounts import Accounts
+    accounts=Accounts(main.settings.storage_dir)
+    admin=accounts.init_admin('admin','123456')
+    accounts.create_user('alice','654321',admin['id'])
+    response=protected.post('/api/auth/login',headers={'Origin':'http://testserver'},json={'username':'alice','password':'654321'})
+    assert response.status_code==200,response.text
+    assert response.json()['user']['must_change_password'] is False
+    assert protected.get('/api/production/drafts').status_code==200
+    assert protected.get('/',follow_redirects=False).status_code==200
+    assert protected.post('/api/production/drafts',json={}).status_code==403
+    protected.headers['X-CSRF-Token']=response.json()['csrf_token']
+    assert protected.post('/api/production/drafts',json={}).status_code==200
+
+
+def test_middleware_ignores_legacy_flag_even_from_stale_session(accounts_clients,monkeypatch):
+    from app.accounts import Accounts
+    _,_,(_,a,_)=accounts_clients
+    original=Accounts.authenticate
+    def legacy_session(self,token):
+        session=original(self,token)
+        session['user']['must_change_password']=True
+        return session
+    # Exercise middleware independently of the migration/public serializer.
+    monkeypatch.setattr(Accounts,'authenticate',legacy_session)
+    assert a.get('/api/production/drafts').status_code==200
+    assert a.get('/',follow_redirects=False).status_code==200
+    assert a.post('/api/production/drafts',json={}).status_code==200
+
+
+def test_role_change_requires_new_login_and_enforces_new_permissions(accounts_clients):
+    accounts,users,(admin,a,_)=accounts_clients
+    path='/api/admin/users/'+users[1]['id']
+    assert admin.patch(path,json={'role':'admin'}).status_code==200
+    assert a.get('/api/auth/me').status_code==401
+    response=a.post('/api/auth/login',headers={'Origin':'http://testserver'},json={'username':'alice','password':'changed-user-password'})
+    assert response.status_code==200
+    a.headers['X-CSRF-Token']=response.json()['csrf_token']
+    assert a.get('/api/admin/users').status_code==200
+    assert a.get('/api/jobs').status_code==403  # Promotion never grants legacy data ownership.
+    assert admin.patch(path,json={'role':'user'}).status_code==200
+    assert a.get('/api/admin/users').status_code==401
+    response=a.post('/api/auth/login',headers={'Origin':'http://testserver'},json={'username':'alice','password':'changed-user-password'})
+    assert response.status_code==200
+    assert a.get('/api/admin/users').status_code==403
 
 
 def test_admin_task_overview_requires_explicit_admin_and_scopes_filter(accounts_clients):

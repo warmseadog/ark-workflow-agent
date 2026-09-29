@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 from app import main,production_worker,jobs
@@ -57,4 +58,5 @@ def test_legacy_tasks_share_paging_and_name_persistence(setup):
 def test_new_draft_has_useful_default_name(setup):
     client,_,_=setup
     name=client.post('/api/production/drafts',json={}).json()['name']
-    assert name.startswith('视频-') and name!='未命名视频'
+    parsed=datetime.strptime(name,'%Y-%m-%d %H:%M:%S')
+    assert parsed.strftime('%Y-%m-%d %H:%M:%S')==name

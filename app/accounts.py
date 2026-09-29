@@ -51,8 +51,14 @@ def _username(value: str) -> str:
 
 
 def _password(value: str) -> str:
-    if not isinstance(value, str) or not 8 <= len(value) <= 1024:
-        raise AccountError(422, '密码长度需为 8–1024 个字符。')
+    if not isinstance(value, str) or not 6 <= len(value) <= 1024:
+        raise AccountError(422, '密码长度需为 6–1024 个字符。')
+    return value
+
+
+def _role(value: str) -> str:
+    if not isinstance(value, str) or value not in ('admin', 'user'):
+        raise AccountError(422, '角色必须为 admin（管理员）或 user（普通用户）。')
     return value
 
 
@@ -65,8 +71,10 @@ def _quota(value: int, minimum: int, name: str) -> int:
 
 def _public(row) -> dict:
     result = {key: row[key] for key in _PUBLIC_FIELDS}
-    for key in ('enabled', 'must_change_password', 'legacy_owner'):
+    for key in ('enabled', 'legacy_owner'):
         result[key] = bool(result[key])
+    # Retain the response field for old clients, but never revive the retired policy.
+    result['must_change_password'] = False
     return result
 
 
@@ -80,7 +88,7 @@ def _details(details) -> dict:
     result = {}
     if not isinstance(details, dict):
         return result
-    for key in ('username', 'role', 'remote_ip', 'reason', 'enabled',
+    for key in ('username', 'role', 'previous_role', 'remote_ip', 'reason', 'enabled',
                 'must_change_password', 'legacy_owner', 'max_concurrent', 'max_queued'):
         value = details.get(key)
         if isinstance(value, (str, int, bool)):
@@ -110,7 +118,7 @@ class Accounts:
                     password_hash TEXT NOT NULL,
                     role TEXT NOT NULL CHECK(role IN ('admin', 'user')),
                     enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
-                    must_change_password INTEGER NOT NULL DEFAULT 1 CHECK(must_change_password IN (0, 1)),
+                    must_change_password INTEGER NOT NULL DEFAULT 0 CHECK(must_change_password IN (0, 1)),
                     max_concurrent INTEGER NOT NULL DEFAULT 1 CHECK(max_concurrent >= 1),
                     max_queued INTEGER NOT NULL DEFAULT 10 CHECK(max_queued >= 0),
                     legacy_owner INTEGER NOT NULL DEFAULT 0 CHECK(legacy_owner IN (0, 1)),
@@ -142,6 +150,10 @@ class Accounts:
                     created_at REAL NOT NULL
                 );
             ''')
+            # Idempotent compatibility migration; never touch password hashes or
+            # sessions. Explicit INSERT values below also handle old DEFAULT 1 schemas.
+            if conn.execute('SELECT 1 FROM users WHERE must_change_password!=0 LIMIT 1').fetchone():
+                conn.execute('UPDATE users SET must_change_password=0 WHERE must_change_password!=0')
         if os.name != 'nt':
             private.chmod(0o700)
             self.db_path.chmod(0o600)
@@ -191,27 +203,28 @@ class Accounts:
                 return _public(existing)
             username, password = _username(username), _password(password)
             user_id = uuid4().hex
-            conn.execute('''INSERT INTO users(id,username,password_hash,role,legacy_owner,created_at)
-                            VALUES(?,?,?,'admin',1,?)''',
+            conn.execute('''INSERT INTO users(id,username,password_hash,role,legacy_owner,must_change_password,created_at)
+                            VALUES(?,?,?,'admin',1,0,?)''',
                          (user_id, username, _HASHER.hash(password), time.time()))
             self._audit(conn, user_id, 'user.init_admin', user_id, {'username': username})
             return _public(self._user(conn, user_id))
 
     def create_user(self, username: str, password: str, actor_id: str,
-                    max_concurrent: int = 1, max_queued: int = 10) -> dict:
+                    max_concurrent: int = 1, max_queued: int = 10, role: str = 'user') -> dict:
         with self._connect(write=True) as conn:
             self._admin(conn, actor_id)
             username, password = _username(username), _password(password)
+            role = _role(role)
             max_concurrent = _quota(max_concurrent, 1, 'max_concurrent')
             max_queued = _quota(max_queued, 0, 'max_queued')
             user_id = uuid4().hex
             try:
-                conn.execute('''INSERT INTO users(id,username,password_hash,role,max_concurrent,max_queued,created_at)
-                                VALUES(?,?,?,'user',?,?,?)''',
-                             (user_id, username, _HASHER.hash(password), max_concurrent, max_queued, time.time()))
+                conn.execute('''INSERT INTO users(id,username,password_hash,role,max_concurrent,max_queued,must_change_password,created_at)
+                                VALUES(?,?,?,?,?,?,0,?)''',
+                             (user_id, username, _HASHER.hash(password), role, max_concurrent, max_queued, time.time()))
             except sqlite3.IntegrityError:
                 raise AccountError(409, '用户名已存在。') from None
-            self._audit(conn, actor_id, 'user.create', user_id, {'username': username,
+            self._audit(conn, actor_id, 'user.create', user_id, {'username': username, 'role': role,
                         'max_concurrent': max_concurrent, 'max_queued': max_queued})
             return _public(self._user(conn, user_id))
 
@@ -224,7 +237,8 @@ class Accounts:
             return [_public(row) for row in conn.execute('SELECT * FROM users ORDER BY created_at, id')]
 
     def update_user(self, user_id: str, actor_id: str, *, enabled: bool | None = None,
-                    max_concurrent: int | None = None, max_queued: int | None = None) -> dict:
+                    max_concurrent: int | None = None, max_queued: int | None = None,
+                    role: str | None = None) -> dict:
         with self._connect(write=True) as conn:
             self._admin(conn, actor_id)
             user = self._user(conn, user_id)
@@ -232,23 +246,31 @@ class Accounts:
             if enabled is not None:
                 if type(enabled) is not bool:
                     raise AccountError(422, '账号启用状态必须为布尔值。')
-                if not enabled and user['role'] == 'admin' and user['enabled']:
-                    others = conn.execute("SELECT COUNT(*) FROM users WHERE role='admin' AND enabled=1 AND id<>?",
-                                          (user_id,)).fetchone()[0]
-                    if not others:
-                        raise AccountError(409, '不能停用最后一个已启用的管理员账号。')
                 changes['enabled'] = enabled
+            if role is not None:
+                changes['role'] = _role(role)
             if max_concurrent is not None:
                 changes['max_concurrent'] = _quota(max_concurrent, 1, 'max_concurrent')
             if max_queued is not None:
                 changes['max_queued'] = _quota(max_queued, 0, 'max_queued')
+            # Check the resulting role AND enabled state under BEGIN IMMEDIATE,
+            # so concurrent demotions/disables cannot both remove the last admin.
+            if (user['role'] == 'admin' and user['enabled']
+                    and (changes.get('role', user['role']) != 'admin'
+                         or not changes.get('enabled', user['enabled']))):
+                others = conn.execute("SELECT COUNT(*) FROM users WHERE role='admin' AND enabled=1 AND id<>?",
+                                      (user_id,)).fetchone()[0]
+                if not others:
+                    raise AccountError(409, '不能降级或停用最后一个已启用的管理员账号。')
             if changes:
                 # Column names come exclusively from the fixed mapping above.
                 assignments = ','.join(f'{key}=?' for key in changes)
                 conn.execute(f'UPDATE users SET {assignments} WHERE id=?', (*changes.values(), user_id))
-                if enabled is False:
+                role_changed = 'role' in changes and changes['role'] != user['role']
+                if enabled is False or role_changed:
                     conn.execute('DELETE FROM sessions WHERE user_id=?', (user_id,))
-                self._audit(conn, actor_id, 'user.update', user_id, changes)
+                details = {**changes, 'previous_role': user['role']} if role_changed else changes
+                self._audit(conn, actor_id, 'user.update', user_id, details)
             return _public(self._user(conn, user_id))
 
     def reset_password(self, user_id: str, password: str, actor_id: str) -> dict:
@@ -256,7 +278,7 @@ class Accounts:
             self._admin(conn, actor_id)
             self._user(conn, user_id)
             encoded = _HASHER.hash(_password(password))
-            conn.execute('UPDATE users SET password_hash=?,must_change_password=1 WHERE id=?', (encoded, user_id))
+            conn.execute('UPDATE users SET password_hash=?,must_change_password=0 WHERE id=?', (encoded, user_id))
             conn.execute('DELETE FROM sessions WHERE user_id=?', (user_id,))
             self._audit(conn, actor_id, 'user.reset_password', user_id)
             return _public(self._user(conn, user_id))

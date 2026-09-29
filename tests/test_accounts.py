@@ -29,7 +29,7 @@ def test_bootstrap_is_normalized_private_and_never_overwrites(accounts, tmp_path
     assert admin['username'] == 'admin'
     assert len(admin['id']) == 32 and int(admin['id'], 16)
     assert admin['role'] == 'admin' and admin['legacy_owner'] is True
-    assert admin['enabled'] is True and admin['must_change_password'] is True
+    assert admin['enabled'] is True and admin['must_change_password'] is False
     assert admin['max_concurrent'] == 1 and admin['max_queued'] == 10
     assert admin['created_at']
     assert 'password_hash' not in admin
@@ -54,7 +54,7 @@ def test_admin_creates_normalized_user_and_duplicate_rejected(accounts):
     admin = accounts.init_admin('admin', PASSWORD)
     user = accounts.create_user(' Ａlice ', PASSWORD, admin['id'], max_concurrent=2, max_queued=4)
     assert user['username'] == 'alice' and user['role'] == 'user'
-    assert user['must_change_password'] and not user['legacy_owner']
+    assert not user['must_change_password'] and not user['legacy_owner']
     assert (user['max_concurrent'], user['max_queued']) == (2, 4)
     assert_error(409, lambda: accounts.create_user('ALICE', PASSWORD, admin['id']))
     assert_error(403, lambda: accounts.create_user('bob', PASSWORD, user['id']))
@@ -134,13 +134,13 @@ def test_change_password_verifies_current_and_revokes_every_session(accounts):
     assert accounts.login('admin', NEW_PASSWORD, '127.0.0.1')
 
 
-def test_reset_password_forces_change_and_logout_is_idempotent(accounts):
+def test_reset_password_requires_no_change_and_logout_is_idempotent(accounts):
     admin = accounts.init_admin('admin', PASSWORD)
     user = accounts.create_user('alice', PASSWORD, admin['id'])
     accounts.change_password(user['id'], PASSWORD, NEW_PASSWORD)
     sessions = [accounts.login('alice', NEW_PASSWORD, '127.0.0.1') for _ in range(2)]
     accounts.reset_password(user['id'], PASSWORD, admin['id'])
-    assert accounts.get_user(user['id'])['must_change_password']
+    assert not accounts.get_user(user['id'])['must_change_password']
     for session in sessions:
         assert_error(401, lambda: accounts.authenticate(session['token']))
     session = accounts.login('alice', PASSWORD, '127.0.0.1')

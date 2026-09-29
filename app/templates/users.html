@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>用户与任务 · 方舟</title>
-  <link rel="stylesheet" href="/static/account.css?v=20260928-account-1">
-  <script src="/static/account.js?v=20260928-account-1"></script>
+  <link rel="stylesheet" href="/static/account.css?v=20260929-account-2">
+  <script src="/static/account.js?v=20260929-account-2"></script>
 </head>
 <body class="account-page">
   <header class="account-topbar">
@@ -17,10 +17,11 @@
     <p class="account-eyebrow">工作台管理</p><h1>用户与任务</h1>
     <p class="account-muted">管理账号与任务额度，查看生成用量和操作记录。</p>
     <section class="account-panel" aria-labelledby="create-user-title">
-      <div class="account-section-heading"><div><h2 id="create-user-title">创建账号</h2><p>新用户首次登录时需修改初始密码。</p></div></div>
+      <div class="account-section-heading"><div><h2 id="create-user-title">创建账号</h2><p>设置角色和登录密码，用户可直接登录工作台。</p></div></div>
       <form id="create-user-form"><fieldset class="account-form-grid" id="create-user-fields">
         <div><label for="create-username">用户名</label><input id="create-username" name="username" autocomplete="off" spellcheck="false" required></div>
-        <div><label for="create-password">初始密码（至少 8 位）</label><input id="create-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="1024" required></div>
+        <div><label for="create-password">密码（至少 6 位，可使用纯数字）</label><input id="create-password" name="password" type="password" autocomplete="new-password" minlength="6" maxlength="1024" required></div>
+        <div><label for="create-role">角色</label><select id="create-role" name="role"><option value="user" selected>普通用户</option><option value="admin">管理员</option></select></div>
         <div><label for="create-concurrent">同时生成上限</label><input id="create-concurrent" name="max_concurrent" type="number" min="1" max="10000" step="1" value="1" required></div>
         <div><label for="create-queued">排队上限</label><input id="create-queued" name="max_queued" type="number" min="0" max="10000" step="1" value="10" required></div>
         <button type="submit" class="account-primary">创建账号</button>
@@ -28,7 +29,7 @@
       <p id="create-user-status" class="account-message" role="status" aria-live="polite" hidden></p>
     </section>
     <section class="account-panel" aria-labelledby="users-title">
-      <div class="account-section-heading"><div><h2 id="users-title">账号列表</h2><p>调整额度后点击保存；重置密码后，该用户需重新登录并修改密码。</p></div><button id="users-refresh" class="account-secondary" type="button">刷新用户</button></div>
+      <div class="account-section-heading"><div><h2 id="users-title">账号列表</h2><p>调整角色或额度后点击保存。角色变更或密码重置后，该用户需重新登录。</p></div><button id="users-refresh" class="account-secondary" type="button">刷新用户</button></div>
       <p id="users-status" class="account-message" role="status" aria-live="polite" hidden></p>
       <div class="account-table-wrap" tabindex="0" role="region" aria-label="用户列表，可横向滚动"><table class="account-users-table"><thead><tr><th scope="col">用户名</th><th scope="col">角色</th><th scope="col">启用</th><th scope="col">同时生成</th><th scope="col">排队上限</th><th scope="col">账号设置</th><th scope="col">重置密码</th></tr></thead><tbody id="users-list"></tbody></table></div>
     </section>
@@ -42,7 +43,7 @@
       <p id="tasks-status" class="account-message" role="status" aria-live="polite" hidden></p>
       <dl class="account-stats"><div><dt>已提交</dt><dd data-stat="submitted">—</dd></div><div><dt>已完成</dt><dd data-stat="succeeded">—</dd></div><div><dt>失败</dt><dd data-stat="failed">—</dd></div><div><dt>生成秒数</dt><dd data-stat="generated_seconds">—</dd></div><div><dt>存储用量</dt><dd data-stat="storage_bytes">—</dd></div></dl>
       <p id="tasks-duration-note" class="account-muted" hidden></p>
-      <div class="account-table-wrap" tabindex="0" role="region" aria-label="任务列表，可横向滚动"><table class="account-tasks-table"><thead><tr><th scope="col">任务名称</th><th scope="col">用户</th><th scope="col">状态</th><th scope="col">提交时间</th><th scope="col">时长</th><th scope="col">模型</th></tr></thead><tbody id="admin-tasks-list"></tbody></table></div>
+      <div class="account-table-wrap" tabindex="0" role="region" aria-label="任务列表，可横向滚动"><table class="account-tasks-table"><thead><tr><th scope="col">任务名称</th><th scope="col">用户</th><th scope="col">状态</th><th scope="col">提交时间</th><th scope="col">成片时长</th><th scope="col">任务耗时</th><th scope="col">模型</th></tr></thead><tbody id="admin-tasks-list"></tbody></table></div>
       <nav class="account-pagination" id="tasks-pagination" aria-label="任务分页" hidden><button type="button" class="account-secondary" id="tasks-previous">上一页</button><span id="tasks-page" aria-live="polite"></span><button type="button" class="account-secondary" id="tasks-next">下一页</button></nav>
     </section>
     <section class="account-panel" aria-labelledby="audit-title">
@@ -51,6 +52,6 @@
       <div class="account-table-wrap" tabindex="0" role="region" aria-label="审计记录，可横向滚动"><table><thead><tr><th scope="col">时间</th><th scope="col">操作人</th><th scope="col">操作</th><th scope="col">对象</th></tr></thead><tbody id="audit-list"></tbody></table></div>
     </section>
   </main>
-  <script src="/static/users.js?v=20260928-account-1"></script>
+  <script src="/static/users.js?v=20260929-task-poll-1"></script>
 </body>
 </html>

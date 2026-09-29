@@ -57,7 +57,9 @@ class Report:
         return text[:2500]
 
     def password(self):
-        value = secrets.token_urlsafe(24)
+        value = f'{secrets.randbelow(1000000):06d}'
+        while value in self.secrets:
+            value = f'{secrets.randbelow(1000000):06d}'
         self.secrets.append(value)
         return value
 
@@ -84,7 +86,10 @@ class Report:
         failures = [item for item in self.requests if item['status'] >= 400 and not item['expected']]
         unexpected_console = [item for item in self.console_errors
                               if not (item['path'] == '/login' and item['error'].startswith(
-                                  'Failed to load resource: the server responded with a status of 401'))]
+                                  'Failed to load resource: the server responded with a status of 401'))
+                              and not (item['error'].startswith('Failed to load resource: the server responded with a status of 401')
+                                       and any(request['session'] == item['session'] and request['expected']
+                                               and request['status'] == 401 for request in self.requests))]
         ok = (all(item['result'] == 'PASS' for item in self.checks)
               and not failures and not self.js_errors and not self.transport_errors
               and not unexpected_console)
@@ -103,6 +108,7 @@ class Report:
 class Session:
     def __init__(self, name, browser, stack, report):
         self.name, self.report = name, report
+        self.expected_denials = set()
         self.client = stack.enter_context(TestClient(main.app, base_url=ORIGIN,
             follow_redirects=False, raise_server_exceptions=False))
         self.context = browser.new_context(viewport={'width': 1440, 'height': 1000})
@@ -151,6 +157,10 @@ class Session:
                 content=request.post_data_buffer, headers=headers, follow_redirects=False)
             expected = (parsed.path == '/api/auth/me' and response.status_code == 401
                         and urlsplit(request.frame.url).path == '/login')
+            denial = (request.method, parsed.path, response.status_code)
+            if denial in self.expected_denials:
+                expected = True
+                self.expected_denials.remove(denial)
             self.record(request.method, parsed.path, response, expected)
             if parsed.path == '/api/auth/me' and response.status_code == 200:
                 time.sleep(0.25)  # Delay the real response to exercise accountReady.
@@ -181,25 +191,18 @@ def login(session, username, password):
     page.locator('#login-submit').click()
 
 
-def first_login(session, user, initial, changed, report):
+def first_login(session, user, password, report):
     page = session.page
     page.goto(ORIGIN+'/login')
     if user['username'] == 'alice':
         report.screenshot(page, 'multiuser-login.png')
-    login(session, user['username'], initial)
-    if user['must_change_password']:
-        page.wait_for_url(ORIGIN+'/account/password')
-        expect(page.locator('#password-fields')).to_be_enabled(timeout=TIMEOUT)
-        expect(page.locator('#password-back')).to_be_hidden()
-        page.locator('#current-password').fill(initial)
-        page.locator('#new-password').fill(changed)
-        page.locator('#confirm-password').fill(changed)
-        page.locator('#password-form [type=submit]').click()
-        page.wait_for_url(ORIGIN+'/login')
-        login(session, user['username'], changed)
+    start = len(report.requests)
+    login(session, user['username'], password)
     page.wait_for_url(ORIGIN+'/')
     account = session.get('/api/auth/me')['user']
-    assert account['id'] == user['id'] and not account['must_change_password']
+    assert account['id'] == user['id']
+    assert not any(item['session'] == session.name and item['path'] in {'/account/password', '/api/auth/password'}
+                   for item in report.requests[start:]), 'login unexpectedly entered password change'
     assert any(cookie['name'] == 'ark_session' and cookie['httpOnly']
                for cookie in session.context.cookies(ORIGIN))
 
@@ -293,26 +296,105 @@ def people(session):
     page.get_by_role('button', name='关闭人物与照片', exact=True).click()
 
 
-def admin_users(session, report, accounts):
+def admin_users(session, report, accounts, browser, stack):
     page = session.page
     page.goto(ORIGIN+'/admin/users')
     expect(page.locator('#users-workspace')).to_be_visible(timeout=TIMEOUT)
     expect(page.locator('#users-list tr')).to_have_count(3)
     expect(page.locator('.account-chrome a[href="/admin/settings"]')).to_be_visible()
     form = page.locator('#create-user-form')
-    form.locator('[name=username]').fill('charlie')
-    form.locator('[name=password]').fill(report.password())
-    form.locator('[type=submit]').click()
-    expect(page.locator('#create-user-status')).to_contain_text('账号已创建', timeout=TIMEOUT)
-    row = page.locator('#users-list tr').filter(has=page.get_by_role('cell', name='charlie', exact=True))
-    expect(row).to_have_count(1)
-    row.get_by_role('checkbox', name='启用账号 charlie', exact=True).uncheck()
-    row.get_by_role('button', name='保存', exact=True).click()
-    expect(page.locator('#users-status')).to_contain_text('已保存 charlie', timeout=TIMEOUT)
-    user = next(user for user in session.get('/api/admin/users')['items'] if user['username'] == 'charlie')
-    assert not user['enabled'] and user['must_change_password']
-    assert user['max_concurrent'] == 1 and user['max_queued'] == 10
-    assert accounts.get_user(user['id'])['enabled'] is False
+    expect(form.locator('[name=role]')).to_have_value('user')
+    credentials, users, sessions = {}, {}, {}
+    for name, role in [('charlie', 'user'), ('dana', 'admin')]:
+        password = credentials[name] = report.password()
+        assert len(password) == 6 and password.isdecimal()
+        form.locator('[name=username]').fill(name)
+        form.locator('[name=password]').fill(password)
+        form.locator('[name=role]').select_option(role)
+        with page.expect_response(lambda r: r.request.method == 'POST' and urlsplit(r.url).path == '/api/admin/users') as created:
+            form.locator('[type=submit]').click()
+        assert created.value.status == 201
+        expect(page.locator('#create-user-status')).to_contain_text('账号已创建', timeout=TIMEOUT)
+        users[name] = next(user for user in session.get('/api/admin/users')['items'] if user['username'] == name)
+        assert users[name]['role'] == role
+        assert users[name]['max_concurrent'] == 1 and users[name]['max_queued'] == 10
+        sessions[name] = Session(name, browser, stack, report)
+        first_login(sessions[name], users[name], password, report)
+        initial_draft(sessions[name])
+        if role == 'user':
+            account_chrome(sessions[name])
+            sessions[name].get('/api/admin/users', 403)
+        else:
+            expect(sessions[name].page.locator('.account-chrome a[href="/admin/users"]')).to_be_visible()
+            sessions[name].get('/api/admin/users')
+        # This page has no task polling, so session revocation is observed explicitly.
+        sessions[name].page.goto(ORIGIN+'/account/password')
+        expect(sessions[name].page.locator('#password-back')).to_be_visible()
+        expect(sessions[name].page.locator('#password-fields')).to_be_enabled()
+
+    def row_for(name, target=page):
+        return target.locator('#users-list tr').filter(has=target.get_by_role('cell', name=name, exact=True))
+
+    def revoked(target):
+        target.expected_denials.add(('GET', '/api/auth/me', 401))
+        target.page.evaluate("() => { fetch('/api/auth/me').catch(() => {}); }")
+        target.page.wait_for_url(ORIGIN+'/login')
+        expect(target.page.locator('#login-form')).to_be_visible()
+
+    # Promote an existing ordinary user and revoke their old session.
+    row = row_for('charlie')
+    row.get_by_role('combobox', name='charlie的角色').select_option('admin')
+    with page.expect_response(lambda r: r.request.method == 'PATCH') as changed:
+        row.get_by_role('button', name='保存', exact=True).click()
+    assert changed.value.status == 200
+    assert accounts.get_user(users['charlie']['id'])['role'] == 'admin'
+    revoked(sessions['charlie'])
+    first_login(sessions['charlie'], users['charlie'], credentials['charlie'], report)
+    sessions['charlie'].get('/api/admin/users')
+
+    # A current administrator changing their own role exits the stale admin UI.
+    dana = sessions['dana']
+    dana.page.goto(ORIGIN+'/admin/users')
+    row_for('dana', dana.page).get_by_role('combobox', name='dana的角色').select_option('user')
+    row_for('dana', dana.page).get_by_role('button', name='保存', exact=True).click()
+    dana.page.wait_for_url(ORIGIN+'/login')
+    first_login(dana, users['dana'], credentials['dana'], report)
+    account_chrome(dana)
+    dana.get('/api/admin/users', 403)
+
+    # A six-digit reset is usable immediately, with no forced password page.
+    charlie = sessions['charlie']
+    charlie.page.goto(ORIGIN+'/account/password')
+    expect(charlie.page.locator('#password-fields')).to_be_enabled()
+    reset = report.password()
+    row_for('charlie').locator('input[type=password]').fill(reset)
+    with page.expect_response(lambda r: r.request.method == 'POST' and r.url.endswith('/reset-password')) as response:
+        row_for('charlie').get_by_role('button', name='重置', exact=True).click()
+    assert response.value.status == 200
+    revoked(charlie)
+    first_login(charlie, users['charlie'], reset, report)
+
+    # Voluntary password change keeps a working return link and accepts six digits.
+    charlie.page.goto(ORIGIN+'/account/password')
+    charlie.page.locator('#password-back').click()
+    charlie.page.wait_for_url(ORIGIN+'/')
+    charlie.page.goto(ORIGIN+'/account/password')
+    new_password = report.password()
+    charlie.page.locator('#current-password').fill(reset)
+    charlie.page.locator('#new-password').fill(new_password)
+    charlie.page.locator('#confirm-password').fill(new_password)
+    charlie.page.locator('#password-form [type=submit]').click()
+    charlie.page.wait_for_url(ORIGIN+'/login')
+    first_login(charlie, users['charlie'], new_password, report)
+    charlie.page.goto(ORIGIN+'/account/password')
+    expect(charlie.page.locator('#password-fields')).to_be_enabled()
+
+    # Keep the previous enable/disable regression alongside role editing.
+    row_for('charlie').get_by_role('checkbox', name='启用账号 charlie', exact=True).uncheck()
+    with page.expect_response(lambda r: r.request.method == 'PATCH') as disabled:
+        row_for('charlie').get_by_role('button', name='保存', exact=True).click()
+    assert disabled.value.status == 200
+    assert accounts.get_user(users['charlie']['id'])['enabled'] is False
     page.reload()
     expect(page.get_by_role('checkbox', name='启用账号 charlie', exact=True)).not_to_be_checked()
     report.screenshot(page, 'multiuser-users.png')
@@ -336,11 +418,9 @@ def check():
             stack.enter_context(patch.object(production_worker, 'wake', lambda *_: None))
             accounts = Accounts(cfg.storage_dir)
             initial = {name: report.password() for name in ('admin', 'alice', 'bob')}
-            changed = {name: report.password() for name in initial}
             users = {'admin': accounts.init_admin('admin', initial['admin'])}
             for name in ('alice', 'bob'):
                 users[name] = accounts.create_user(name, initial[name], users['admin']['id'])
-                assert users[name]['must_change_password'] is True
             playwright = stack.enter_context(sync_playwright())
             browser = playwright.chromium.launch(channel='msedge', headless=True)
             stack.callback(browser.close)
@@ -349,8 +429,8 @@ def check():
             # Admin logs in later: the root store must first be empty of user drafts.
             for name in ('alice', 'bob'):
                 session = sessions[name]
-                ready[name] = report.case(name+' real login / forced password change / relogin',
-                    lambda s=session, n=name: first_login(s, users[n], initial[n], changed[n], report))
+                ready[name] = report.case(name+' six-digit numeric password / direct workspace login',
+                    lambda s=session, n=name: first_login(s, users[n], initial[n], report))
                 if ready[name]:
                     saved[name] = report.case(name+' accountReady and initial own draft',
                                              lambda s=session: initial_draft(s))
@@ -368,9 +448,9 @@ def check():
                 report.case('personal library without global sync or connection controls',
                             lambda: people(sessions['alice']))
             if report.case('admin real UI login', lambda: first_login(sessions['admin'], users['admin'],
-                           initial['admin'], changed['admin'], report)):
-                report.case('admin UI creates and disables account',
-                            lambda: admin_users(sessions['admin'], report, accounts))
+                           initial['admin'], report)):
+                report.case('six-digit create/reset/change, role permissions and revoked sessions',
+                            lambda: admin_users(sessions['admin'], report, accounts, browser, stack))
             report.case('no generation submitted', lambda: no_generation(report))
     except Exception as exc:
         report.checks.append({'check': 'harness setup / teardown', 'result': 'FAIL',

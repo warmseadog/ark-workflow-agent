@@ -77,10 +77,6 @@ def install(app, settings_getter):
             return RedirectResponse('/login',status_code=303,headers={'Cache-Control':'no-store'})
         user = session['user']
         request.state.user, request.state.session = user, session
-        if user['must_change_password'] and path not in {'/account/password','/api/auth/me','/api/auth/password','/api/auth/logout'}:
-            if path.startswith('/api/'):
-                return error(403,'password_change_required')
-            return RedirectResponse('/account/password',status_code=303)
         if user['role'] != 'admin' and not ordinary_allowed(path,method):
             return error(403,'此操作仅管理员可用。')
         if not user.get('legacy_owner') and (path.startswith(('/api/jobs','/api/discovery','/api/workflow')) or '/legacy-' in path):

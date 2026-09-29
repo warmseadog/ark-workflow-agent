@@ -875,10 +875,6 @@
       const selected = drafts.get(requested) || data.items?.[0];
       const item = selected ? await api('/drafts/'+encodeURIComponent(selected.id)) : await api('/drafts','POST',{person_input_policy:'auto_virtual'});
       await restoreDraft(item); sessionReady=true;
-      if (/^未命名视频(?: 副本)*$/.test(draft.name)) {
-        const stamp=new Date().toLocaleString('sv-SE',{timeZone:'Asia/Shanghai'}).replace(/\D/g,'').slice(4);
-        draftName='视频-'+stamp.slice(0,4)+'-'+stamp.slice(4);syncTaskName();changed();
-      }
       if ((item.person_id || null) !== (window.portraitPeople?.selected || null) || item.prompt !== generationForm.elements.namedItem('prompt').value) changed();
       if (pendingSubmission) status.textContent='上次提交结果尚未确认，点击确认可安全恢复。';
     } catch (error) { showSave('恢复失败：'+error.message,true); }

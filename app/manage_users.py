@@ -10,7 +10,7 @@ def main():
     parser.add_argument('command',choices=['init-admin'])
     parser.add_argument('--username',default='admin')
     args=parser.parse_args()
-    password=getpass('初始密码（至少8位，首次登录强制修改）：')
+    password=getpass('初始密码（6–1024位，允许纯数字）：')
     if password != getpass('再次输入：'):
         parser.error('两次密码不一致。')
     try:

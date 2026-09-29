@@ -75,6 +75,9 @@ def studio(browser):
             if path == '/api/auth/me' and state['hold_me']:
                 state['held'].append(route)
                 return
+            if path == '/api/admin/tasks' and state.get('hold_tasks'):
+                state.setdefault('held_tasks', []).append(route)
+                return
             default = state['account'] if path == '/api/auth/me' else {'items': [], 'stats': {}}
             status, data = state['replies'].get((request.method, path), (200, default))
             response_headers = {'Access-Control-Allow-Origin': '*', **state['headers'].get(path, {})}
@@ -142,7 +145,7 @@ def test_cross_origin_and_non_api_requests_do_not_receive_csrf(studio):
     assert page.url == 'http://studio.test/'
 
 
-@pytest.mark.parametrize('status,data,path', [(401, {}, '/login'), (403, {'detail': {'code': 'password_change_required'}}, '/account/password')])
+@pytest.mark.parametrize('status,data,path', [(401, {}, '/login')])
 def test_auth_failures_redirect_and_reject_response(studio, status, data, path):
     page, state, context = studio
     open_page(page)
@@ -194,7 +197,7 @@ def test_other_account_logout_event_does_not_redirect(studio):
     assert page.evaluate('window.currentAccount.id') == 'alice-id'
 
 
-def test_login_error_then_force_password_change(studio):
+def test_login_error_then_direct_workspace_even_with_legacy_password_flag(studio):
     page, state, _ = studio
     state['account']['user'] = None
     state['replies'][('GET', '/api/auth/me')] = (401, {})
@@ -209,16 +212,14 @@ def test_login_error_then_force_password_change(studio):
     state['account']['user'] = {**ACCOUNT['user'], 'must_change_password': True}
     state['replies'].pop(('GET', '/api/auth/me'))
     state['replies'][('POST', '/api/auth/login')] = (200, {'user': state['account']['user'], 'csrf_token': 'new-token'})
-    page.locator('#login-password').fill('correct-password')
+    page.locator('#login-password').fill('123456')
     page.locator('#login-submit').click()
-    page.wait_for_url('**/account/password')
-    page.wait_for_function("!document.getElementById('password-fields').disabled")
-    assert not page.locator('#password-back').is_visible()
-    assert '首次登录' in page.locator('#password-intro').inner_text()
+    page.wait_for_url('http://studio.test/', timeout=5000)
+    assert page.evaluate('window.currentAccount.id') == 'alice-id'
     stored = page.evaluate('({...localStorage})')
     assert set(stored) == {'ark-account-identity'}
     assert json.loads(stored['ark-account-identity'])['user_id'] == 'alice-id'
-    assert 'correct-password' not in str(stored) and 'new-token' not in str(stored)
+    assert '123456' not in str(stored) and 'new-token' not in str(stored)
 
 
 def test_response_account_mismatch_rejects_payload_and_reloads_identity(studio):
@@ -285,17 +286,18 @@ def test_password_confirmation_and_reauthentication(studio):
     state['replies'][('POST', '/api/auth/password')] = (200, {'needs_login': True})
     open_page(page, '/account/password')
     page.locator('#current-password').fill('old-password')
-    page.locator('#new-password').fill('new-password')
+    page.locator('#new-password').fill('654321')
+    assert page.locator('#new-password').evaluate('(node) => node.checkValidity()')
     page.locator('#confirm-password').fill('different-password')
     page.locator('#password-form button').click()
     assert '不一致' in page.locator('#password-error').inner_text()
     assert not any(call['path'] == '/api/auth/password' for call in state['calls'])
     state['account']['user'] = None
-    page.locator('#confirm-password').fill('new-password')
+    page.locator('#confirm-password').fill('654321')
     page.locator('#password-form button').click()
     page.wait_for_url('**/login')
     call = next(call for call in state['calls'] if call['path'] == '/api/auth/password')
-    assert json.loads(call['body']) == {'current_password': 'old-password', 'new_password': 'new-password'}
+    assert json.loads(call['body']) == {'current_password': 'old-password', 'new_password': '654321'}
     assert call['headers']['x-csrf-token'] == 'test-csrf'
 
 
@@ -316,24 +318,27 @@ def test_admin_users_mutations_filters_stats_and_safe_rendering(studio):
     assert 'must-not-render' not in page.locator('body').inner_text()
     assert page.locator('[data-stat=storage_bytes]').inner_text() == '2 KB'
     page.locator('#create-username').fill('new-user')
-    page.locator('#create-password').fill('initial-password')
+    page.locator('#create-password').fill('123456')
+    assert page.locator('#create-password').evaluate('(node) => node.checkValidity()')
     page.locator('#create-user-form button').click()
     page.wait_for_function("document.getElementById('create-user-status').dataset.state === 'success'")
     create = next(call for call in state['calls'] if call['path'] == '/api/admin/users' and call['method'] == 'POST')
-    assert json.loads(create['body']) == {'username': 'new-user', 'password': 'initial-password', 'max_concurrent': 1, 'max_queued': 10}
+    assert json.loads(create['body']) == {'username': 'new-user', 'password': '123456', 'role': 'user', 'max_concurrent': 1, 'max_queued': 10}
     assert page.locator('#create-password').input_value() == ''
     page.locator('#users-list input[type=checkbox]').uncheck()
+    page.locator('#users-list select').select_option('admin')
     page.locator('#users-list .quota-input').first.fill('3')
     page.locator('#users-list button').first.click()
     page.wait_for_function("document.getElementById('users-status').dataset.state === 'success'")
     patch = next(call for call in state['calls'] if call['method'] == 'PATCH')
     assert patch['path'] == '/api/admin/users/internal-id'
-    assert json.loads(patch['body']) == {'enabled': False, 'max_concurrent': 3, 'max_queued': 5}
-    page.locator('#users-list input[type=password]').fill('reset-password')
+    assert json.loads(patch['body']) == {'enabled': False, 'role': 'admin', 'max_concurrent': 3, 'max_queued': 5}
+    page.locator('#users-list input[type=password]').fill('654321')
+    assert page.locator('#users-list input[type=password]').evaluate('(node) => node.checkValidity()')
     page.locator('#users-list .row-actions button').click()
     page.wait_for_function("document.querySelector('#users-list input[type=password]').value === ''")
     reset = next(call for call in state['calls'] if call['path'].endswith('/reset-password'))
-    assert json.loads(reset['body']) == {'password': 'reset-password'}
+    assert json.loads(reset['body']) == {'password': '654321'}
     page.locator('#task-user').select_option('internal-id')
     page.locator('#task-status').select_option('failed')
     page.locator('#task-filter button').click()
@@ -348,6 +353,65 @@ def test_normal_user_does_not_fetch_admin_data(studio):
     assert not page.locator('#users-workspace').is_visible()
     assert page.locator('#users-access-error').is_visible()
     assert not any(call['path'].startswith('/api/admin/') for call in state['calls'])
+
+
+def test_voluntary_password_page_always_allows_return_and_six_digits(studio):
+    page, state, _ = studio
+    state['account']['user']['must_change_password'] = True
+    open_page(page, '/account/password')
+    assert page.locator('#password-back').is_visible()
+    assert '首次登录' not in page.locator('#password-intro').inner_text()
+    page.locator('#new-password').fill('12345')
+    assert not page.locator('#new-password').evaluate('(node) => node.checkValidity()')
+    page.locator('#new-password').fill('123456')
+    assert page.locator('#new-password').evaluate('(node) => node.checkValidity()')
+    page.locator('#password-back').click()
+    page.wait_for_url('http://studio.test/', timeout=5000)
+
+
+@pytest.mark.parametrize('role', ['user', 'admin'])
+def test_create_role_choice_and_numeric_password(studio, role):
+    page, state, _ = studio
+    state['account']['user']['role'] = 'admin'
+    open_page(page, '/admin/users')
+    assert page.locator('#create-role').count() == 1
+    assert page.locator('#create-role').input_value() == 'user'
+    page.locator('#create-role').select_option(role)
+    page.locator('#create-username').fill('six-digit-user')
+    page.locator('#create-password').fill('12345')
+    assert not page.locator('#create-password').evaluate('(node) => node.checkValidity()')
+    page.locator('#create-password').fill('123456')
+    assert page.locator('#create-password').evaluate('(node) => node.checkValidity()')
+    page.locator('#create-user-form button').click()
+    page.wait_for_function("document.getElementById('create-user-status').dataset.state === 'success'")
+    call = next(call for call in state['calls'] if call['path'] == '/api/admin/users' and call['method'] == 'POST')
+    assert json.loads(call['body'])['role'] == role
+    assert json.loads(call['body'])['password'] == '123456'
+    assert page.locator('#create-role').input_value() == 'user'
+
+
+@pytest.mark.parametrize('status', [200, 401])
+def test_role_change_revoked_session_exits_admin_ui(studio, status):
+    page, state, _ = studio
+    state['account']['user']['role'] = 'admin'
+    state['replies'][('GET', '/api/admin/users')] = (200, {'items': [dict(state['account']['user'])]})
+    open_page(page, '/admin/users')
+    assert page.locator('#users-list select').count() == 1
+    page.locator('#users-list select').select_option('user')
+    state['account']['user'] = None
+    state['replies'][('PATCH', '/api/admin/users/alice-id')] = (status, {'detail': '请先登录。'} if status == 401 else {'user': {**ACCOUNT['user'], 'role': 'user'}})
+    page.locator('#users-list button').first.click()
+    page.wait_for_url('**/login', timeout=5000)
+    assert page.locator('#login-form').is_visible()
+
+
+def test_legacy_forced_password_403_does_not_navigate(studio):
+    page, state, _ = studio
+    open_page(page)
+    state['replies'][('POST', '/api/example')] = (403, {'detail': 'password_change_required'})
+    result = page.evaluate("fetch('/api/example', {method:'POST'}).then(async r => ({status:r.status, data:await r.json()}))")
+    assert result == {'status': 403, 'data': {'detail': 'password_change_required'}}
+    assert page.url == 'http://studio.test/'
 
 
 def test_admin_pagination_and_backend_audit_timestamps(studio):
@@ -372,6 +436,138 @@ def test_admin_pagination_and_backend_audit_timestamps(studio):
     assert query['page'] == ['2'] and 'status' not in query
 
 
+def task_poll_reply(status='running', seconds=10, name='轮询任务'):
+    return {'items': [{'name': name, 'status': status, 'timing': {
+        'available': True, 'is_live': status in ('queued', 'running'),
+        'total_seconds': seconds, 'queue_seconds': 5, 'execution_seconds': seconds - 5,
+    }}], 'stats': {}, 'total': 120, 'page_size': 50}
+
+
+def task_calls(state):
+    return [call for call in state['calls'] if call['path'] == '/api/admin/tasks']
+
+
+def open_polling_admin(page, state, status='running'):
+    page.clock.install()
+    state['account']['user']['role'] = 'admin'
+    state['replies'][('GET', '/api/admin/users')] = (200, {'items': [
+        {'id': 'other-id', 'username': '另一个用户', 'enabled': True, 'max_concurrent': 2},
+    ]})
+    state['replies'][('GET', '/api/admin/tasks')] = (200, task_poll_reply(status))
+    open_page(page, '/admin/users')
+    page.wait_for_function("document.querySelector('#admin-tasks-list').textContent.includes('已耗时 10秒')")
+
+
+@pytest.mark.parametrize('status', ['queued', 'running'])
+def test_tasks_poll_server_timing_preserving_filter_page_and_user_edits(studio, status):
+    page, state, _ = studio
+    open_polling_admin(page, state, status)
+    page.locator('#task-user').select_option('other-id')
+    page.locator('#task-status').select_option(status)
+    page.locator('#task-filter button').click()
+    page.wait_for_function("!document.querySelector('#task-filter button').disabled")
+    page.locator('#tasks-next').click()
+    page.wait_for_function("document.querySelector('#tasks-page').textContent.includes('第 2 /')")
+    page.locator('#task-status').select_option('failed')  # Not applied.
+    page.locator('#users-list .quota-input').first.fill('7')  # Not saved.
+    before = len(task_calls(state))
+    state['replies'][('GET', '/api/admin/tasks')] = (200, task_poll_reply(status, 65))
+    page.clock.fast_forward(10000)
+    page.wait_for_function("document.querySelector('#admin-tasks-list').textContent.includes('已耗时 1分5秒')", timeout=2000)
+    assert len(task_calls(state)) == before + 1
+    assert parse_qs(urlparse(task_calls(state)[-1]['url']).query) == {
+        'user_id': ['other-id'], 'status': [status], 'page': ['2'], 'page_size': ['50'],
+    }
+    assert page.locator('#users-list .quota-input').first.input_value() == '7'
+    assert sum(call['path'] == '/api/admin/users' for call in state['calls']) == 1
+    state['replies'][('GET', '/api/admin/tasks')] = (200, task_poll_reply('succeeded', 70))
+    page.clock.fast_forward(10000)
+    page.wait_for_function("document.querySelector('#admin-tasks-list').textContent.includes('已完成')")
+    final_count = len(task_calls(state))
+    page.clock.fast_forward(30000)
+    assert len(task_calls(state)) == final_count
+    assert page.locator('#admin-tasks-list td').nth(5).inner_text() == '1分10秒'
+
+
+def set_page_hidden(page, hidden):
+    # Headless tab activation does not reliably change visibility; dispatch the
+    # browser lifecycle event with its matching DOM visibility property.
+    page.evaluate("""hidden => {
+        Object.defineProperty(document, 'hidden', {configurable:true, get:() => hidden});
+        document.dispatchEvent(new Event('visibilitychange'));
+    }""", hidden)
+
+
+def test_task_poll_pauses_hidden_and_refreshes_on_return_even_after_terminal(studio):
+    page, state, _ = studio
+    open_polling_admin(page, state)
+    set_page_hidden(page, True)
+    before = len(task_calls(state))
+    page.clock.fast_forward(30000)
+    assert len(task_calls(state)) == before
+    state['replies'][('GET', '/api/admin/tasks')] = (200, task_poll_reply('succeeded', 80))
+    set_page_hidden(page, False)
+    page.wait_for_function("document.querySelector('#admin-tasks-list').textContent.includes('1分20秒')", timeout=2000)
+    assert len(task_calls(state)) == before + 1
+    set_page_hidden(page, True)
+    set_page_hidden(page, False)
+    page.wait_for_function("!document.querySelector('#task-filter button').disabled")
+    assert len(task_calls(state)) == before + 2
+
+
+def test_slow_poll_cannot_overwrite_new_filter_or_restart_terminal_poll(studio):
+    page, state, _ = studio
+    open_polling_admin(page, state)
+    state['hold_tasks'] = True
+    page.clock.fast_forward(10000)
+    page.wait_for_timeout(100)  # Pump the intercepted asynchronous request.
+    assert len(state.get('held_tasks', [])) == 1
+    # The background refresh must leave filtering available while in flight.
+    assert page.locator('#task-filter button').is_enabled()
+    page.clock.fast_forward(30000)
+    assert len(state['held_tasks']) == 1  # No overlapping automatic requests.
+    state['hold_tasks'] = False
+    state['replies'][('GET', '/api/admin/tasks')] = (200, task_poll_reply('failed', 75, '新筛选结果'))
+    page.locator('#task-status').select_option('failed')
+    page.locator('#task-filter button').click()
+    page.wait_for_function("document.querySelector('#admin-tasks-list').textContent.includes('新筛选结果')")
+    state['held_tasks'][0].fulfill(status=200, content_type='application/json', body=json.dumps(task_poll_reply('running', 999, '旧响应')))
+    page.wait_for_timeout(100)
+    assert '旧响应' not in page.locator('#admin-tasks-list').inner_text()
+    before = len(task_calls(state))
+    page.clock.fast_forward(30000)
+    assert len(task_calls(state)) == before
+
+
+def test_task_poll_stops_on_session_rejection_even_if_navigation_is_blocked(studio):
+    page, state, context = studio
+    open_polling_admin(page, state)
+    # Keep the old document alive to detect a retry loop after account.js rejects.
+    context.route('**/login', lambda route: route.fulfill(status=204))
+    page.evaluate("""() => {
+        const originalFetch = window.fetch;
+        window.taskFetchAttempts = 0;
+        window.fetch = (...args) => {
+            if (String(args[0]).startsWith('/api/admin/tasks')) window.taskFetchAttempts++;
+            return originalFetch(...args);
+        };
+    }""")
+    state['replies'][('GET', '/api/admin/tasks')] = (401, {'detail': 'session expired'})
+    before = len(task_calls(state))
+    page.clock.fast_forward(10000)
+    page.wait_for_function("!document.querySelector('#tasks-status').hidden", timeout=2000)
+    assert len(task_calls(state)) == before + 1
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.clock.fast_forward(30000)
+    set_page_hidden(page, True)
+    set_page_hidden(page, False)
+    page.clock.fast_forward(30000)
+    assert len(task_calls(state)) == before + 1
+    assert not errors
+    assert page.evaluate('window.taskFetchAttempts') == 1
+
+
 def test_admin_failure_does_not_leave_stale_task_statistics(studio):
     page, state, _ = studio
     state['account']['user']['role'] = 'admin'
@@ -383,6 +579,31 @@ def test_admin_failure_does_not_leave_stale_task_statistics(studio):
     page.wait_for_function("!document.getElementById('tasks-status').hidden")
     assert page.locator('[data-stat=submitted]').inner_text() == '—'
     assert '任务读取失败' in page.locator('#tasks-status').inner_text()
+
+
+@pytest.mark.parametrize('timing,elapsed,detail', [
+    (None, '—', ''),
+    ({'available': False, 'total_seconds': 999}, '—', ''),
+    ({'available': True, 'total_seconds': None}, '—', ''),
+    ({'available': True, 'total_seconds': 0, 'queue_seconds': 0, 'execution_seconds': 0}, '0秒', '排队 0秒'),
+    ({'available': True, 'is_live': True, 'total_seconds': 65, 'queue_seconds': 5, 'execution_seconds': 60}, '已耗时 1分5秒', '执行 1分0秒'),
+    ({'available': True, 'total_seconds': 3725, 'queue_seconds': None, 'execution_seconds': 3600, 'paused_seconds': 125}, '1小时2分5秒', '暂停 2分5秒'),
+])
+def test_task_elapsed_time_is_distinct_from_video_duration(studio, timing, elapsed, detail):
+    page, state, _ = studio
+    state['account']['user']['role'] = 'admin'
+    state['replies'][('GET', '/api/admin/tasks')] = (200, {'items': [{'name': '任务', 'duration': 8, 'status': 'running', 'timing': timing}], 'stats': {}})
+    open_page(page, '/admin/users')
+    page.wait_for_function("document.querySelector('#admin-tasks-list tr')?.textContent.includes('任务')")
+    assert page.get_by_role('columnheader', name='成片时长', exact=True).count() == 1
+    assert page.get_by_role('columnheader', name='任务耗时', exact=True).count() == 1
+    cells = page.locator('#admin-tasks-list tr').first.locator('td')
+    assert cells.nth(4).inner_text() == '8 秒'
+    assert cells.nth(5).inner_text() == elapsed
+    if detail:
+        assert detail in cells.nth(5).locator('[title]').get_attribute('title')
+    if timing and timing.get('available') and timing.get('total_seconds') == 3725:
+        assert '排队 —' in cells.nth(5).locator('[title]').get_attribute('title')
 
 
 @pytest.mark.parametrize('width,height', [(1440, 34), (390, 40)])

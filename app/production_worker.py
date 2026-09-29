@@ -303,6 +303,18 @@ class QueueManager:
                     settings, store, run = job
                     try:
                         execute_run(settings, store, run)
+                    except Exception:
+                        # Even failures before execute_run's provider handler must
+                        # close the observed running interval. Never resubmit an
+                        # ambiguous or already accepted provider task automatically.
+                        current = store.get_run(run['id'], private=True)
+                        if current['status'] == 'running':
+                            uncertain = current['stage'] == 'submitting' and not current.get('provider_task_id')
+                            remote = bool(current.get('provider_task_id') or current.get('result_url'))
+                            kind = ('submission_uncertain' if uncertain else
+                                    'query_unavailable' if remote else 'processing_failed')
+                            store.update_run(run['id'], status='needs_attention' if uncertain or remote else 'failed',
+                                             error_kind=kind, message='任务处理已中断，请查看任务详情后重试或继续查询。')
                     finally:
                         self.release(settings)
                     continue
