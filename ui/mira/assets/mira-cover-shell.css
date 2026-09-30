@@ -1,0 +1,123 @@
+/* Original mira cover chrome; reference: user-supplied JYP screenshots.
+   No reference-brand logos, social accounts or legal copy are reproduced. */
+.mira-cover-page .topbar{padding:26px 40px;align-items:center}
+.cover-brand{display:flex;align-items:center;gap:12px;min-height:44px}
+.cover-brand .brand-crop{width:92px;height:37px;overflow:hidden;position:relative;display:block}
+.cover-brand img{width:128px;max-width:none;position:absolute;left:-18px;top:-2px;filter:brightness(0) invert(1)}
+.cover-brand .brand-descriptor{font-size:9px;line-height:1.6;letter-spacing:.08em;max-width:80px;text-shadow:0 1px 8px #0005}
+.mira-cover-page .top-right{gap:18px}
+.mira-cover-page .login{padding:10px 17px;min-height:44px}
+.language-control{position:relative}
+.language-trigger,.menu-trigger{min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;gap:7px;font-size:12px}
+.language-trigger svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5}
+.menu-trigger svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:1.6}
+.language-list{position:absolute;right:0;top:50px;width:144px;padding:6px;border-radius:14px;background:#fffc;backdrop-filter:blur(18px);box-shadow:0 8px 32px #180c2530;color:#45334f;z-index:10}
+.language-list button{width:100%;text-align:left;padding:12px;border-radius:9px;display:flex;justify-content:space-between;font-size:13px;min-height:44px}
+.language-list button[aria-pressed=true]{background:#e9dff0;font-weight:500}.language-list button:hover{background:#f1eaf7}
+.language-list button[aria-pressed=true]::after{content:'✓'}
+.mira-cover-page .shade{background:linear-gradient(180deg,#14111a55,transparent 26%,transparent 64%,#14111a80)}
+.mira-cover-page .bottom{inset:auto 40px 75px;display:block;text-align:center;pointer-events:none}
+.mira-cover-page .caption{max-width:100%}.mira-cover-page .caption p{font-size:9px;letter-spacing:.14em;opacity:.85}
+.mira-cover-page .caption h1{margin-top:6px;font-size:22px;font-weight:500;letter-spacing:-.015em}
+.mira-cover-page .controls{position:absolute;right:0;bottom:0;pointer-events:auto;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.mira-cover-page .preview-note{max-width:190px;font-size:10px}
+.cover-footer{position:absolute;left:40px;right:40px;bottom:14px;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:24px;font-size:10px;text-shadow:0 1px 8px #0006}
+.cover-notice{display:flex;align-items:center;gap:14px;text-align:left;min-height:44px;padding:0;min-width:0}
+.notice-label{font-size:10px;font-weight:600;letter-spacing:.07em;flex-shrink:0}.notice-copy{opacity:.9;line-height:1.6}
+.footer-links{display:flex;align-items:center;justify-content:flex-end;gap:20px;flex-shrink:0}
+.footer-links button{padding:0;min-height:44px;font-size:10px;white-space:nowrap}.footer-links button:hover{text-decoration:underline;text-underline-offset:4px}
+.copyright{font-size:10px;white-space:nowrap;opacity:.8}
+#site-menu{position:fixed;inset:0;margin:0;width:100%;max-width:none;height:100svh;max-height:none;border:0;border-radius:0;padding:0;color:#f8f5fb;background:radial-gradient(ellipse at 85% 5%,#30243855,transparent 50%),#141217;overflow:auto;box-shadow:none}
+#site-menu::backdrop{background:#110b19a8;backdrop-filter:blur(6px)}
+.menu-top{display:flex;justify-content:space-between;align-items:center;padding:26px 40px}.menu-top .cover-brand img{width:128px;margin:0;filter:brightness(0) invert(1)}
+.menu-tools{display:flex;align-items:center;gap:8px}.menu-tools>button{font-size:12px;min-width:34px;min-height:44px;color:#c5b9ce}.menu-tools>button[aria-pressed=true]{color:#fff}.menu-tools>span{opacity:.35;font-size:11px}.menu-tools .menu-close{margin-left:16px;display:grid;place-items:center;min-width:44px}.menu-close svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.5}
+.menu-body{width:min(1120px,calc(100% - 100px));margin:clamp(65px,14vh,160px) auto 40px}
+.menu-columns{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:48px}
+.menu-group h3{font-size:23px;font-weight:550;letter-spacing:-.02em;margin:0 0 22px;display:flex;align-items:center;gap:22px;white-space:nowrap}.menu-group h3::after{content:'';height:1px;background:#81718d65;flex:1}.menu-group:last-child h3::after{display:none}
+.menu-group button{display:block;min-height:38px;padding:5px 0;text-align:left;font-size:14px;line-height:1.5;color:#bfb4c7}.menu-group button:hover{color:#e8cfff}.menu-group button:focus-visible{outline-color:#bf9ed3}
+.menu-bottom{display:flex;align-items:center;gap:28px;margin-top:clamp(70px,18vh,190px)}.menu-bottom>span{flex:1;height:1px;background:#81718d65}.menu-bottom button{font-size:22px;line-height:1.3;font-weight:500;min-height:48px;letter-spacing:-.02em}.menu-bottom button:hover{color:#d4b5e5}
+.menu-nav{display:flex;flex-direction:column;align-items:stretch;gap:8px}.menu-nav button{display:flex;justify-content:space-between;align-items:center;text-align:left;min-height:64px;padding:12px 0;font-size:25px;font-weight:400;letter-spacing:-.025em;color:#392b43}
+.menu-nav button:hover{color:#836295}.menu-nav svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.4}
+.menu-language{display:flex;gap:12px;margin-top:48px}.menu-language button{padding:12px 16px;border-radius:12px;background:#f0e9f6;color:#71547f;font-size:13px}
+.menu-language button[aria-pressed=true]{background:#dfd0e9;color:#493353}
+#site-menu .menu-note{font-size:11px;margin-top:28px;line-height:1.8;color:#9b8ba7}
+#info-dialog{padding:30px;width:min(460px,calc(100% - 32px));max-width:460px}.info-copy{white-space:pre-line;line-height:1.9!important;margin:24px 0}
+#info-dialog .mira-action{width:100%;min-height:44px}
+.mira-cursor{position:fixed;left:0;top:0;z-index:20;pointer-events:none;display:none;width:40px;height:30px;mix-blend-mode:difference;will-change:transform}
+.mira-cursor::before{content:'';position:absolute;left:-2px;top:-2px;width:3px;height:3px;background:white;border-radius:50%}
+.mira-cursor-mark{display:block;width:35px;height:23px;background:url('brand/mira-wordmark-transparent-v1.png') -15px -13px/110px auto no-repeat;filter:brightness(0) invert(1);transform-origin:left top}
+@media(hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference){
+ .mira-cover-page.cursor-active #next,.mira-cover-page.cursor-active #next *{cursor:none!important}
+ .mira-cover-page.cursor-active .mira-cursor{display:block}
+ #site-menu[open]{animation:menu-appear .25s cubic-bezier(.22,1,.36,1)}
+ @keyframes menu-appear{from{transform:translateY(-10px);opacity:.6}to{transform:translateY(0);opacity:1}}
+}
+.mira-cover-page:not(.has-media) .cover-brand img{filter:none}.mira-cover-page:not(.has-media) .cover-footer{text-shadow:none}
+@media(max-width:1100px){.cover-footer{gap:16px}.footer-links{gap:12px}.notice-copy{max-width:240px}.mira-cover-page .controls{bottom:6px}.mira-cover-page .caption h1{font-size:20px}}
+@media(max-width:700px){
+ .mira-cover-page .topbar{padding:18px 20px}.cover-brand{gap:0}.cover-brand .brand-crop{width:80px}.cover-brand img{width:112px;left:-16px;top:0}.brand-descriptor{display:none}
+ .mira-cover-page .top-right{gap:8px}.mira-cover-page .login{padding:9px 13px;font-size:12px}.language-trigger{min-width:38px}.menu-trigger{min-width:38px}.menu-trigger svg{width:23px}
+ .mira-cover-page .bottom{left:22px;right:22px;bottom:145px;text-align:left;display:block}.mira-cover-page .caption{max-width:62%}.mira-cover-page .caption h1{font-size:18px;line-height:1.4}.mira-cover-page .caption p{font-size:8px}
+ .mira-cover-page .controls{bottom:0;max-width:33%}.mira-cover-page .preview-note{font-size:9px;max-width:112px}
+ .mira-cover-page .signature{top:56%;width:190px}
+ .cover-footer{left:22px;right:22px;bottom:max(10px,env(safe-area-inset-bottom));display:block;font-size:9px}
+ .cover-notice{gap:10px;min-height:42px}.notice-label{font-size:9px}.notice-copy{font-size:10px;max-width:none}
+ .footer-links{justify-content:flex-start;gap:15px;flex-wrap:wrap;row-gap:0}.footer-links button{font-size:10px;min-height:38px}.copyright{font-size:9px;flex-basis:100%;line-height:1.5}
+ #site-menu{padding:0;border-radius:0}.menu-top{padding:18px 20px}.menu-top .cover-brand img{width:112px}.menu-body{width:calc(100% - 44px);margin:42px auto 30px}.menu-columns{grid-template-columns:1fr 1fr;gap:30px 24px}.menu-group h3{font-size:19px;margin-bottom:12px;gap:12px}.menu-group button{font-size:13px;min-height:40px}.menu-bottom{margin-top:44px;gap:14px}.menu-bottom button{font-size:16px}.menu-tools .menu-close{margin-left:2px}.menu-tools{gap:2px}
+}
+@media(max-height:600px) and (min-width:701px){.mira-cover-page .bottom{bottom:65px}.mira-cover-page .signature{width:220px}.cover-footer{bottom:6px}}
+@media(forced-colors:active){.mira-cursor{display:none!important}.mira-cover-page.cursor-active #next,.mira-cover-page.cursor-active #next *{cursor:auto!important}}
+/* Real content rows reserve footer space instead of relying on fixed bottom offsets. */
+.mira-cover-page .signature{container-type:inline-size}
+/* The PNG's visible lettering occupies x=304..1873 of 2172px, not its full image box. */
+.mira-cover-page .signature p{font-size:clamp(14px,4.4cqw,16px);line-height:1.8;font-weight:500;letter-spacing:.12em;margin:12px 0 0 14%;text-shadow:none;width:72%;position:relative;left:auto;transform:none;text-wrap:balance;overflow-wrap:anywhere}
+.mira-cover-page .play-controls{flex-wrap:wrap;justify-content:flex-end;gap:4px 12px}
+#fullscreen{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:44px;min-height:44px}
+#fullscreen svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+html:fullscreen,html:-webkit-full-screen{width:100%;height:100%;background:#141217}
+.mira-cover-page .play-controls button{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border-radius:50%;text-shadow:none}
+.mira-cover-page .play-controls button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+@media(max-width:700px){.mira-cover-page .signature p{font-size:14px;letter-spacing:.12em;line-height:1.8;margin-top:10px}.fullscreen-label{display:none}.mira-cover-page .play-controls{gap:2px 6px}}
+@media(max-height:500px) and (orientation:landscape){.mira-cover-page .signature p{font-size:14px!important;letter-spacing:.12em;margin-top:8px}}
+.mira-cover-page .cover{height:100svh;height:100dvh;min-height:320px;display:grid;grid-template-rows:minmax(130px,1fr) auto auto;touch-action:pan-y pinch-zoom}
+.mira-cover-page .topbar{z-index:4;padding-top:max(20px,env(safe-area-inset-top));padding-left:max(40px,env(safe-area-inset-left));padding-right:max(40px,env(safe-area-inset-right))}
+.mira-cover-page .bottom{grid-row:2;position:relative;inset:auto;margin:0 max(40px,env(safe-area-inset-right)) 16px max(40px,env(safe-area-inset-left));min-width:0}
+.cover-footer{grid-row:3;position:relative;inset:auto;margin:0 max(40px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(40px,env(safe-area-inset-left));min-width:0}
+.mira-cover-page .signature{top:45%}
+.mira-cover-page .previous,.mira-cover-page .next{top:45%;min-width:44px}
+.mira-cover-page .previous{left:max(14px,env(safe-area-inset-left))}.mira-cover-page .next{right:max(14px,env(safe-area-inset-right))}
+.mira-cover-page .controls button{min-width:44px}
+.mira-cover-page .bottom:has(.caption[hidden]){display:flex;justify-content:flex-end}
+.mira-cover-page .bottom:has(.caption[hidden]) .controls{position:static;max-width:none}
+.mira-cover-page .language-trigger,.mira-cover-page .menu-trigger,.menu-tools>button{min-width:44px;min-height:44px}
+.menu-group button{min-height:44px}
+#site-menu{height:100svh;height:100dvh;overscroll-behavior:contain;scrollbar-color:#64536e #141217}
+.menu-top{position:sticky;top:0;z-index:2;background:#141217;padding-top:max(20px,env(safe-area-inset-top));padding-left:max(40px,env(safe-area-inset-left));padding-right:max(40px,env(safe-area-inset-right))}
+.menu-body{padding-bottom:env(safe-area-inset-bottom)}
+.mira-cover-page dialog:not(#site-menu){max-height:calc(100svh - 24px);max-height:calc(100dvh - 24px);overscroll-behavior:contain;overflow-wrap:anywhere}
+@media(max-width:1100px){.cover-footer{flex-wrap:wrap;gap:0 20px}.footer-links{flex-wrap:wrap;justify-content:flex-start}.menu-columns{gap:28px}.mira-cover-page .caption{padding-right:170px;text-align:left}}
+@media(max-width:900px) and (min-height:501px){.menu-columns{grid-template-columns:repeat(2,minmax(0,1fr));gap:36px}.menu-body{margin-top:50px}.menu-bottom{margin-top:64px}}
+@media(max-width:700px){
+ .mira-cover-page .topbar{padding: max(12px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 12px max(16px,env(safe-area-inset-left));gap:8px}
+ .mira-cover-page .top-right{gap:4px}.mira-cover-page .login{padding:9px 12px}
+ .mira-cover-page .bottom{margin:0 max(22px,env(safe-area-inset-right)) 12px max(22px,env(safe-area-inset-left))}
+ .mira-cover-page .caption{padding-right:0;max-width:62%}.mira-cover-page .caption h1{font-size:clamp(16px,4.5vw,20px);overflow-wrap:anywhere}
+ .mira-cover-page .controls{position:static;max-width:none;align-items:flex-end}.mira-cover-page .bottom{display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,32%);gap:12px;align-items:end}
+ .mira-cover-page .caption{max-width:none}.mira-cover-page .preview-note{font-size:10px}.mira-cover-page .signature{top:43%;width:190px;max-width:55vw}
+ .mira-cover-page .previous,.mira-cover-page .next{top:43%}
+ .cover-footer{display:block;margin:0 max(22px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(22px,env(safe-area-inset-left))}
+ .cover-notice{min-height:44px;align-items:baseline;padding:10px 0}.notice-copy{font-size:11px}.notice-label{font-size:10px}
+ .footer-links{gap:0 18px}.footer-links button{min-height:44px;font-size:11px}.copyright{font-size:10px;line-height:1.8}
+ .menu-top{padding: max(12px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 12px max(16px,env(safe-area-inset-left))}
+ .menu-body{width:calc(100% - 44px);margin-top:32px}.menu-tools .menu-close{margin-left:0}.menu-group button{font-size:14px}.menu-bottom{margin-top:36px}
+ .mira-cover-page dialog input,.mira-cover-page dialog select{font-size:16px}
+}
+@media(max-height:500px) and (orientation:landscape){
+ .mira-cover-page .topbar{padding-top:max(8px,env(safe-area-inset-top));padding-bottom:8px}.brand-descriptor{display:none}
+ .mira-cover-page .signature{width:170px;top:44%}.mira-cover-page .signature p{font-size:10px}.mira-cover-page .previous,.mira-cover-page .next{top:44%}
+ .mira-cover-page .bottom{margin-bottom:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;text-align:left;align-items:end}
+ .mira-cover-page .caption{padding:0;max-width:none}.mira-cover-page .caption h1{font-size:17px;margin:0}.mira-cover-page .controls{position:static;max-width:none;bottom:auto;flex-direction:row;align-items:center;gap:12px}
+ .mira-cover-page .preview-note{max-width:130px;font-size:10px}.mira-cover-page .caption p{font-size:8px}
+ .cover-footer{display:flex;flex-wrap:wrap;gap:0 20px;margin-bottom:max(4px,env(safe-area-inset-bottom))}.cover-notice{padding:0;min-height:40px}.notice-copy{font-size:10px}.footer-links{gap:14px}.copyright{flex-basis:auto}.footer-links button{min-height:40px}
+ .menu-top{padding-top:max(8px,env(safe-area-inset-top));padding-bottom:8px}.menu-body{margin-top:20px;width:calc(100% - 64px)}.menu-columns{grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}.menu-group h3{font-size:18px;gap:8px;margin-bottom:8px}.menu-group button{font-size:12px}.menu-bottom{margin-top:24px}.menu-bottom button{font-size:18px}
+}
