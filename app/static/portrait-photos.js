@@ -15,9 +15,6 @@
   const find = name => dialog.querySelector('[data-photo-'+name+']');
   let mode = 'image', person = null, working = false, generation = 0, timer = null, photos = [];
   const request = (...args) => window.portraitPeople.request(...args);
-  function releaseVideos() {
-    dialog.querySelectorAll('video').forEach(video => { video.pause(); video.removeAttribute('src'); video.load(); });
-  }
   function setWorking(value) {
     working = value;
     dialog.querySelectorAll('button').forEach(button => { button.disabled = value || button.dataset.unavailable === 'true'; });
@@ -38,20 +35,13 @@
     photos = (data.items || []).filter(photo => mode === 'video' ? photo.kind === 'person_video' : photo.kind !== 'person_video'); render(); schedule();
   }
   function render() {
-    releaseVideos();
     const grid = find('grid'); grid.replaceChildren();
     const current = window.productionPortraits?.currentPhoto;
     for (const photo of photos) {
       const card = document.createElement('article'); card.className = 'person-photo-card'; card.dataset.photoId = photo.id;
-      const image = document.createElement(mode === 'video' ? 'video' : 'img');
-      if (mode === 'video') {
-        image.controls = true; image.preload = 'none'; image.playsInline = true;
-        if (photo.thumbnail_url) image.poster = photo.thumbnail_url;
-      } else {
-        image.alt = person.name+'的照片'; image.loading = 'lazy';
-        if (photo.thumbnail_url) image.src = photo.thumbnail_url;
-        else if (/^[a-f0-9]{32}$/.test(photo.asset_id || '')) image.src = '/api/production/assets/'+photo.asset_id+'/thumbnail';
-      }
+      const image = document.createElement(mode === 'video' ? 'video' : 'img'); image.src = photo.url;
+      if (mode === 'video') { image.controls = true; image.preload = 'metadata'; image.playsInline = true; }
+      else { image.alt = person.name+'的照片'; image.loading = 'lazy'; }
       const name = document.createElement('span'); name.className = 'person-photo-name'; name.textContent = photo.name; name.title = photo.name;
       const selected = window.portraitPeople.selected === person.id && current && (current.id === photo.asset_id || current.portrait?.remote_asset_id === photo.remote_asset_id);
       const active = photo.status === 'active' && photo.remote_asset_id;
@@ -64,12 +54,7 @@
         await window.productionPortraits.importAsset(asset); dialog.close();
       }));
       card.append(image,name,label,use);
-      if (mode === 'video') {
-        const play = document.createElement('button'); play.type = 'button'; play.className = 'secondary'; play.textContent = '播放预览';
-        play.addEventListener('click', () => { releaseVideos(); image.src = photo.url; image.play().catch(() => { find('status').textContent = '视频暂时无法播放，请重试。'; }); });
-        card.append(play);
-      }
-      if (['failed','uncertain'].includes(photo.status) && photo.can_manage !== false) {
+      if (['failed','uncertain'].includes(photo.status)) {
         const message = document.createElement('small'); message.textContent = photo.message; card.append(message);
         const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'secondary'; retry.textContent = '重新检查'; retry.dataset.photoRetry = '';
         retry.addEventListener('click',() => run(async () => { await request('photos/'+photo.id+'/retry','POST',{}); await refresh(); find('status').textContent = '已请求重新检查。'; })); card.append(retry);
@@ -88,12 +73,10 @@
   }
   find('close').addEventListener('click',() => { if (!working) dialog.close(); });
   dialog.addEventListener('cancel',event => { if (working) event.preventDefault(); });
-  dialog.addEventListener('close',() => { generation++; clearTimeout(timer); releaseVideos(); window.portraitPeople.refresh().catch(() => {}); });
-  window.addEventListener('pagehide', () => { clearTimeout(timer); releaseVideos(); });
+  dialog.addEventListener('close',() => { generation++; clearTimeout(timer); window.portraitPeople.refresh().catch(() => {}); });
   find('refresh').addEventListener('click',() => run(refresh));
   function openLibrary() {
     if (working) return;
-    releaseVideos();
     person = null; photos = []; generation++; clearTimeout(timer);
     mode = window.productionPortraits?.referenceMode || 'image';
     find('library').hidden = false; find('detail').hidden = true;

@@ -72,16 +72,6 @@ html:not([data-account-role="admin"]) .standalone-production a[href^="/admin/"] 
 .account-status { display:inline-block; padding:2px 7px; background:#ede8df; border-radius:4px; white-space:nowrap; }
 .account-status[data-state=succeeded] { background:#e6eee6; color:#356449; }
 .account-status[data-state=failed] { background:#f8e9e4; color:#923229; }
-#portrait-access > summary { cursor:pointer; display:flex; flex-wrap:wrap; gap:12px; align-items:center; min-height:36px; }
-.portrait-access-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); gap:16px; margin-top:16px; }
-.portrait-access-card { border:1px solid #ded7ca; border-radius:8px; padding:16px; min-width:0; }
-.portrait-access-card h3 { margin:0 0 12px; overflow-wrap:anywhere; }
-.portrait-access-card select { max-width:100%; padding:8px; border:1px solid #cfc6b9; border-radius:6px; background:#fffdf9; }
-.portrait-access-users { display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:14px; }
-.portrait-access-users[hidden] { display:none; }
-.portrait-access-users label { display:flex; align-items:center; gap:6px; min-height:36px; }
-.portrait-access-card .account-message { margin-bottom:0; overflow-wrap:anywhere; }
-[data-account-retry] { padding:6px 12px; cursor:pointer; }
 @media(max-width:720px) {
   .account-chrome { gap:6px; }
   .account-chrome a,.account-chrome button { min-height:40px; padding:0 8px; }

@@ -37,6 +37,20 @@ def test_assets_and_draft_are_restorable_and_not_secret(client):
     assert client.put('/api/production/drafts/'+draft['id'],json={'revision':1,'prompt':'lost'}).status_code==409
 
 
+def test_clip_and_clear_images_persist_without_deleting_assets(client):
+    draft=complete_draft(client)
+    assets=list(draft['assets'])
+    result=client.put('/api/production/drafts/'+draft['id'],json={'revision':draft['revision'],
+        'source_clip':{'start':2,'duration':8},'face_asset_ids':[],'clothing_asset_ids':[]}).json()
+    saved=client.get('/api/production/drafts/'+draft['id']).json()
+    assert saved['source_clip']=={'start':2,'duration':8}
+    assert saved['source_asset_id']==draft['source_asset_id'] and saved['prompt']==draft['prompt']
+    assert not saved['face_asset_ids'] and not saved['clothing_asset_ids']
+    for item in assets:assert client.get(item['url']).status_code==200
+    invalid=client.put('/api/production/drafts/'+draft['id'],json={'revision':result['revision'],'source_clip':{'start':-1,'duration':8}})
+    assert invalid.status_code==422
+
+
 def test_runs_capture_snapshot_deduplicate_and_cancel_queue(client):
     draft=complete_draft(client)
     body={'draft_id':draft['id'],'revision':draft['revision'],'idempotency_key':'one-click'}

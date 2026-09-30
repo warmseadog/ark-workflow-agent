@@ -300,6 +300,14 @@ Python 3.11、虚拟环境、FFmpeg 和缺少的 libGL 动态库均位于新项�
 - 发布前验证：应用 `tests` 目录 413 项通过；桌面/手机浏览器覆盖上传归属、人物库选择、真人与视频引用、模式往返、旧草稿、延迟响应隔离、真实本地 API 提交、任务及包包素材定位。根目录直接 pytest 会扫描到既有未跟踪导出副本而发生同名模块收集冲突，因此应用套件指定 `tests` 和项目内临时目录执行。
 - 本次发布检查未提交付费生成任务；保留前一版本与备份以便回滚。
 
+## 2026-09-29 任务名称与使用模型列
+
+- 用户授权发布后部署 `/opt/ark-video-workflow/releases/20260929T073840Z-task-models`；保留前版 `/opt/ark-video-workflow/releases/20260929T065549Z-earrings`。
+- 发布前保留耳环版本的线上内容，并叠加任务名称清理和模型列，发布 8 个应用文件。备份位于 `/opt/ark-video-workflow/data/backups/before-task-models-20260929T073840Z`。
+- 任务列表隐藏“副本”尾缀，复制带尾缀的任务时新草稿名移除尾缀；分页摘要从冻结任务快照读取模型 ID，界面根据模型目录显示名称。
+- 发布前处理队列空闲；隔离运行检查及线上健康、文件、匿名鉴权验证通过。公网制作页包含新列和更新后的静态缓存版本，服务 active/running、NRestarts=0。未提交生成任务。
+- 本地发布记录与验证日志在 `storage/task-models-deploy-*.log`。
+
 ## 2026-09-28 模型选择与 Seedance 2.5 适配上线
 
 - 用户明确授权发布后，于北京时间 21:00:23 发布 `/opt/ark-video-workflow/releases/20260928T130023Z-model-selection`；前版 `/opt/ark-video-workflow/releases/20260928T110523Z-upload-first` 保留。

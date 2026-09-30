@@ -18,6 +18,8 @@ def test_auth_enabled_with_empty_database_fails_closed(protected):
     assert protected.get('/api/production/drafts').status_code == 401
     assert protected.get('/api/jobs').status_code == 401
     assert protected.get('/',follow_redirects=False).status_code == 303
+    assert protected.get('/videos',follow_redirects=False).status_code == 303
+    assert protected.get('/api/production/videos').status_code == 401
     assert protected.get('/healthz').status_code == 200
 
 
@@ -66,8 +68,9 @@ def test_two_accounts_cannot_read_or_mutate_each_others_objects(accounts_clients
     assert 'id' in run,run
     assert b.get('/api/production/drafts').json()['items']==[]
     assert b.get('/api/production/runs?page=1').json()['items']==[]
+    assert b.get('/api/production/videos').json()['items']==[]
     for path in ['/api/production/drafts/'+draft['id'], '/api/production/runs/'+run['id'],
-                 '/api/production/runs/'+run['id']+'/playback', draft['assets'][0]['url']]:
+                 '/api/production/runs/'+run['id']+'/playback', '/api/production/runs/'+run['id']+'/poster', draft['assets'][0]['url']]:
         assert b.get(path).status_code == 404,path
     for suffix in ('cancel','resume','copy','person-preparation/retry'):
         assert b.post('/api/production/runs/'+run['id']+'/'+suffix).status_code==404
@@ -81,6 +84,25 @@ def test_two_accounts_cannot_read_or_mutate_each_others_objects(accounts_clients
     template=a.post('/api/prompt-templates',json={'name':'alice only','content':'test'}).json()
     assert template['id'] not in [x['id'] for x in b.get('/api/prompt-templates').json()['items']]
     assert b.delete('/api/prompt-templates/'+template['id']).status_code==404
+
+
+def test_completed_video_library_and_posters_stay_with_owner(accounts_clients):
+    from app import tenancy
+    from app.production_store import ProductionStore
+    _, users, (_, alice, bob) = accounts_clients
+    config = tenancy.user_settings(main.settings, users[1])
+    store = ProductionStore(config.storage_dir)
+    draft = store.create_draft({'name': '仅限本人观看'})
+    run = store.create_run(draft['id'], 1, 'library-isolation', {})
+    store.update_run(run['id'], status='succeeded')
+    output = config.storage_dir / 'outputs' / (run['id'] + '.mp4')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(b'invalid-video-for-placeholder')
+    assert alice.get('/api/production/videos').json()['items'][0]['id'] == run['id']
+    poster = '/api/production/runs/' + run['id'] + '/poster'
+    assert alice.get(poster).status_code == 200
+    assert bob.get('/api/production/videos').json()['total'] == 0
+    assert bob.get(poster).status_code == 404
 
 
 def test_normal_account_cannot_access_global_admin_or_legacy(accounts_clients):

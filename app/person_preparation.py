@@ -51,8 +51,6 @@ def preflight(settings, store, draft, generation):
     if not ids:
         raise ValueError('请上传虚拟人物参考素材。')
     for ident in ids:
-        from .shared_portraits import authorize_asset
-        authorize_asset(settings,ident)
         validate_photo(settings, store.get_asset(ident, private=True))
         binding = store.portrait_binding(ident)
         if binding and binding['fingerprint'] != lib.account:
@@ -86,8 +84,6 @@ def prepare_run(settings, store, run):
         if input_digest(store, draft) != intent['input_digest']:
             _fail(store, ident, '任务素材记录已变化，请重新上传人物素材。')
         for asset_id in person_ids(draft):
-            from .shared_portraits import authorize_asset
-            authorize_asset(settings,asset_id)
             validate_photo(settings, store.get_asset(asset_id, private=True))
         lib = PortraitLibrary(settings)
         if not prep['started_at']:

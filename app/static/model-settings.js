@@ -13,8 +13,6 @@
   let presets = {};
   let saving = false;
   let testing = false;
-  let loading = false;
-  const adminPage = location.pathname === '/admin/settings';
 
   function showError(message) {
     errorNode.textContent = message;
@@ -93,19 +91,12 @@
     return payload;
   }
   async function load() {
-    if (loading || saved) return;
-    loading = true;
-    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 8000);
     try {
-      const payload = await request({signal:controller.signal});
+      const payload = await request();
       saved = payload.config; presets = payload.presets;
       fill(saved); fields.disabled = false;
-    } catch (error) {
-      showError(error.name === 'AbortError' ? '读取模型配置超时，请重试。' : error.message);
-      const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = '重试加载';
-      retry.addEventListener('click', load); errorNode.append(document.createTextNode(' '), retry);
-    }
-    finally { clearTimeout(timeout); loading = false; window.dispatchEvent(new Event('model-settings-loaded')); }
+    } catch (error) { showError(error.message); }
+    finally { window.dispatchEvent(new Event('model-settings-loaded')); }
   }
   function close() {
     if (saving || testing) return;
@@ -152,7 +143,7 @@
   details.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); close(); } });
   details.addEventListener('toggle', () => {
     toggle.setAttribute('aria-expanded', String(details.open));
-    if (details.open && !saved && (!adminPage || !details.closest('[hidden]'))) load();
+    if (details.open && !saved) load();
     if (!details.open && saved && !saving && !testing) fill(window.productionDraftModel || saved);
   });
   testButton.addEventListener('click', async () => {
@@ -195,6 +186,5 @@
       document.getElementById('save-model-settings').textContent = '保存配置';
     }
   });
-  window.addEventListener('admin-section-visible', event => { if (event.detail.section === 'model') void load(); });
-  if (!adminPage) load();
+  load();
 })();

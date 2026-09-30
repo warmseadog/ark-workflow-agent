@@ -124,7 +124,7 @@ def test_normal_account_chrome_and_auth_disabled_compatibility(studio):
     page, state, _ = studio
     open_page(page)
     assert page.locator('[data-account-name]').inner_text() == '小舟'
-    assert page.locator('.account-chrome a[href="/people"]').is_visible()
+    assert page.locator('.workspace-nav a[href="/people"]').is_visible()
     assert not page.locator('a[href="/admin/settings"]').is_visible()
     assert not page.locator('a[href="/admin/users"]').is_visible()
     state['account'] = {'auth_enabled': False, 'user': None, 'csrf_token': ''}
@@ -175,6 +175,7 @@ def test_logout_clears_only_known_caches_and_notifies_same_account_tabs(studio):
       localStorage.setItem('unrelated-setting', 'keep');
     }""")
     state['account']['user'] = None
+    page.locator('.workspace-account summary').click()
     page.locator('[data-account-logout]').click()
     page.wait_for_url('**/login')
     other.wait_for_url('**/login')

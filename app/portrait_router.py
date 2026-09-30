@@ -54,7 +54,6 @@ def get_router(settings_getter, local_guard):
     def guarded(operation):
         try: return operation()
         except HTTPException: raise
-        except PermissionError as exc: raise HTTPException(403,str(exc)) from None
         except LookupError as exc: raise HTTPException(404,str(exc)) from None
         except ValueError as exc: raise HTTPException(422,str(exc)) from None
 
@@ -62,12 +61,8 @@ def get_router(settings_getter, local_guard):
         from .portrait_library import PortraitLibrary
         return PortraitLibrary(settings_getter())
 
-    def catalog():
-        from .shared_portraits import SharedPortraitCatalog
-        return SharedPortraitCatalog(settings_getter())
-
     @router.get('/people')
-    def people(removed:bool=False): return guarded(lambda: {'items': catalog().people(removed=removed)})
+    def people(removed:bool=False): return guarded(lambda: {'items': library().people(removed=removed)})
 
     @router.post('/people')
     def create_person(payload:dict):
@@ -113,53 +108,37 @@ def get_router(settings_getter, local_guard):
 
     @router.put('/people/{ident}')
     def rename_person(ident:str,payload:dict):
-        return guarded(lambda:catalog().require_manage(ident).rename(ident,payload.get('name')))
+        return guarded(lambda:library().rename(ident,payload.get('name')))
 
     @router.delete('/people/{ident}')
     def remove_person(ident:str):
-        return guarded(lambda:catalog().remove_person(ident))
+        return guarded(lambda:library().set_removed(ident,True))
 
     @router.post('/people/{ident}/restore')
     def restore_person(ident:str):
-        return guarded(lambda:catalog().restore_person(ident))
+        return guarded(lambda:library().set_removed(ident,False))
 
     @router.get('/people/{ident}/photos')
     def person_photos(ident:str):
-        return guarded(lambda: {'items':catalog().photos_for_person(ident)})
+        return guarded(lambda: {'items':library().photos_for_person(ident)})
 
     @router.get('/people/{ident}/reference')
     def person_reference(ident:str):
-        def operation():
-            cat=catalog()
-            for photo in cat.photos_for_person(ident):
-                if photo['kind']=='face' and photo['status']=='active':
-                    _,raw=cat.photo_source(photo['id'])
-                    return {'remote_asset_id':raw['remote_id']}
-            raise ValueError('还没有可用照片。')
-        return guarded(operation)
+        return guarded(lambda:library().reference(ident))
 
     @router.get('/people/{ident}/thumbnail')
     def thumbnail(ident:str):
-        from .asset_thumbnails import thumbnail_response
-        def operation():
-            cat=catalog()
-            for photo in cat.photos_for_person(ident):
-                if photo['kind']=='face':
-                    lib,raw=cat.photo_source(photo['id'])
-                    return thumbnail_response(lib.settings,lib.store.get_asset(raw['asset_id'],private=True))
-            raise LookupError('人物缩略图尚未生成。')
-        return guarded(operation)
+        from fastapi.responses import FileResponse
+        guarded(lambda:library().person(ident))
+        path=settings_getter().storage_dir/'portrait-thumbs'/(ident+'.jpg')
+        if not path.is_file(): raise HTTPException(404,'人物缩略图尚未生成。')
+        return FileResponse(path,media_type='image/jpeg',headers={'Cache-Control':'private, max-age=60'})
 
     @router.post('/photos')
     def create_photo(payload:dict):
         def operation():
             if not all(isinstance(payload.get(k),str) for k in ('person_id','asset_id')):
                 raise ValueError('请选择人物并上传照片。')
-            source=catalog().require_manage(payload['person_id'])
-            from .shared_portraits import authorize_asset
-            authorize_asset(settings_getter(),payload['asset_id'])
-            person=source.person(payload['person_id'],private=True)
-            library().add_person(person['group_id'],person['name'],person['person_type'])
             result=library().enqueue(payload['person_id'],payload['asset_id'])
             from .production_worker import wake
             wake(settings_getter())
@@ -168,31 +147,7 @@ def get_router(settings_getter, local_guard):
 
     @router.post('/photos/{ident}/use')
     def use_reference(ident:str):
-        return guarded(lambda:catalog().use_reference(ident))
-
-    @router.delete('/photos/{ident}')
-    def remove_photo(ident:str):
-        return guarded(lambda:catalog().remove_photo(ident))
-
-    @router.api_route('/photos/{ident}/file', methods=['GET','HEAD'])
-    def photo_file(ident:str):
-        from fastapi.responses import FileResponse
-        def operation():
-            lib,photo=catalog().photo_source(ident)
-            asset=lib.store.get_asset(photo['asset_id'],private=True)
-            from .portrait_library import validate_photo
-            path=validate_photo(lib.settings,asset,require_upload_dimensions=False)
-            from .media_transport import media_file_response
-            return media_file_response(settings_getter(),path,media_type=asset['mime'])
-        return guarded(operation)
-
-    @router.get('/photos/{ident}/thumbnail')
-    def photo_thumbnail(ident:str):
-        from .asset_thumbnails import thumbnail_response
-        def operation():
-            lib,photo=catalog().photo_source(ident)
-            return thumbnail_response(lib.settings,lib.store.get_asset(photo['asset_id'],private=True))
-        return guarded(operation)
+        return guarded(lambda:_use_local_reference(library(),ident))
 
     @router.get('/photos')
     def photos(ids:str=''):
@@ -201,16 +156,12 @@ def get_router(settings_getter, local_guard):
             if len(keys)>20 or any(not re.fullmatch(r'[a-f0-9]{32}',key) for key in keys):
                 raise ValueError('照片查询参数不正确。')
             lib=library()
-            return {'items':[catalog().photo_source(key)[0].get_photo(key) for key in keys]}
+            return {'items':[lib.get_photo(key) for key in keys]}
         return guarded(operation)
 
     @router.post('/photos/{ident}/retry')
     def retry_photo(ident:str):
-        def operation():
-            lib,photo=catalog().photo_source(ident)
-            catalog().require_manage(photo['person_id'])
-            return lib.retry(ident)
-        return guarded(operation)
+        return guarded(lambda:library().retry(ident))
 
     @router.get('/config')
     def config():
@@ -268,7 +219,6 @@ def get_router(settings_getter, local_guard):
             remote=api.get_asset(remote_id)
             # Persist type before imported bindings are discovered by the directory.
             person=library().add_person(remote['group_id'],person_type=person_type)
-            catalog().require_manage(person['id'])
             fingerprint=portrait_service.fingerprint(config)
             existing=store().find_portrait(remote_id,fingerprint)
             if existing:
@@ -300,28 +250,5 @@ def get_router(settings_getter, local_guard):
             finally:
                 temporary.unlink(missing_ok=True)
         return guarded(operation)
-
-    return router
-
-
-def get_admin_router(settings_getter, local_guard):
-    router=APIRouter(prefix='/api/admin/portrait-access',dependencies=[Depends(local_guard)])
-    def operation(callback):
-        from .shared_portraits import SharedPortraitCatalog
-        try:
-            cat=SharedPortraitCatalog(settings_getter())
-            if not cat.admin: raise PermissionError('仅管理员可分配真人权限。')
-            return callback(cat)
-        except PermissionError as exc: raise HTTPException(403,str(exc)) from None
-        except LookupError as exc: raise HTTPException(404,str(exc)) from None
-        except ValueError as exc: raise HTTPException(422,str(exc)) from None
-
-    @router.get('')
-    def policies():
-        return operation(lambda cat:{'items':[{**cat.policy(p['id']),'name':p['name']} for p in cat.people() if p['person_type']=='LivenessFace']})
-
-    @router.put('/{person_id}')
-    def save_policy(person_id:str,payload:dict):
-        return operation(lambda cat:cat.set_policy(person_id,payload.get('mode'),payload.get('user_ids')))
 
     return router

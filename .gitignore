@@ -10,3 +10,10 @@ storage/*
 storage/attached_local_face_mosaic_v3/**/__pycache__/
 storage/attached_local_face_mosaic_v3/**/*.py[cod]
 
+# Local test artifacts and generated export bundles
+/.tmp-*
+/.test-*
+/exports/
+/video-production-module/
+/video-production-module.zip
+
