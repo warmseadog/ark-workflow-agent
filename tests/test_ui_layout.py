@@ -123,7 +123,7 @@ def test_all_entrypoints_open_standalone_production():
     for path in ('/', '/v1', '/studio'):
         response = client.get(path)
         assert response.status_code == 200
-        assert '<title>方舟 · 制作流程</title>' in response.text
+        assert '<title>mira · 制作流程</title>' in response.text
         body = BodyParser()
         body.feed(response.text)
         assert {'standalone-production', 'production-view'} <= body.classes

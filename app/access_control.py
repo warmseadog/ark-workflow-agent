@@ -16,7 +16,7 @@ def public_request(path, method):
 
 
 def ordinary_allowed(path, method):
-    if path in {'/','/studio','/v1','/people','/account/password'}:
+    if path in {'/','/studio','/v1','/people','/videos','/account/password'}:
         return method in {'GET','HEAD'}
     if path in {'/api/auth/me','/api/auth/password','/api/auth/logout'}:
         return True

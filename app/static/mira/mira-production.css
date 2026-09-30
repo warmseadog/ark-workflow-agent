@@ -1,0 +1,38 @@
+/* Adapt the mira visual system to live templates; business geometry stays in workspace.css. */
+.mira-workspace .workspace-brand { padding-left:16px; }
+.mira-workspace .workspace-brand img { display:block; width:104px; height:46px; object-fit:contain; }
+.mira-workspace .production-wordmark { color:var(--mira-purple); font-weight:600; letter-spacing:-.06em; }
+.mira-workspace :is(.topbar,.account-header,.library-heading) { color:var(--mira-ink); border-color:var(--mira-line); }
+.mira-workspace :is(h1,h2,h3,h4) { font-family:var(--mira-font); color:var(--mira-ink); }
+.mira-workspace :is(.card,.account-panel,.auth-card,.library-empty) { background:linear-gradient(145deg,#fff,#fdfbff); border-color:var(--mira-line); border-radius:20px; box-shadow:var(--mira-elevation); }
+.mira-workspace :is(.primary,.account-primary,.library-create) { background:linear-gradient(135deg,#826893,#6a507b); border-color:#755b86; color:white; border-radius:12px; }
+.mira-workspace :is(.section,.account-toolbar,.library-toolbar,.library-player-bar,.library-player-footer) { border-color:var(--mira-line); }
+.mira-workspace :is(.lead,.hint,.account-muted,.library-eyebrow) { color:var(--mira-muted); }
+.mira-workspace .workspace-settings a[aria-current=true] { background:var(--mira-lilac); color:var(--mira-purple); }
+.mira-workspace .workspace-settings a:hover { background:#f3edf7; }
+.mira-workspace .workspace-nav a svg { flex-shrink:0; }
+.mira-workspace #model-settings.inline-generation-options select { min-height:36px; }
+.mira-workspace :is(.library-player,.run-player-dialog) { background:#fff; }
+.mira-workspace .run-player-tools button[aria-pressed=true] { color:#fff; background:var(--mira-purple); }
+.mira-workspace .library-player-bar button { color:var(--mira-purple); background:#f1eaf6; }
+.mira-workspace .library-player-footer a { color:#624a73; background:#f1eaf6; border-color:#d9cce2; }
+.mira-cover-page { min-width:320px; }
+.mira-cover-page *, .mira-cover-page *::before, .mira-cover-page *::after { box-sizing:border-box; }
+.mira-cover-page #login-submit { width:100%; min-height:48px; }
+.mira-cover-page #login-submit:disabled { cursor:wait; opacity:.65; }
+.mira-cover-page #login-error { color:#a02748; margin:16px 0 0; }
+.mira-cover-page .account-banner { position:fixed; z-index:5; top:0; left:0; right:0; border-radius:12px; }
+.mira-cover-page #login-dialog { margin:auto; }
+.mira-cover-page .cover { min-height:min(540px,100svh); }
+.mira-cover-page .preview-note { max-width:200px; }
+@media(max-width:700px) {
+  .mira-cover-page #login-dialog { padding:28px 24px; }
+  .mira-cover-page #login-dialog h2 { font-size:24px; }
+}
+@media(max-height:520px) and (orientation:landscape) {
+  .mira-cover-page .signature { top:48%; width:180px; }
+  .mira-cover-page .signature p { font-size:10px; }
+  .mira-cover-page .topbar { padding:14px 24px; }
+  .mira-cover-page .bottom { inset:auto 24px 12px; }
+  .mira-cover-page .caption h1 { font-size:14px; }
+}

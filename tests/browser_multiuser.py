@@ -185,6 +185,7 @@ class Session:
 
 def login(session, username, password):
     page = session.page
+    page.locator('#open-login').click(timeout=TIMEOUT)
     expect(page.locator('#login-form')).to_be_visible(timeout=TIMEOUT)
     page.locator('#login-username').fill(username)
     page.locator('#login-password').fill(password)
@@ -339,7 +340,7 @@ def admin_users(session, report, accounts, browser, stack):
         target.expected_denials.add(('GET', '/api/auth/me', 401))
         target.page.evaluate("() => { fetch('/api/auth/me').catch(() => {}); }")
         target.page.wait_for_url(ORIGIN+'/login')
-        expect(target.page.locator('#login-form')).to_be_visible()
+        expect(target.page.locator('#open-login')).to_be_visible()
 
     # Promote an existing ordinary user and revoke their old session.
     row = row_for('charlie')

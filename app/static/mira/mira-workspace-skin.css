@@ -1,0 +1,45 @@
+/* Skin only: intentionally no grid, flex, width, height, order or spacing changes.
+   Production structure and controls belong to the existing site. */
+:root,body.production-view{--ink:#26232a;--muted:#726c78;--hair:#e8e4ec;--cream:#fff;--paper:#fff;--accent:#766185;--serif:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+body.workspace-shell,body.production-view,.production-main,.production-header{background:#fff;color:#26232a;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+::selection{background:#e9e2f0;color:#46364f}
+.workspace-sidebar{background:#fbfafc;border-color:#e9e5ed;color:#26232a}
+.workspace-brand,.workspace-brand strong{color:#26232a}
+.workspace-brand small,.workspace-label,.workspace-identity small{color:#746d7b}
+.workspace-nav a{color:#625b69;border-radius:12px;font-weight:400}
+.workspace-nav a>span{color:#82758d}
+.workspace-nav a:hover,.workspace-account summary:hover,.workspace-account[open] summary{background:#f1ecf5}
+.workspace-nav a[aria-current=page]{color:#51435e;background:#eae3f0;box-shadow:inset 0 1px 0 #ffffffc0}
+.workspace-nav a[aria-current=page]>span{color:#6d597e}
+.workspace-footer,.production-header{border-color:#e9e5ed}
+.workspace-avatar{background:#eae3f0;color:#625070}
+.workspace-account-menu{background:#fff;border-color:#e9e5ed;border-radius:16px;box-shadow:0 8px 28px #3320410d}
+.workspace-toggle{background:#fff;color:#51435e;border-color:#e1dae8;border-radius:12px}
+.production-intro h2{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;font-weight:400;color:#26232a}
+.production-intro>p:first-child{color:#8a7898}
+.production-intro>p:last-child{color:#726c78}
+.asset-entry{background:#fff;border-color:#e6e1eb;border-radius:20px;box-shadow:0 4px 20px #38244704}
+.asset-heading h3{color:#302936;font-weight:500}
+.asset-heading>span,.asset-heading small{color:#82718f}
+.asset-picker,.video-cover{background:#faf8fc;border-color:#dcd3e4;border-radius:14px}
+.asset-picker:hover{background:#f3eef8;border-color:#b7a7c5;box-shadow:0 3px 14px #5a3d7208}
+.asset-empty b{color:#9481a4;font-weight:300}
+.asset-empty strong{color:#51465c;font-weight:400}
+.asset-empty small,.field-hint,.person-source-note{color:#797180}
+.asset-footer button,.production-header a,.production-main button.link-button{color:#766185}
+.asset-thumbnails img,.asset-thumbnails video{border-radius:10px}
+.person-media-tabs{background:#f4f0f7;border-color:#e6dfed;border-radius:12px}
+.person-media-tabs button,.person-source-options button{border-radius:10px}
+.person-media-tabs button[aria-pressed=true],.person-source-options button[aria-pressed=true]{background:#eae3f0;color:#5e496e;border-color:#c9bad6;box-shadow:none}
+.scene-settings,.scene-settings-trigger,.scene-reference-card,.optional-reference,.optional-reference-card,.accessory-panel,details{border-color:#e6e1eb;border-radius:16px}
+.compact-prompt textarea,#scene-description{background:#fcfbfd;border-color:#d9d0e1;border-radius:12px;color:#302936}
+.generation-action,.generation-panel,.generation-settings{border-color:#e8e3ed;background:#fff}
+#model-settings.inline-generation-options select{background:#f8f5fa;border-color:#dfd5e7;border-radius:10px;color:#51475b}
+input[type=checkbox],input[type=range]{accent-color:#8e789f}
+#studio-generate-submit{background:#665273;color:white;border-color:#665273;border-radius:12px;box-shadow:0 4px 12px #65507312}
+#studio-generate-submit:disabled{background:#e9e2ef;color:#84758f;border-color:#e9e2ef;box-shadow:none;opacity:1}
+.generation-duration-help,#generation-duration-note{color:#797180}
+.run-list-header{background:#f8f5fa;border-color:#e6e0eb}
+.run-menu-items,.run-player-dialog{background:white;border-color:#e6e0eb;border-radius:18px}
+:is(a,button,input,select,textarea,summary):focus-visible{outline-color:#8e789f}
+@media(prefers-reduced-motion:no-preference){.asset-picker,.workspace-nav a,#studio-generate-submit{transition:background-color .18s ease,border-color .18s ease,box-shadow .18s ease}}

@@ -1,5 +1,6 @@
 """Photo batches use the real browser UI with isolated upload responses."""
 import json
+import mimetypes
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -26,9 +27,8 @@ def library(browser):
         req = r.request
         path = urlparse(req.url).path
         if path.startswith('/static/'):
-            file = ROOT/'app/static'/Path(path).name
-            r.fulfill(content_type='text/css' if file.suffix == '.css' else 'application/javascript',
-                      body=file.read_text(encoding='utf-8'))
+            file = ROOT/'app'/path.lstrip('/')
+            r.fulfill(content_type=mimetypes.guess_type(file)[0] or 'application/octet-stream', body=file.read_bytes())
             return
         if path in ('/people', '/admin/settings'):
             template = 'people.html' if path == '/people' else 'admin_settings.html'

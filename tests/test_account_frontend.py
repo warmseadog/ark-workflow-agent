@@ -1,5 +1,6 @@
 """Account UI contracts and isolated browser regression tests (no live server)."""
 import json
+import mimetypes
 import re
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -68,8 +69,8 @@ def studio(browser):
         request = route.request
         path = urlparse(request.url).path
         if path.startswith('/static/'):
-            file = STATIC / Path(path).name
-            route.fulfill(status=200, content_type='text/css' if file.suffix == '.css' else 'application/javascript', body=file.read_text(encoding='utf-8'))
+            file = STATIC / path.removeprefix('/static/')
+            route.fulfill(status=200, content_type=mimetypes.guess_type(file)[0] or 'application/octet-stream', body=file.read_bytes())
         elif path.startswith('/api/'):
             state['calls'].append({'path': path, 'method': request.method, 'url': request.url, 'headers': request.headers, 'body': request.post_data})
             if path == '/api/auth/me' and state['hold_me']:
@@ -204,6 +205,7 @@ def test_login_error_then_direct_workspace_even_with_legacy_password_flag(studio
     state['replies'][('GET', '/api/auth/me')] = (401, {})
     state['replies'][('POST', '/api/auth/login')] = (401, {'detail': 'invalid credentials'})
     open_page(page, '/login')
+    page.locator('#open-login').click()
     page.locator('#login-username').fill('alice')
     page.locator('#login-password').fill('wrong-password')
     page.locator('#login-submit').click()
@@ -253,6 +255,7 @@ def test_login_broadcast_reloads_existing_account_tab(studio):
     new_user = {'id': 'bob-id', 'username': '新账号', 'role': 'user'}
     state['replies'][('POST', '/api/auth/login')] = (200, {'user': new_user, 'csrf_token': 'new-token'})
     state['account']['user'] = new_user
+    login.locator('#open-login').click()
     login.locator('#login-username').fill('bob')
     login.locator('#login-password').fill('new-password')
     login.locator('#login-submit').click()
@@ -403,6 +406,8 @@ def test_role_change_revoked_session_exits_admin_ui(studio, status):
     state['replies'][('PATCH', '/api/admin/users/alice-id')] = (status, {'detail': '请先登录。'} if status == 401 else {'user': {**ACCOUNT['user'], 'role': 'user'}})
     page.locator('#users-list button').first.click()
     page.wait_for_url('**/login', timeout=5000)
+    assert page.locator('#open-login').is_visible()
+    page.locator('#open-login').click()
     assert page.locator('#login-form').is_visible()
 
 

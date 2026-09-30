@@ -178,6 +178,6 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/fashion_lab
 
 制作页右上角的「后台配置」进入 [/admin/settings](http://127.0.0.1:8000/admin/settings)。可集中管理视频模型、TikHub、TOS 对象存储、提示词模板，并查看打码参数与系统信息。TikHub 与制作页共用已有密钥；启用 TOS 后，方舟使用打码视频的临时下载链接，无需工作台公网地址。详细配置与验证见 [后台配置说明](docs/admin-settings.md)。
 
-## mira 新版 UI（独立预览）
+## mira 正式界面
 
-白色＋脏紫新版首页、原地登录弹窗、工作台样式、图标与获授权公开的原始 MV 已同步至 [ui/mira](ui/mira/README.md)。这是独立 UI 预览源码，尚未替换生产模板或认证逻辑。启动与接入边界见该目录说明。
+Mira 的 MV 封面、原地登录弹窗和白色＋脏紫工作台已接入正式模板。登录使用现有账号认证；上传、草稿、生成、续写和权限使用原有业务接口。生产样式与公开封面素材位于 `app/static/mira/`，接入与验证说明见 [Mira 正式接入](docs/mira-production.md)。原始 [ui/mira](ui/mira/README.md) 保留为独立设计预览，生产页面不加载其预览交互脚本。

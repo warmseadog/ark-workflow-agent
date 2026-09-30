@@ -1,0 +1,111 @@
+/* Shared mira identity, used by cover, login and production-layout preview. */
+:root{--mira-ink:#2d2632;--mira-muted:#776d7d;--mira-purple:#736080;--mira-lilac:#e9e2ef;--mira-line:#e7e0ec;--mira-font:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC","Microsoft YaHei",sans-serif}
+body,input,button,textarea,select,summary{font-family:var(--mira-font)}button,a,input,select,textarea,summary{-webkit-tap-highlight-color:transparent}button,a{touch-action:manipulation}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid #8b749c;outline-offset:4px}::selection{background:#dfd2e8;color:#382640}
+.mira-action{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:14px;background:var(--mira-ink);color:white;text-decoration:none;font-size:13px;border:1px solid var(--mira-ink);cursor:pointer;transition:background .18s,box-shadow .18s}.mira-action:hover{background:#4f3d5a;box-shadow:0 4px 14px #49325312}.mira-action:active{background:#3c2a46}.mira-subtle{color:var(--mira-muted);font-size:12px;min-height:44px;display:inline-flex;align-items:center;text-decoration:none}.mira-subtle:hover{color:var(--mira-purple)}
+dialog{font-family:var(--mira-font);color:var(--mira-ink);background:white;border:1px solid var(--mira-line);border-radius:24px;box-shadow:0 20px 70px #35243b20}dialog::backdrop{background:#2c213842;backdrop-filter:blur(5px)}dialog button,dialog input{font-family:var(--mira-font)}dialog button.close{background:#f4eff8;color:var(--mira-purple)}
+/* Empty cover deliberately contains no replacement photograph. */
+body.mira-cover-page{background:#e3dce9;color:var(--mira-ink)}.mira-cover-page:not(.has-media) .shade{background:none}.mira-cover-page:not(.has-media) .signature img{filter:none}.mira-cover-page:not(.has-media) :is(.brand-note,.setting-button,.previous,.next,.signature p){text-shadow:none}.mira-cover-page:not(.has-media) .login{border-color:#ab9bb7;background:#ffffff30;color:var(--mira-ink)}.mira-cover-page.has-media{color:white}.mira-cover-page .login{border-radius:24px}.mira-cover-page .reset{background:var(--mira-ink);border-radius:14px}.mira-cover-page #title{font-weight:400}
+/* Keep existing login form's single-column composition. */
+body.mira-login-page{margin:0;background:#fff;color:var(--mira-ink);min-height:100svh}.login-shell{width:min(560px,calc(100% - 40px));margin:0 auto;padding:65px 0 32px}.login-brandbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px}.login-brandbar img{width:145px;display:block;margin-left:-16px}.login-brandbar span{color:var(--mira-muted);font-size:12px}.login-card{border:1px solid var(--mira-line);border-radius:24px;padding:36px 38px;box-shadow:0 8px 30px #39294505;background:#fff}.login-card .eyebrow{font-size:11px;letter-spacing:.1em;color:var(--mira-purple);margin:0 0 16px}.login-card h1{font-size:27px;line-height:1.5;font-weight:500;margin:0 0 10px}.login-card .intro{font-size:13px;line-height:1.8;color:var(--mira-muted);margin:0 0 28px}.login-field{display:block;font-size:12px;color:#5e5367;margin-top:18px}.login-field input{display:block;width:100%;box-sizing:border-box;min-height:48px;margin-top:9px;border:1px solid #dfd7e5;border-radius:12px;background:#fbf9fc;padding:12px 14px;font-size:13px;color:var(--mira-ink)}.login-field input:disabled{opacity:1;color:#8c8095;cursor:not-allowed}.login-card .mira-action{margin-top:26px}.login-note{margin:18px 0 0;font-size:11px;line-height:1.9;color:var(--mira-muted)}.login-help{display:flex;align-items:center;justify-content:space-between;margin-top:18px;gap:16px}.login-help button{background:none;border:0;padding:0;cursor:pointer}.login-foot{text-align:center;font-size:11px;color:var(--mira-muted);margin-top:25px}.system-dialog{width:min(440px,calc(100% - 32px));box-sizing:border-box;padding:28px}.system-dialog h2{font-size:21px;font-weight:500;margin:0 0 15px}.system-dialog p{font-size:13px;color:var(--mira-muted);line-height:1.9}.system-dialog .mira-action{width:100%;margin-top:22px}.system-dialog a{color:var(--mira-purple)}
+/* Shared production skin: no grid, order, sizing or workflow changes. */
+.mira-workspace :is(button,select,input,textarea,summary){font-family:var(--mira-font)}.mira-workspace .workspace-nav a{color:#6f6379}.mira-workspace .workspace-nav a[aria-current=page]{background:var(--mira-lilac);color:#574261}.mira-workspace :is(button,select,textarea,input:not([type=range]):not([type=checkbox])){border-radius:12px}.mira-workspace .production-main button:where(:not(#studio-generate-submit)){color:var(--mira-purple)}.mira-workspace .production-header a{color:var(--mira-purple)}.mira-workspace .workspace-brand{position:relative}.mira-workspace .workspace-brand>span{visibility:hidden}.mira-workspace .workspace-brand strong{color:transparent;background:url('brand/mira-wordmark-transparent-v1.png') center/contain no-repeat;font-size:25px}.mira-workspace .workspace-brand small{color:var(--mira-muted)}.mira-workspace .workspace-identity strong{color:var(--mira-ink)}.mira-workspace .local-label{color:var(--mira-purple);font-size:11px}.mira-workspace button:disabled{cursor:not-allowed}
+@media(max-width:600px){.login-shell{padding-top:28px}.login-card{padding:28px 24px}.login-brandbar img{width:120px}.login-brandbar span{font-size:10px}.login-card h1{font-size:24px}.login-help{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+
+/* mira / soft studio — one type, spacing and surface system across routes.
+   The production grid, field order and sidebar geometry are unchanged. */
+:root{
+ --mira-ink:#302936;--mira-muted:#706376;--mira-purple:#755b86;
+ --mira-line:#e9e2ed;--mira-lilac:#eee6f4;
+ --mira-space-1:8px;--mira-space-2:16px;--mira-space-3:24px;--mira-space-4:32px;
+ --mira-control-radius:12px;--mira-panel-radius:20px;
+ --mira-elevation:0 8px 28px -16px #62447235,0 2px 5px #62447207;
+ --mira-sheet-elevation:0 24px 64px -28px #47305155;
+ --mira-wash:radial-gradient(ellipse at 94% 9%,#ded1ed75,transparent 53%),linear-gradient(145deg,#fff 24%,#faf7fc 100%);
+}
+html{scrollbar-color:#c9bbd2 #faf8fc;scrollbar-width:thin}
+input,textarea{caret-color:var(--mira-purple)}a{text-underline-offset:4px}
+.mira-workspace,.mira-login-page{font-weight:400;-webkit-font-smoothing:antialiased}
+.mira-workspace .production-main{background:transparent}
+body.mira-workspace{background:radial-gradient(ellipse 70% 450px at 83% 4%,#e8ddf165,transparent 85%),#fff}
+.mira-workspace .production-header{background:#ffffffbf;border-color:#ede7f180;backdrop-filter:blur(18px)}
+.mira-workspace .production-header .local-label{font-size:12px;color:var(--mira-muted);text-decoration:none}
+.mira-workspace .workspace-sidebar{background:linear-gradient(155deg,#faf7fd,#fff 55%,#f9f6fc);border-color:#ece6f0}
+.mira-workspace .workspace-brand{gap:0;justify-content:flex-start;padding-left:16px}
+.mira-workspace .workspace-brand>span{display:none}
+.mira-workspace .workspace-brand strong{width:104px;height:46px;display:block;background-size:contain}
+.mira-workspace .workspace-label{color:var(--mira-muted);font-size:11px;letter-spacing:.02em}
+.mira-workspace .workspace-nav a{font-size:14px;min-height:46px;gap:12px;border-radius:var(--mira-control-radius);color:#65566e}
+.mira-workspace .workspace-nav a>span{display:inline-flex;align-items:center;justify-content:center;width:22px;color:#896e9a}
+.mira-workspace .workspace-nav svg{width:19px;height:19px}
+.mira-workspace .workspace-nav a[aria-current=page]{background:linear-gradient(112deg,#e8dcef,#f3ecf8);color:#604570;box-shadow:0 3px 8px -5px #755b8650,inset 0 1px #ffffffd0;font-weight:500}
+.mira-workspace .workspace-nav a:hover{background-color:#f0e9f6}
+.mira-workspace .workspace-local{color:var(--mira-muted);font-size:11px}
+.mira-workspace .production-intro{margin-top:26px;margin-bottom:32px}
+.mira-workspace .production-intro .eyebrow,.mira-login-page .eyebrow{display:none}
+.mira-workspace .production-intro h2{font-family:var(--mira-font);font-size:clamp(27px,2.5vw,36px);font-weight:500;line-height:1.35;letter-spacing:-.025em;margin:0 0 12px;color:var(--mira-ink);text-wrap:balance}
+.mira-workspace .production-intro>p:last-child{font-size:13px;line-height:1.8;color:var(--mira-muted);margin:0}
+.mira-workspace .asset-entry{padding:20px;background:linear-gradient(165deg,#fffffffa,#ffffffd9);border-color:#fff;border-radius:var(--mira-panel-radius);box-shadow:var(--mira-elevation)}
+.mira-workspace .asset-heading{gap:8px;margin-bottom:16px}
+.mira-workspace .asset-heading h3{font-size:16px;line-height:1.5;font-weight:500;letter-spacing:-.015em;color:var(--mira-ink)}
+.mira-workspace .asset-heading>span{font-size:11px;color:var(--mira-purple);font-variant-numeric:tabular-nums}
+.mira-workspace .asset-heading small{font-size:11px;line-height:1.5;color:var(--mira-muted)}
+.mira-workspace .asset-picker{background:var(--mira-wash);border:1px dashed #cabbD4;border-radius:16px;box-shadow:inset 0 1px #fff;isolation:isolate}
+.mira-workspace #clothing-picker{background:radial-gradient(ellipse at 78% 25%,#e5d8ee95,transparent 65%),linear-gradient(155deg,#fff,#f7f2fb)}
+.mira-workspace #face-picker{background:radial-gradient(ellipse at 88% 78%,#ddd4ea95,transparent 64%),linear-gradient(155deg,#fff,#f8f5fc)}
+.mira-workspace .asset-picker:hover,.mira-workspace .asset-picker:focus-within{border-color:#9c81ae;box-shadow:inset 0 1px #fff,0 5px 18px -9px #70518540}
+.mira-workspace .asset-empty{gap:8px}
+.mira-workspace .asset-empty>b{display:grid;place-items:center;flex-shrink:0;width:54px;height:54px;border-radius:17px;background:linear-gradient(150deg,#ffffffef,#eee3f5b0);box-shadow:0 5px 12px -6px #71508840,inset 0 1px 0 #fff;color:#826294;margin-bottom:6px}
+.mira-workspace .asset-empty>b svg{width:25px;height:25px}
+.mira-workspace .asset-empty strong{font-size:14px;font-weight:500;color:#51415d;line-height:1.5}
+.mira-workspace .asset-empty small{font-size:12px;color:var(--mira-muted);line-height:1.5}
+.mira-workspace :is(.field-hint,.person-source-note,.asset-footer){font-size:12px;line-height:1.7;color:var(--mira-muted)}
+.mira-workspace .asset-footer button{font-size:12px;min-height:36px;color:var(--mira-purple)}
+.mira-workspace .person-reference-heading{flex-wrap:wrap}
+.mira-workspace .person-picker{margin-left:auto}
+.mira-workspace :is(.scene-settings,.optional-reference,.accessory-panel){background:linear-gradient(130deg,#fff,#fcfaff);border-color:#e9e1ef;border-radius:16px;box-shadow:none}
+.mira-workspace :is(.scene-settings summary,.optional-reference summary,.accessory-panel summary){color:#51415d}
+.mira-workspace .generation-settings-heading{font-size:18px;font-weight:500;letter-spacing:-.015em;color:var(--mira-ink)}
+.mira-workspace :is(select,input:not([type=range]):not([type=checkbox]),textarea){color:var(--mira-ink);font-size:13px;border:1px solid #ddd2e5;border-radius:var(--mira-control-radius);background:#fdfbff;box-shadow:inset 0 1px 2px #4b335306}
+.mira-workspace #model-settings.inline-generation-options select{background:linear-gradient(#fff,#f8f4fc);border-color:#dcd0e5;min-height:40px}
+.mira-workspace :is(.person-menu,.config-panel,.run-menu-items){background:#fffffff5;border:1px solid var(--mira-line);border-radius:16px;box-shadow:var(--mira-sheet-elevation);backdrop-filter:blur(18px);color:var(--mira-ink)}
+.mira-action,.mira-workspace #studio-generate-submit,.mira-cover-page .reset{background:linear-gradient(135deg,#826893,#6a507b);color:#fff;border:0;border-radius:var(--mira-control-radius);box-shadow:0 5px 14px -6px #73548270,inset 0 1px #ffffff35;font-weight:500;letter-spacing:.01em}
+.mira-action:hover,.mira-cover-page .reset:hover,.mira-workspace #studio-generate-submit:not(:disabled):hover{background:linear-gradient(135deg,#745887,#624670);box-shadow:0 7px 18px -7px #73548285}
+.mira-workspace #studio-generate-submit:disabled{background:#ece5f1;color:#84718f;border:0;box-shadow:none}
+.mira-workspace .production-main button.primary{color:white;background:var(--mira-purple)}
+.mira-workspace .production-main button.secondary{color:#624a73;background:#f1eaf6;border-color:#d9cce2}
+.mira-workspace .generation-dock{background:linear-gradient(110deg,#fffffffa,#f2ebf8f5);border-color:#e4d8ed;box-shadow:0 -6px 24px -16px #67507340;backdrop-filter:blur(16px)}
+.mira-workspace .generation-dock-summary,.mira-workspace #generation-readiness{color:#6c557b;font-size:12px}
+.mira-workspace select:disabled{color:#75647e;opacity:1;cursor:not-allowed}
+.mira-login-page{background:radial-gradient(ellipse 600px 430px at 75% 20%,#e5d8ef80,transparent 80%),radial-gradient(ellipse 400px 450px at 12% 80%,#f0e9f780,transparent),#fff!important}
+.login-shell{padding-top:64px}.login-brandbar{margin-bottom:24px}.login-brandbar span{font-size:12px;letter-spacing:.025em}
+.login-card{background:linear-gradient(145deg,#fffffff5,#fdfbffeb);border:1px solid #fff;border-radius:24px;box-shadow:var(--mira-sheet-elevation);padding:40px}
+.login-card h1{font-family:var(--mira-font);font-weight:500;font-size:30px;letter-spacing:-.025em;line-height:1.4;margin:0 0 12px}
+.login-card .intro{font-size:14px;line-height:1.8;margin-bottom:32px}
+.login-field{font-size:13px;margin-top:20px}.login-field input{background:linear-gradient(#fff,#faf7fd);border-color:#dbd1e2;border-radius:12px;font-size:13px;padding:14px 16px}
+.login-field input:disabled{color:#766680}.login-field input::placeholder{color:#766680;opacity:1}
+.login-card .mira-action{margin-top:28px}.login-note{font-size:12px;line-height:1.8}.login-foot{font-size:12px}
+dialog,.system-dialog{background:linear-gradient(140deg,#fff,#faf6fd);border:1px solid #fff;border-radius:24px;box-shadow:var(--mira-sheet-elevation)}
+dialog h2,.system-dialog h2{font-size:22px;font-weight:500;letter-spacing:-.02em;line-height:1.4}
+dialog p,.system-dialog p{font-size:13px;line-height:1.8;color:var(--mira-muted)}
+dialog::backdrop{background:#34243f40;backdrop-filter:blur(7px)}
+.mira-cover-page:not(.has-media){background:radial-gradient(ellipse at 76% 23%,#e7dbf0 0%,transparent 52%),radial-gradient(ellipse at 14% 82%,#f0e9f7 0%,transparent 56%),#fff}
+.mira-cover-page .signature p{letter-spacing:.06em;font-weight:400}.mira-cover-page:not(.has-media) .signature img{filter:none}
+.mira-cover-page:not(.has-media) .login{border-color:#d6c6e0;background:linear-gradient(140deg,#fff,#efe5f6);box-shadow:0 4px 12px -7px #62447240;color:var(--mira-ink)}
+.mira-cover-page .login{font-size:13px;letter-spacing:.015em}.mira-cover-page .setting-button{font-size:12px}
+@media(prefers-reduced-motion:no-preference){
+ .mira-action,.asset-picker,.workspace-nav a,.login,.reset{transition:background .2s ease,border-color .2s ease,box-shadow .2s ease,transform .18s cubic-bezier(.22,1,.36,1)}
+ .mira-action:active,.mira-cover-page .reset:active{transform:translateY(1px);box-shadow:inset 0 2px 4px #3a244023}
+}
+@media(max-width:720px){
+ .mira-workspace .production-intro{margin:12px 0 24px}
+ .mira-workspace .production-intro h2{font-size:27px;letter-spacing:-.02em}
+ .mira-workspace .asset-entry{padding:16px}
+ .mira-workspace .asset-empty>b{width:42px;height:42px;border-radius:13px;margin:0}
+ .mira-workspace .asset-empty>b svg{width:22px;height:22px}
+ .mira-workspace .asset-empty{gap:5px}
+ .mira-workspace .asset-heading small{font-size:11px}
+ .mira-workspace .workspace-toggle{display:grid;place-items:center;border:1px solid #ded2e6;background:#ffffffef;box-shadow:0 4px 12px -8px #755b8650}
+ .mira-workspace .workspace-toggle svg{width:20px;height:20px}
+ .login-shell{padding-top:28px}.login-card{padding:28px 24px}.login-card h1{font-size:26px}
+}
