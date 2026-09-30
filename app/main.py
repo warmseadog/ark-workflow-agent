@@ -28,6 +28,7 @@ from .media import BlurOptions, extract_video_url
 from . import database
 from .discovery import service as discovery
 from .workflow_router import get_router as get_workflow_router
+from . import security
 
 @asynccontextmanager
 async def production_lifespan(app):
@@ -39,7 +40,8 @@ async def production_lifespan(app):
         shutdown(settings)
 
 
-app = FastAPI(title="Face & Clothing Video Workflow", version="0.1.0", lifespan=production_lifespan)
+app = FastAPI(title="Face & Clothing Video Workflow", version="0.1.0", lifespan=production_lifespan,
+              default_response_class=security.response_class(lambda: settings))
 APP_DIR = Path(__file__).resolve().parent
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
@@ -77,6 +79,7 @@ from .access_control import install as install_access_control
 install_access_control(app,lambda:settings)
 from .request_timing import install as install_request_timing
 install_request_timing(app)
+security.install(app, lambda: settings)
 from .authentication import get_router as get_auth_router
 app.include_router(get_auth_router(lambda:settings,templates))
 from .user_admin import get_router as get_user_admin_router
@@ -145,6 +148,8 @@ def import_video_link(request: Request, payload: LinkInput):
             raise media.MediaPipelineError('下载到的视频为空，请尝试其他链接。')
         if size > settings.max_upload_mb * 1024 * 1024:
             raise media.MediaPipelineError('下载视频超过项目大小限制，请选择更短的视频。')
+        from .media_validation import validate_media
+        validate_media(path, 'video', effective.max_upload_mb * 1024 * 1024)
         return FileResponse(
             path, media_type=mimetypes.guess_type(path.name)[0] or 'application/octet-stream',
             filename='reference' + path.suffix,
@@ -406,17 +411,9 @@ def _parse_detection_size(value: str | None) -> int | None:
         raise HTTPException(status_code=422, detail="检测尺寸必须是数字或留空。") from exc
 
 
-def _save_upload(upload: UploadFile, destination: Path, max_bytes: int) -> Path:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    total = 0
-    with destination.open("wb") as target:
-        while chunk := upload.file.read(1024 * 1024):
-            total += len(chunk)
-            if total > max_bytes:
-                destination.unlink(missing_ok=True)
-                raise HTTPException(status_code=413, detail="上传文件超过大小限制。")
-            target.write(chunk)
-    return destination
+def _save_upload(upload: UploadFile, destination: Path, max_bytes: int, kind: str = "image") -> Path:
+    from .media_validation import save_upload
+    return save_upload(upload, destination, max_bytes, kind)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -545,6 +542,7 @@ async def create_job(
             video,
             job_dir / f"source{_safe_suffix(video.filename, '.mp4')}",
             settings.max_upload_mb * 1024 * 1024,
+            kind="video",
         )
     replace_path = None
     if replace_image:

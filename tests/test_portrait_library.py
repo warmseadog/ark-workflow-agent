@@ -1,3 +1,4 @@
+from tests.media_fixtures import image_bytes, video_bytes, media_bytes
 from dataclasses import replace
 from io import BytesIO
 import json
@@ -90,8 +91,8 @@ def test_pending_photos_do_not_block_submit_or_other_runs_and_freeze_person(setu
     lib=PortraitLibrary(main.settings);store=ProductionStore(main.settings.storage_dir)
     person=setup.get('/api/portrait/people').json()['items'][0]
     image=picture(setup)
-    video=setup.post('/api/production/assets',data={'kind':'video'},files={'file':('v.mp4',b'video','video/mp4')}).json()
-    clothing=setup.post('/api/production/assets',data={'kind':'clothing'},files={'file':('c.png',b'clothing','image/png')}).json()
+    video=setup.post('/api/production/assets',data={'kind':'video'},files={'file':('v.mp4',video_bytes(),'video/mp4')}).json()
+    clothing=setup.post('/api/production/assets',data={'kind':'clothing'},files={'file':('c.png',image_bytes(),'image/png')}).json()
     draft=setup.post('/api/production/drafts',json={}).json()
     r=setup.put('/api/production/drafts/'+draft['id'],json={'revision':draft['revision'],'person_id':person['id'],
         'source_asset_id':video['id'],'face_asset_ids':[image['id']],'clothing_asset_ids':[clothing['id']]})

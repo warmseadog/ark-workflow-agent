@@ -9,6 +9,7 @@ from .config import Settings
 from .media import BlurOptions, download_video, run_deface
 from .seedance import SeedanceClient
 from .workflow_store import WorkflowStore
+from .security import safe_error, configured_secrets
 
 
 def run_redaction_task(
@@ -58,7 +59,7 @@ def run_redaction_task(
         store.transition_stage_task(
             task_id,
             "failed",
-            error_data={"type": type(error).__name__, "message": str(error)},
+            error_data={"type": type(error).__name__, "message": safe_error(error, configured_secrets(settings))},
         )
         raise
 def run_generation_task(
@@ -107,6 +108,6 @@ def run_generation_task(
         store.transition_stage_task(
             task_id,
             "failed",
-            error_data={"type": type(error).__name__, "message": str(error)},
+            error_data={"type": type(error).__name__, "message": safe_error(error, configured_secrets(settings))},
         )
         raise

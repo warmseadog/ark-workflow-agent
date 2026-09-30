@@ -1,3 +1,4 @@
+from tests.media_fixtures import image_bytes, video_bytes, media_bytes
 import os
 
 from fastapi import FastAPI
@@ -78,14 +79,14 @@ def test_source_upload_is_streamed_and_hashed(tmp_path, monkeypatch):
 
     response = client.post(
         f"/api/workflow/projects/{project_id}/source-upload",
-        files={"video": ("clip.mp4", b"fake-video", "video/mp4")},
+        files={"video": ("clip.mp4", video_bytes(), "video/mp4")},
         data={"rights_status": "declared"},
     )
     assert response.status_code == 200
     asset = response.json()["asset"]
     assert asset["kind"] == "upload"
     assert asset["sha256"]
-    assert asset["size_bytes"] == len(b"fake-video")
+    assert asset["size_bytes"] == len(video_bytes())
 def test_redaction_render_is_idempotent(tmp_path, monkeypatch):
     api = FastAPI()
     store = WorkflowStore(tmp_path / "workflow.sqlite3")
@@ -118,12 +119,12 @@ def test_material_upload_and_execute_task_are_on_workflow_store(tmp_path, monkey
 
     face = client.post(
         f"/api/workflow/projects/{project_id}/material-upload",
-        files={"material": ("face.png", b"face-data", "image/png")},
+        files={"material": ("face.png", image_bytes(), "image/png")},
         data={"kind": "face", "approved": "true"},
     )
     garment = client.post(
         f"/api/workflow/projects/{project_id}/material-upload",
-        files={"material": ("garment.png", b"garment-data", "image/png")},
+        files={"material": ("garment.png", image_bytes(), "image/png")},
         data={"kind": "garment", "approved": "true"},
     )
     assert face.status_code == garment.status_code == 200

@@ -1,3 +1,4 @@
+from tests.media_fixtures import image_bytes, video_bytes, media_bytes
 from dataclasses import replace
 
 import pytest
@@ -110,7 +111,7 @@ def test_invalid_task_duration_is_rejected_before_edit_normalization(client,dura
 def test_25_draft_accepts_21_face_references(client):
     ids=[]
     for i in range(21):
-        asset=client.post('/api/production/assets',data={'kind':'face'},files={'file':(f'{i}.png',b'fixture','image/png')})
+        asset=client.post('/api/production/assets',data={'kind':'face'},files={'file':(f'{i}.png',image_bytes(),'image/png')})
         assert asset.status_code==200
         ids.append(asset.json()['id'])
     draft=client.post('/api/production/drafts',json={}).json()

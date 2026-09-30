@@ -11,6 +11,7 @@ from threading import RLock
 from urllib.parse import urlsplit
 
 from .config import Settings
+from .secure_transport import validate_endpoint
 
 PRESETS = {
     'ark': {'label': '火山方舟官方', 'protocol': 'ark',
@@ -26,19 +27,7 @@ _lock = RLock()
 
 
 def validate_url(value: str, *, optional: bool = False) -> str:
-    value = value.strip().rstrip('/')
-    if optional and not value:
-        return ''
-    try:
-        parsed = urlsplit(value)
-        _ = parsed.port  # Accessing the property also validates the port range.
-    except ValueError:
-        raise ValueError('接口地址或端口格式不正确。') from None
-    if (parsed.scheme not in {'http', 'https'} or not parsed.hostname
-            or parsed.username or parsed.password or parsed.query or parsed.fragment
-            or any(c.isspace() for c in value)):
-        raise ValueError('地址必须是 HTTP(S) URL，可包含端口和路径，不可包含账号、查询参数或片段。')
-    return value
+    return validate_endpoint(value, optional=optional)
 
 
 @dataclass(frozen=True)
@@ -117,7 +106,7 @@ def resolve_config(settings: Settings, payload: dict) -> GenerationConfig:
     if values['mode'] not in {'mock', 'http'}:
         raise ValueError('请选择真实生成或本地演示模式。')
     values['base_url'] = validate_url(values['base_url'], optional=True)
-    values['public_base_url'] = validate_url(values['public_base_url'], optional=True)
+    values['public_base_url'] = validate_endpoint(values['public_base_url'], optional=True, allow_local=False)
     if values['public_base_url']:
         hostname = urlsplit(values['public_base_url']).hostname
         try:

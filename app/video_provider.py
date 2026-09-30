@@ -16,6 +16,7 @@ from urllib.parse import quote, urlsplit
 import requests
 
 from .generation_settings import GenerationConfig
+from .secure_transport import validate_endpoint
 from .reference_roles import ACCESSORY_LABELS, ACCESSORY_RULES
 from .audio_policy import AUDIO_COPYRIGHT_CODE
 
@@ -58,6 +59,13 @@ def reference_order(faces: list[Path], clothes: list[Path]) -> list[tuple[Path, 
     return ordered + [(p, '人物补充') for p in faces[1:]] + [(p, '衣服补充') for p in clothes[1:]]
 
 
+def _media_url(url):
+    try:
+        return validate_endpoint(url, allow_query=True)
+    except ValueError as exc:
+        raise ProviderError(str(exc), error_kind='configuration') from None
+
+
 class VideoProvider:
     def __init__(self, config: GenerationConfig, poll_seconds: float = 5, progress=None):
         self.config = config
@@ -69,13 +77,8 @@ class VideoProvider:
     def _safe(self, value) -> str:
         if isinstance(value, dict):
             value = ' '.join(str(value[k]) for k in ('code','message') if value.get(k)) or '服务商未提供错误说明'
-        text = str(value or '服务商未提供错误说明')
-        if self.config.api_key:
-            text = text.replace(self.config.api_key, '[已隐藏]')
-        text = re.sub(r'data:[^\s]+', '[媒体内容已隐藏]', text)
-        text = re.sub(r'https?://[^\s]+', '[资源地址已隐藏]', text, flags=re.I)
-        text = re.sub(r'Bearer\s+\S+', 'Bearer [已隐藏]', text, flags=re.I)
-        return text[:600]
+        from .security import safe_error
+        return safe_error(value or '服务商未提供错误说明', (self.config.api_key,), limit=600)
 
     def _provider_error(self, message: str, *, detail=None, error_kind='processing_failed',
                         retryable=False, submission_uncertain=False) -> ProviderError:
@@ -96,6 +99,10 @@ class VideoProvider:
 
     def _request(self, method: str, path: str, **kwargs) -> dict:
         self._last_request_id = None
+        try:
+            base_url = validate_endpoint(self.config.base_url)
+        except ValueError as exc:
+            raise ProviderError(str(exc), error_kind='configuration') from None
         submitting = method == 'POST' and path != '/uploads/videos'
         kind = 'query_unavailable' if method == 'GET' else ('submission_uncertain' if submitting else 'processing_failed')
         timeout = (60, 120) if method == 'POST' else (15, 30)
@@ -105,7 +112,7 @@ class VideoProvider:
                 # requests uses the connection timeout while writing the body.
                 # The old 15 seconds was insufficient for inline reference images.
                 started = time.monotonic()
-                response = requests.request(method, f'{self.config.base_url.rstrip("/")}{path}',
+                response = requests.request(method, f'{base_url}{path}',
                     headers={'Authorization': f'Bearer {self.config.api_key}'},
                     timeout=timeout, allow_redirects=False, **kwargs)
         except requests.RequestException as exc:
@@ -212,6 +219,8 @@ class VideoProvider:
         if self.config.mode == 'mock':
             shutil.copyfile(video, output)
             return {'provider': 'mock', 'message': '本地演示：输出打码视频，未调用视频模型。'}
+        if video_url:
+            video_url = _media_url(video_url)
         problem = self.config.generation_problem(video_available=bool(video_url))
         if problem:
             raise ProviderError(problem, error_kind='configuration')
@@ -258,6 +267,7 @@ class VideoProvider:
             video_url = uploaded['data'].get('url') if isinstance(uploaded.get('data'), dict) else None
             if not isinstance(video_url, str) or urlsplit(video_url).scheme not in {'http', 'https'}:
                 raise ProviderError('视频上传响应缺少可用地址，请检查接口格式。')
+            video_url = _media_url(video_url)
             body = {'model': self.config.model, 'prompt': structured, 'duration': self.config.duration,
                     'resolution': self.config.resolution, 'aspect_ratio': 'adaptive',
                     'image_with_roles': [{'url': self._data_url(p), 'role': 'reference_image'} for p, _ in references],
@@ -309,6 +319,8 @@ class VideoProvider:
             raise ProviderError('智能续写需要 Seedance 2.5。',error_kind='configuration')
         if self.config.mode != 'http':
             raise ProviderError('演示模式不会调用智能续写，请在后台配置真实视频模型。',error_kind='configuration')
+        if video_url:
+            video_url = _media_url(video_url)
         problem = self.config.generation_problem(video_available=bool(video_url))
         if problem:
             raise ProviderError(problem,error_kind='configuration')
@@ -396,11 +408,16 @@ class VideoProvider:
         return {'provider': self.config.provider, 'task_id': task_id, 'message': '真实视频生成完成。'}
 
     def _download(self, url: str, output: Path) -> None:
+        try:
+            url = validate_endpoint(url, allow_query=True)
+        except ValueError as exc:
+            raise ProviderError(str(exc)) from None
         temporary = output.with_suffix('.part')
         try:
             # Result hosts are independent; never forward the provider's API key.
-            with requests.get(url, stream=True, timeout=(15, 120)) as response:
-                response.raise_for_status()
+            with requests.get(url, stream=True, timeout=(15, 120), allow_redirects=False) as response:
+                if not 200 <= response.status_code < 300:
+                    raise ProviderError('视频下载失败，请检查服务商的最终 HTTPS 下载地址。')
                 content_type = response.headers.get('Content-Type', '').lower()
                 if content_type.startswith('text/') or 'json' in content_type:
                     raise ProviderError('视频下载地址返回了网页，请检查服务商的任务结果。')

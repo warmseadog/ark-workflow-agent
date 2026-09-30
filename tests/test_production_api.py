@@ -1,3 +1,4 @@
+from tests.media_fixtures import image_bytes, video_bytes, media_bytes
 from dataclasses import replace
 import io
 import pytest
@@ -14,7 +15,7 @@ def client(tmp_path,monkeypatch):
 
 
 def asset(client,kind,name):
-    r=client.post('/api/production/assets',data={'kind':kind},files={'file':(name,b'fixture','video/mp4' if kind=='video' else 'image/png')})
+    r=client.post('/api/production/assets',data={'kind':kind},files={'file':(name,media_bytes(name),'video/mp4' if kind=='video' else 'image/png')})
     assert r.status_code==200,r.text
     return r.json()
 
@@ -32,7 +33,7 @@ def test_assets_and_draft_are_restorable_and_not_secret(client):
     draft=complete_draft(client)
     loaded=client.get('/api/production/drafts/'+draft['id']).json()
     assert loaded['prompt']=='original' and len(loaded['assets'])==3
-    assert client.get(loaded['assets'][0]['url']).content==b'fixture'
+    assert client.get(loaded['assets'][0]['url']).content==video_bytes()
     assert 'api_key' not in loaded['model']
     assert client.put('/api/production/drafts/'+draft['id'],json={'revision':1,'prompt':'lost'}).status_code==409
 

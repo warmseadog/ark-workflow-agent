@@ -8,6 +8,7 @@ import re
 import tempfile
 from threading import RLock
 from uuid import uuid4
+from .secure_transport import validate_endpoint
 
 _lock = RLock()
 
@@ -111,6 +112,9 @@ def save_config(settings, payload):
 
 
 def make_client(config):
+    validate_endpoint(config.endpoint, allow_local=False)
+    if config.endpoint != f'https://tos-{config.region}.volces.com':
+        raise ValueError('请使用与地域一致的 TOS 官方公网 HTTPS Endpoint。')
     import tos
     return tos.TosClientV2(config.access_key, config.secret_key, config.endpoint, config.region,
                            connection_time=10, socket_timeout=60, max_retry_count=1)

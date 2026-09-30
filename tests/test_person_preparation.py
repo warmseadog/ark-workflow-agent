@@ -1,3 +1,4 @@
+from tests.media_fixtures import image_bytes, video_bytes, media_bytes
 """Offline contracts for durable automatic virtual-person preparation."""
 from dataclasses import replace
 from io import BytesIO
@@ -39,7 +40,9 @@ def env(tmp_path, monkeypatch):
     return client, store, calls, settings
 
 
-def upload(client, kind, data=b'fixture', name=None):
+def upload(client, kind, data=None, name=None):
+    name = name or ('source.mp4' if kind == 'video' else 'image.png')
+    if data is None: data = media_bytes(name)
     response = client.post('/api/production/assets', data={'kind': kind},
         files={'file': (name or ('source.mp4' if kind == 'video' else 'image.png'), data)})
     assert response.status_code == 200, response.text

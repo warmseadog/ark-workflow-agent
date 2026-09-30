@@ -4,10 +4,12 @@ import shutil
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
 from .config import Settings
+from .secure_transport import validate_endpoint
 
 
 class SeedanceError(RuntimeError):
@@ -57,6 +59,10 @@ class SeedanceClient:
         if not self.settings.seedance_api_url or not self.settings.seedance_api_key:
             raise SeedanceError("SEEDANCE_MODE=http 时必须配置 SEEDANCE_API_URL 和 SEEDANCE_API_KEY。")
 
+        try:
+            base_url = validate_endpoint(self.settings.seedance_api_url)
+        except ValueError as exc:
+            raise SeedanceError(str(exc)) from None
         headers = {"Authorization": f"Bearer {self.settings.seedance_api_key}"}
         files = {"video": video_path.open("rb")}
         if face_path:
@@ -65,13 +71,15 @@ class SeedanceClient:
             files["clothing_image"] = clothing_path.open("rb")
         try:
             response = requests.post(
-                f"{self.settings.seedance_api_url}/generations",
+                f"{base_url}/generations",
                 headers=headers,
                 data={"prompt": structured_prompt},
                 files=files,
                 timeout=60,
+                allow_redirects=False,
             )
-            response.raise_for_status()
+            if not 200 <= response.status_code < 300:
+                raise SeedanceError(f'Seedance 提交失败（HTTP {response.status_code}），请检查接口配置。')
             payload = response.json()
             task_id = payload.get("task_id") or payload.get("id")
             if not task_id:
@@ -79,11 +87,13 @@ class SeedanceClient:
             deadline = time.time() + 1800
             while time.time() < deadline:
                 status_response = requests.get(
-                    f"{self.settings.seedance_api_url}/tasks/{task_id}",
+                    f"{base_url}/tasks/{quote(str(task_id), safe='')}",
                     headers=headers,
                     timeout=30,
+                    allow_redirects=False,
                 )
-                status_response.raise_for_status()
+                if not 200 <= status_response.status_code < 300:
+                    raise SeedanceError(f'Seedance 查询失败（HTTP {status_response.status_code}），请检查接口配置。')
                 status = status_response.json()
                 state = str(status.get("status", "")).lower()
                 if state in {"succeeded", "success", "completed", "done"}:
@@ -93,18 +103,28 @@ class SeedanceClient:
                     self._download_result(result_url, output_path)
                     return {"provider": "http", "task_id": task_id, "output": str(output_path)}
                 if state in {"failed", "error", "cancelled"}:
-                    raise SeedanceError(status.get("error") or "Seedance 任务失败。")
+                    raise SeedanceError('Seedance 任务失败，请在服务商控制台检查任务详情。')
                 time.sleep(self.settings.seedance_poll_seconds)
             raise SeedanceError("Seedance 任务等待超时。")
+        except (requests.RequestException, ValueError, TypeError):
+            raise SeedanceError('Seedance 接口请求失败，请检查接口配置和网络。') from None
         finally:
             for file_obj in files.values():
                 file_obj.close()
 
     @staticmethod
     def _download_result(url: str, destination: Path) -> None:
-        with requests.get(url, stream=True, timeout=120) as response:
-            response.raise_for_status()
-            with destination.open("wb") as target:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        target.write(chunk)
+        try:
+            url = validate_endpoint(url, allow_query=True)
+        except ValueError as exc:
+            raise SeedanceError(str(exc)) from None
+        try:
+            with requests.get(url, stream=True, timeout=120, allow_redirects=False) as response:
+                if not 200 <= response.status_code < 300:
+                    raise SeedanceError('Seedance 视频下载失败，请检查最终 HTTPS 下载地址。')
+                with destination.open("wb") as target:
+                    for chunk in response.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            target.write(chunk)
+        except requests.RequestException:
+            raise SeedanceError('Seedance 视频下载失败，请检查服务商任务结果。') from None

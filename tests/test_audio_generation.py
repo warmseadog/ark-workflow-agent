@@ -1,3 +1,4 @@
+from tests.media_fixtures import image_bytes, video_bytes, media_bytes
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import json
@@ -22,7 +23,7 @@ def client(tmp_path, monkeypatch):
 def failed_run(client, audio=True):
     ids = {}
     for kind, name in [('video','video.mp4'), ('face','face.png'), ('clothing','clothing.png')]:
-        result = client.post('/api/production/assets', data={'kind':kind}, files={'file':(name,b'fixture')})
+        result = client.post('/api/production/assets', data={'kind':kind}, files={'file':(name,media_bytes(name))})
         assert result.status_code == 200, result.text
         ids[kind] = result.json()['id']
     draft = client.post('/api/production/drafts', json={}).json()

@@ -1,3 +1,4 @@
+from tests.media_fixtures import image_bytes, video_bytes, media_bytes
 from dataclasses import replace
 
 import pytest
@@ -31,7 +32,9 @@ def test_save_reload_and_no_key_in_response(client):
     assert {'ark', 'toapis', 'custom'} <= saved['presets'].keys()
 
 
-def test_blank_key_preserves_only_for_same_destination(client):
+def test_blank_key_preserves_only_for_same_destination(client, monkeypatch):
+    monkeypatch.setenv('APP_AUTH_ENABLED', 'false')
+    monkeypatch.setenv('APP_ALLOW_INSECURE_LOCAL_HTTP', 'true')
     assert client.put('/api/model-settings', json=config()).status_code == 200
     edited = config()
     edited.update(api_key='', model='my-model', base_url='https://toapis.cn/v1')
@@ -182,9 +185,9 @@ def test_generate_api_completes_real_pipeline_with_all_references(client, monkey
     monkeypatch.setattr('app.video_provider.requests.get',download)
     client.put('/api/model-settings',json=config())
     response=client.post(f'/api/jobs/{job.id}/generate',data={'prompt':'custom prompt'},files=[
-        ('face_image',('face1.png',b'face1','image/png')),
-        ('face_image',('face2.png',b'face2','image/png')),
-        ('clothing_image',('cloth.png',b'cloth','image/png'))])
+        ('face_image',('face1.png',image_bytes(color=(10,20,30)),'image/png')),
+        ('face_image',('face2.png',image_bytes(color=(20,30,40)),'image/png')),
+        ('clothing_image',('cloth.png',image_bytes(),'image/png'))])
     assert response.status_code == 200
     result=response.json()
     assert result['status'] == 'succeeded'

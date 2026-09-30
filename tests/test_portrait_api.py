@@ -1,3 +1,4 @@
+from tests.media_fixtures import image_bytes, video_bytes, media_bytes
 from dataclasses import replace
 from fastapi.testclient import TestClient
 import pytest
@@ -63,7 +64,7 @@ def test_official_import_is_durable_deduplicated_and_not_a_local_photo_stamp(cli
     assert duplicate['id']==asset['id'] and official['downloads']==1
     bad=client.post('/api/portrait/import',json={'remote_asset_id':{'bad':1}})
     assert bad.status_code==422
-    raw=client.post('/api/production/assets',data={'kind':'face'},files={'file':('another.png',b'arbitrary','image/png')}).json()
+    raw=client.post('/api/production/assets',data={'kind':'face'},files={'file':('another.png',image_bytes(color=(10,20,30)),'image/png')}).json()
     assert 'portrait' not in raw
     assert client.post('/api/portrait/bind',json={'local_asset_id':raw['id'],'remote_asset_id':'asset-realperson'}).status_code==404
 
@@ -72,8 +73,8 @@ def test_authorized_submit_and_worker_revalidate_and_use_frozen_reference(client
     from app.production_store import ProductionStore
     from app import production_worker,portrait_service
     imported=client.post('/api/portrait/import',json={'remote_asset_id':'asset-realperson'}).json()
-    video=client.post('/api/production/assets',data={'kind':'video'},files={'file':('ref.mp4',b'video','video/mp4')}).json()
-    clothes=client.post('/api/production/assets',data={'kind':'clothing'},files={'file':('dress.png',b'dress','image/png')}).json()
+    video=client.post('/api/production/assets',data={'kind':'video'},files={'file':('ref.mp4',video_bytes(),'video/mp4')}).json()
+    clothes=client.post('/api/production/assets',data={'kind':'clothing'},files={'file':('dress.png',image_bytes(),'image/png')}).json()
     draft=client.post('/api/production/drafts',json={}).json()
     draft=client.put('/api/production/drafts/'+draft['id'],json={'revision':draft['revision'],'source_asset_id':video['id'],'face_asset_ids':[imported['id']],'clothing_asset_ids':[clothes['id']]}).json()
     run=client.post('/api/production/runs',json={'draft_id':draft['id'],'revision':draft['revision'],'idempotency_key':'portrait-one'}).json()

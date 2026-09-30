@@ -279,6 +279,8 @@ class ProductionStore:
         if private:
             value['private'] = json.loads(value['private'])
         else:
+            from .security import safe_payload, secret_values
+            value = safe_payload(value, secret_values(json.loads(value['private'])))
             value.pop('private')
             value.pop('result_url')
             value.pop('idempotency_key')

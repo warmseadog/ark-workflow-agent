@@ -16,6 +16,7 @@ from .generation_settings import GenerationConfig
 from .video_provider import VideoProvider
 from .reference_media import publish_video
 from . import storage_settings
+from .security import safe_error, configured_secrets, secret_values
 
 
 def _now() -> str:
@@ -194,8 +195,9 @@ def run_deface_pipeline(
         )
         store.log(job_id, "人脸/头发打码完成，可在下一步前预览结果。")
     except Exception as exc:  # noqa: BLE001 - surface pipeline failures to the UI
-        store.log(job_id, f"失败：{exc}")
-        store.update(job_id, status="failed", progress=100, message="处理失败", error=str(exc))
+        message = safe_error(exc, configured_secrets(settings))
+        store.log(job_id, f"失败：{message}")
+        store.update(job_id, status="failed", progress=100, message="处理失败", error=message)
 
 
 def run_generation_pipeline(
@@ -213,6 +215,9 @@ def run_generation_pipeline(
     """Generate the final video from a previously completed deface stage."""
     job_dir = settings.storage_dir / "work" / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
+    def safe_message(value):
+        frozen = [asdict(config) for config in (generation_config, storage_config) if config is not None]
+        return safe_error(value, configured_secrets(settings) | secret_values(frozen))
     try:
         job = store.get(job_id)
         if not job or not job.defaced_name:
@@ -238,6 +243,7 @@ def run_generation_pipeline(
                 else:
                     video_url = publish_video(defaced_path, settings.storage_dir, generation_config.public_base_url)
             def progress(message, percent):
+                message = safe_message(message)
                 store.update(job_id, message=message, progress=percent)
                 if percent == 70:
                     store.log(job_id, message)
@@ -246,7 +252,7 @@ def run_generation_pipeline(
                 face_paths if face_paths is not None else ([face_path] if face_path else []),
                 clothing_paths if clothing_paths is not None else ([clothing_path] if clothing_path else []),
                 prompt, output_path, video_url=video_url)
-        store.log(job_id, seedance_result.get("message", "Seedance 处理完成。"))
+        store.log(job_id, safe_message(seedance_result.get("message", "Seedance 处理完成。")))
         store.update(
             job_id,
             status="succeeded",
@@ -256,8 +262,9 @@ def run_generation_pipeline(
             provider=seedance_result.get("provider"),
         )
     except Exception as exc:  # noqa: BLE001 - surface pipeline failures to the UI
-        store.log(job_id, f"失败：{exc}")
-        store.update(job_id, status="failed", progress=100, message="处理失败", error=str(exc))
+        message = safe_message(exc)
+        store.log(job_id, f"失败：{message}")
+        store.update(job_id, status="failed", progress=100, message="处理失败", error=message)
 
 
 def run_pipeline(

@@ -8,6 +8,7 @@ import secrets
 import tempfile
 from threading import Lock
 import time
+from .secure_transport import validate_endpoint
 
 _videos: dict[str, tuple[Path, float]] = {}
 _lock = Lock()
@@ -36,6 +37,7 @@ def _scoped_video(path: Path, storage: Path) -> bool:
 
 
 def publish_video(path: Path, storage: Path, public_base_url: str) -> str:
+    public_base_url = validate_endpoint(public_base_url, allow_local=False)
     resolved = path.resolve()
     if not _scoped_video(resolved, storage):
         raise ValueError('只能分享当前任务的打码视频。')

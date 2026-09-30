@@ -13,6 +13,7 @@ from .media_transport import media_file_response
 from .production_store import ProductionStore, Conflict
 from . import generation_settings, storage_settings, admin_settings, media, production_worker, redaction_settings
 from .media_errors import MediaPipelineError
+from .media_validation import save_upload, validate_media
 from .person_video import is_video, person_ids, validate_file, validate_pair
 from .reference_roles import ACCESSORY_LABELS, OPTIONAL_KINDS
 from .model_catalog import TASK_FIELDS, task_values, resolve_task_config, editor_options, capabilities
@@ -139,10 +140,14 @@ def get_router(settings_getter, local_guard):
         root.mkdir(parents=True,exist_ok=True)
         suffix=path.suffix.lower()
         destination=root/(ident+suffix)
-        if path!=destination: shutil.copyfile(path,destination)
-        from .artifacts import sha256_file
-        return store().add_asset(ident,name,kind,destination,destination.stat().st_size,
-                                mimetypes.guess_type(name)[0] or 'application/octet-stream',sha256_file(destination))
+        try:
+            if path!=destination: shutil.copyfile(path,destination)
+            from .artifacts import sha256_file
+            return store().add_asset(ident,name,kind,destination,destination.stat().st_size,
+                                    mimetypes.guess_type(name)[0] or 'application/octet-stream',sha256_file(destination))
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
 
     @router.post('/assets')
     def upload_asset(kind: str=Form(...), file: UploadFile=File(...)):
@@ -157,13 +162,7 @@ def get_router(settings_getter, local_guard):
         root.mkdir(parents=True,exist_ok=True)
         path=root/(uuid.uuid4().hex+suffix)
         try:
-            total=0
-            with path.open('wb') as output:
-                while chunk:=file.file.read(1024*1024):
-                    total+=len(chunk)
-                    if total>limit: raise HTTPException(413,'素材超过大小限制。')
-                    output.write(chunk)
-            if not total: raise HTTPException(422,'素材为空，请重新选择。')
+            save_upload(file,path,limit,'video' if kind in {'video','person_video'} else 'image')
             if kind=='person_video':guarded(lambda:validate_file(path))
             return guarded(lambda:register(path,name,kind))
         finally:
@@ -200,6 +199,7 @@ def get_router(settings_getter, local_guard):
                 path=media.download_video(text,Path(tmp)/'reference.mp4',settings_getter())
                 if not 0<path.stat().st_size<=settings_getter().max_upload_mb*1024*1024:
                     raise ValueError('视频为空或超过大小限制。')
+                validate_media(path,'video',settings_getter().max_upload_mb*1024*1024)
                 return register(path,'reference'+path.suffix,'video')
         return guarded(operation)
 

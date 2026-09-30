@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main, media
+from tests.media_fixtures import video_bytes
 
 
 @pytest.fixture
@@ -16,12 +17,12 @@ def client(tmp_path, monkeypatch):
 def test_import_returns_downloaded_video_and_cleans_temporary_files(client, monkeypatch, tmp_path):
     def download(url, destination, settings):
         assert url == 'https://v.douyin.com/example/'
-        destination.write_bytes(b'video fixture')
+        destination.write_bytes(video_bytes())
         return destination
     monkeypatch.setattr(media, 'download_video', download)
     response = client.post('/api/video-link/import', json={'text': '分享 https://v.douyin.com/example/ 复制打开'})
     assert response.status_code == 200
-    assert response.content == b'video fixture'
+    assert response.content == video_bytes()
     assert response.headers['content-type'] == 'video/mp4'
     assert not list(tmp_path.rglob('*.mp4'))
 
@@ -60,3 +61,13 @@ def test_import_rejects_foreign_origin(client, monkeypatch):
     monkeypatch.setattr(media, 'download_video', unexpected)
     response = client.post('/api/video-link/import', json={'text': 'https://v.douyin.com/example/'}, headers={'Origin': 'https://other.example'})
     assert response.status_code == 403
+
+
+def test_import_rejects_fake_video_and_cleans_download(client, monkeypatch, tmp_path):
+    def download(url, destination, settings):
+        destination.write_bytes(b'fixture')
+        return destination
+    monkeypatch.setattr(media,'download_video',download)
+    response=client.post('/api/video-link/import',json={'text':'https://v.douyin.com/example/'})
+    assert response.status_code==422
+    assert not list(tmp_path.rglob('*.mp4'))

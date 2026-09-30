@@ -1,3 +1,4 @@
+from tests.media_fixtures import image_bytes, video_bytes, media_bytes
 from fastapi.testclient import TestClient
 import pytest
 
@@ -91,10 +92,10 @@ def test_approved_candidate_allows_local_upload_when_platform_download_fails(cli
         def __init__(self, **kwargs):
             self.args = kwargs['args']
         def start(self):
-            assert self.args[2].read_bytes() == b'local-video'
+            assert self.args[2].read_bytes() == video_bytes()
             assert self.args[3] is None
     monkeypatch.setattr(main, 'Thread', HeldThread)
-    response = client.post('/api/jobs', data={'candidate_id': item['id']}, files={'video': ('source.mp4', b'local-video', 'video/mp4')})
+    response = client.post('/api/jobs', data={'candidate_id': item['id']}, files={'video': ('source.mp4', video_bytes(), 'video/mp4')})
     assert response.status_code == 200
 
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import re
 from pathlib import Path
 from threading import Thread
 from typing import Any, Literal
@@ -17,6 +16,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from .media_validation import validate_media, VIDEO_SUFFIXES
 from .workflow import ProjectStage
 from .workflow_worker import run_generation_task, run_redaction_task
 from .workflow_store import (
@@ -165,10 +165,8 @@ def get_router(store: WorkflowStore | None = None) -> APIRouter:
             raise _not_found(exc) from exc
         filename = Path(video.filename or "source.mp4")
         suffix = filename.suffix.lower()
-        if not re.fullmatch(r".[a-z0-9]{1,8}", suffix):
-            suffix = ".mp4"
         content_type = video.content_type or "application/octet-stream"
-        if not (content_type.startswith("video/") or suffix in {".mp4", ".mov", ".mkv", ".webm", ".avi"}):
+        if suffix not in VIDEO_SUFFIXES:
             raise HTTPException(status_code=415, detail="only video uploads are supported")
         max_bytes = int(os.getenv("WORKFLOW_MAX_UPLOAD_BYTES", str(512 * 1024 * 1024)))
         root = Path(os.getenv("WORKFLOW_STORAGE", "storage/workflow")) / project_id / "sources"
@@ -187,6 +185,7 @@ def get_router(store: WorkflowStore | None = None) -> APIRouter:
                         raise HTTPException(status_code=413, detail="upload exceeds workflow size limit")
                     digest.update(chunk)
                     stream.write(chunk)
+            validate_media(target, "video", max_bytes)
             asset = db.create_source_asset(
                 project_id,
                 "upload",
@@ -204,9 +203,10 @@ def get_router(store: WorkflowStore | None = None) -> APIRouter:
         except (ConflictError, ValueError) as exc:
             target.unlink(missing_ok=True)
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except Exception:
+        except Exception as exc:
             target.unlink(missing_ok=True)
-            raise
+            raise HTTPException(status_code=500, detail="素材保存失败，请稍后重试。") from exc
+
     @router.post("/projects/{project_id}/source")
     def add_source(project_id: str, payload: SourceIn):
         kind = payload.kind or payload.source_type or ("url" if payload.url else "upload")
@@ -370,6 +370,7 @@ def get_router(store: WorkflowStore | None = None) -> APIRouter:
                         raise HTTPException(status_code=413, detail="reference asset exceeds size limit")
                     digest.update(chunk)
                     stream.write(chunk)
+            validate_media(target, "video" if suffix in VIDEO_SUFFIXES else "image", max_bytes)
             asset = db.create_reference_asset(
                 project_id,
                 kind,
@@ -386,6 +387,9 @@ def get_router(store: WorkflowStore | None = None) -> APIRouter:
         except (ConflictError, ValueError) as exc:
             target.unlink(missing_ok=True)
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            target.unlink(missing_ok=True)
+            raise HTTPException(status_code=500, detail="素材保存失败，请稍后重试。") from exc
 
     @router.get("/projects/{project_id}/tasks/{task_id}")
     def get_task(project_id: str, task_id: str):

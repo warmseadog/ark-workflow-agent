@@ -197,9 +197,10 @@ def execute_run(settings, store, run):
         if uncertain:
             kind = 'submission_uncertain'
         needs_attention = continuation_started or uncertain or kind in {'query_unavailable', 'download_failed'} or bool(getattr(exc, 'retryable', False) and private.get('person_preparation') and current['stage'] == 'authorizing')
-        message = VideoProvider(config)._safe(str(exc))
+        from .security import safe_error, configured_secrets, secret_values
+        message = safe_error(str(exc), configured_secrets(settings) | secret_values(private))
         store.update_run(ident, status='needs_attention' if needs_attention else 'failed',
-                         error=VideoProvider(config)._safe(str(exc)), error_kind=kind,
+                         error=message, error_kind=kind,
                          request_id=getattr(exc,'request_id',None), message=message)
 
 

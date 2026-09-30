@@ -7,12 +7,12 @@ from pathlib import Path
 import tempfile
 from threading import RLock
 import time
-from urllib.parse import urlsplit
 
 import cv2
 import requests
 
 from .media_errors import MediaPipelineError
+from .secure_transport import validate_endpoint
 from .tenancy import config_root
 
 _lock = RLock()
@@ -56,13 +56,7 @@ def save_config(settings, payload):
         if values['mode'] not in {'local', 'http'}:
             raise ValueError('请选择本地打码或外部 API。')
         if values['endpoint']:
-            url = urlsplit(values['endpoint'])
-            if url.scheme not in {'http', 'https'} or not url.hostname or url.username or url.password or url.fragment or url.query:
-                raise ValueError('请填写完整 HTTP(S) 接口地址，密钥请单独填写。')
-            try:
-                _ = url.port
-            except ValueError:
-                raise ValueError('接口端口不正确。') from None
+            values['endpoint'] = validate_endpoint(values['endpoint'])
         elif values['mode'] == 'http':
             raise ValueError('使用外部 API 时请填写接口地址。')
         if type(values['timeout_seconds']) is not int or not 10 <= values['timeout_seconds'] <= 3600:
@@ -100,6 +94,10 @@ def fingerprint(settings):
 
 
 def process(input_path, output_path, settings, options, config):
+    try:
+        endpoint = validate_endpoint(config.endpoint)
+    except ValueError as exc:
+        raise MediaPipelineError(str(exc)) from None
     if options.style == 'img':
         raise MediaPipelineError('外部打码 API 不支持图片覆盖样式，请改用本地处理。')
     headers = {'Accept': 'video/mp4'}
@@ -112,7 +110,7 @@ def process(input_path, output_path, settings, options, config):
     started = time.monotonic()
     try:
         with input_path.open('rb') as source:
-            with requests.post(config.endpoint, headers=headers,
+            with requests.post(endpoint, headers=headers,
                     files={'video': (input_path.name, source, 'video/mp4')},
                     data={'options': json.dumps(options.model_dump(mode='json', exclude={'replace_image'}))},
                     timeout=(min(15, config.timeout_seconds), config.timeout_seconds),
