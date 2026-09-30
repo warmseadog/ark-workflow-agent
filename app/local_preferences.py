@@ -48,18 +48,64 @@ def connection(settings):
     finally:
         db.close()
 
+def _personal_settings(settings):
+    """Even the legacy owner has private templates; its old root rows stay shared."""
+    from .tenancy import user_settings
+    owner = getattr(settings, 'user_id', '')
+    return user_settings(settings, {'id': owner, 'legacy_owner': False}) if owner else settings
+
+
+def _shared_settings(settings):
+    from . import tenancy
+    if tenancy.enabled():
+        from .accounts import Accounts, AccountError
+        try:
+            user = Accounts(tenancy.config_root(settings)).get_user(getattr(settings, 'user_id', ''))
+        except AccountError:
+            raise PermissionError('共享模板仅管理员可管理。') from None
+        if not user['enabled'] or user['role'] != 'admin':
+            raise PermissionError('共享模板仅管理员可管理。')
+    return tenancy.root_settings(settings)
+
+
+def list_shared_templates(settings):
+    return list_templates(_shared_settings(settings))
+
+
+def save_shared_template(settings, name, content, template_id=None):
+    return save_template(_shared_settings(settings), name, content, template_id)
+
+
+def delete_shared_template(settings, template_id):
+    delete_template(_shared_settings(settings), template_id)
+
+
 def list_templates(settings):
+    settings = _personal_settings(settings)
     with connection(settings) as db:
         personal = [dict(row) for row in db.execute('SELECT * FROM prompt_templates ORDER BY rowid')]
     from .tenancy import root_settings, config_root
     if settings.storage_dir != config_root(settings):
-        shared=[{**item,'id':'system:'+item['id'],'read_only':True} for item in list_templates(root_settings(settings))]
-        return shared+personal
+        shared=[{**item,'id':'system:'+item['id'],'scope':'shared','read_only':True} for item in list_templates(root_settings(settings))]
+        return shared+[{**item, 'scope':'personal', 'read_only':False} for item in personal]
     return personal
 
-def save_template(settings, name, content, template_id=None):
+
+def _template_write_settings(settings, template_id):
     if template_id and template_id.startswith('system:'):
-        raise ValueError('系统模板为只读，请另存为个人模板。')
+        raise PermissionError('系统模板为只读，请另存为个人模板；管理员可在后台管理共享模板。')
+    personal = _personal_settings(settings)
+    if template_id and getattr(settings, 'user_id', ''):
+        from .tenancy import root_settings
+        # Also reject old, unprefixed shared IDs retained by an existing browser.
+        with connection(root_settings(settings)) as db:
+            if db.execute('SELECT 1 FROM prompt_templates WHERE id=?', (template_id,)).fetchone():
+                raise PermissionError('共享模板请由管理员在后台管理。')
+    return personal
+
+
+def save_template(settings, name, content, template_id=None):
+    settings = _template_write_settings(settings, template_id)
     from .reference_prompt import strip_reference_rules
     name, content = name.strip(), strip_reference_rules(content)
     if not name or len(name) > 60 or not content or len(content) > 10000:
@@ -74,8 +120,7 @@ def save_template(settings, name, content, template_id=None):
     return {'id': template_id, 'name': name, 'content': content}
 
 def delete_template(settings, template_id):
-    if template_id.startswith('system:'):
-        raise ValueError('系统模板为只读，不能删除。')
+    settings = _template_write_settings(settings, template_id)
     with connection(settings) as db:
         if not db.execute('DELETE FROM prompt_templates WHERE id=?', (template_id,)).rowcount:
             raise LookupError('模板不存在或已被删除。')

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+if TYPE_CHECKING:
+    from .redaction_service import ServiceConfig
 
 
 def _as_bool(value: str | None, default: bool = False) -> bool:
@@ -33,6 +37,7 @@ class Settings:
     ytdlp_cookie_file: Path | None
     config_root: Path | None = None
     user_id: str = ''
+    redaction_service: ServiceConfig | None = field(default=None, repr=False)
 
     @classmethod
     def from_env(cls) -> "Settings":

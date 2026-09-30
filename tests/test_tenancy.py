@@ -49,9 +49,9 @@ def test_shared_templates_are_read_only_for_users(tmp_path):
     items=local_preferences.list_templates(user)
     shared=next((item for item in items if item['name']=='Shared'),None)
     assert shared and shared['read_only'] is True
-    with pytest.raises(ValueError):
+    with pytest.raises(PermissionError):
         local_preferences.save_template(user,'Hacked','Other',shared['id'])
-    with pytest.raises(ValueError):
+    with pytest.raises(PermissionError):
         local_preferences.delete_template(user,shared['id'])
     assert next(x for x in local_preferences.list_templates(base) if x['id']==published['id'])['content']=='Admin content'
 

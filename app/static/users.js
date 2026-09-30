@@ -236,11 +236,11 @@
     } finally { if (version === auditVersion) $('audit-refresh').disabled = false; }
   }
   function auditAction(action) {
-    const labels = {'user.init_admin':'初始化管理员', 'user.create':'创建账号', 'user.update':'修改账号设置', 'user.reset_password':'重置密码', 'user.change_password':'修改密码', 'auth.login':'登录', 'auth.login_failed':'登录失败', 'auth.logout':'退出登录', 'portrait.access':'调整真人权限', view_user_tasks:'查看用户任务', view_user_task:'查看任务详情'};
+      const labels = {'user.init_admin':'初始化管理员', 'user.create':'创建账号', 'user.update':'修改账号设置', 'user.reset_password':'重置密码', 'user.change_password':'修改密码', 'auth.login':'登录', 'auth.login_failed':'登录失败', 'auth.logout':'退出登录', 'portrait.access':'调整真人权限', view_user_tasks:'查看用户任务', view_user_task:'查看任务详情', view_user_media:'读取用户媒体'};
     if (labels[action]) return labels[action];
     const [method, path = ''] = String(action || '').split(' ');
     if (path.includes('settings') || path === '/api/model-catalog' || path === '/api/portrait/config') return method === 'GET' ? '查看配置' : '修改配置';
-    if (path.startsWith('/api/prompt-templates')) return method === 'DELETE' ? '删除提示词模板' : '修改提示词模板';
+    if (path.startsWith('/api/prompt-templates') || path.startsWith('/api/admin/prompt-templates')) return method === 'DELETE' ? '删除提示词模板' : '修改提示词模板';
     if (path.startsWith('/api/production/runs')) return method === 'DELETE' ? '删除任务' : path.endsWith('/cancel') ? '取消任务' : path.endsWith('/resume') ? '恢复任务' : path.endsWith('/retry') ? '重试任务' : method === 'POST' ? '提交任务' : '修改任务';
     if (path.includes('/portrait/photos')) return method === 'DELETE' ? '移除人物素材' : '更新人物素材';
     if (path.includes('/portrait/people')) return method === 'DELETE' ? '移除人物' : '更新人物';

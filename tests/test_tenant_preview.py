@@ -120,7 +120,24 @@ def test_guard_tenant_ids_private_file_and_explicit_settings(preview):
     result = client.get(job['defaced_url'], headers=headers())
     assert result.content == b'video-redacted'
     assert result.headers['cache-control'] == 'private, no-store'
-    assert calls[0][2] == tenants['1']
+    from app import redaction_service
+    assert calls[0][2] == redaction_service.freeze(tenants['1'])
+
+
+def test_service_change_uses_separate_preview_and_cache(preview):
+    from app import redaction_service
+    client, tenants, _, _, calls, *_ = preview
+    asset(tenants['1'])
+    first = terminal(client, post(client).json()['id'])
+    redaction_service.save_config(tenants['1'], {'mode':'http','endpoint':'https://mask.example/process'})
+    second = terminal(client, post(client).json()['id'])
+    assert first['id'] != second['id']
+    assert first['status'] == second['status'] == 'defaced'
+    assert len(calls) == 2
+    assert calls[0][2].redaction_service.mode == 'local'
+    assert calls[1][2].redaction_service.mode == 'http'
+    terminal(client, post(client).json()['id'])
+    assert len(calls) == 2
 
 
 def test_clip_preview_uses_segment_and_separate_cache(preview,monkeypatch):

@@ -8,7 +8,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from threading import Thread
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -163,9 +163,12 @@ def get_prompt_templates(request: Request):
     _local_config_request(request)
     return {'items': local_preferences.list_templates(tenancy.current_settings(settings))}
 
-def _save_prompt(payload, template_id=None):
+def _save_prompt(payload, template_id=None, *, shared=False):
     try:
-        return local_preferences.save_template(tenancy.current_settings(settings), payload.name, payload.content, template_id)
+        save = local_preferences.save_shared_template if shared else local_preferences.save_template
+        return save(tenancy.current_settings(settings), payload.name, payload.content, template_id)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from None
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
     except LookupError as exc:
@@ -186,10 +189,45 @@ def delete_prompt_template(request: Request, template_id: str):
     _local_config_request(request)
     try:
         local_preferences.delete_template(tenancy.current_settings(settings), template_id)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from None
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from None
     except ValueError as exc:
         raise HTTPException(422,str(exc)) from None
+    return {'deleted': True}
+
+
+@app.get('/api/admin/prompt-templates')
+def shared_prompt_templates(request: Request):
+    _local_config_request(request)
+    try:
+        return {'items': local_preferences.list_shared_templates(tenancy.current_settings(settings))}
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from None
+
+
+@app.post('/api/admin/prompt-templates')
+def create_shared_prompt_template(request: Request, payload: PromptTemplateInput):
+    _local_config_request(request)
+    return _save_prompt(payload, shared=True)
+
+
+@app.put('/api/admin/prompt-templates/{template_id}')
+def update_shared_prompt_template(request: Request, template_id: str, payload: PromptTemplateInput):
+    _local_config_request(request)
+    return _save_prompt(payload, template_id, shared=True)
+
+
+@app.delete('/api/admin/prompt-templates/{template_id}')
+def delete_shared_prompt_template(request: Request, template_id: str):
+    _local_config_request(request)
+    try:
+        local_preferences.delete_shared_template(tenancy.current_settings(settings), template_id)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from None
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from None
     return {'deleted': True}
 
 
@@ -250,6 +288,47 @@ def get_storage_settings(request: Request):
 def get_redaction_settings(request: Request):
     _local_config_request(request)
     return {'config': redaction_settings.load_config(settings)}
+
+
+@app.get('/api/redaction-service')
+def get_redaction_service(request: Request):
+    _local_config_request(request)
+    from . import redaction_service
+    return {'config': redaction_service.load_config(settings).public()}
+
+
+@app.get('/api/continuation-settings')
+def get_continuation_settings(request: Request):
+    _local_config_request(request)
+    from . import continuation_settings
+    try:
+        return {'config': continuation_settings.load_config(settings).public()}
+    except (ValueError, OSError):
+        raise HTTPException(500, '无法读取续写配置，请检查服务器配置文件。') from None
+
+
+@app.put('/api/continuation-settings')
+def put_continuation_settings(request: Request, payload: object = Body(...)):
+    _local_config_request(request)
+    from . import continuation_settings
+    try:
+        return {'config': continuation_settings.save_config(settings, payload).public()}
+    except (ValueError, TypeError) as error:
+        raise HTTPException(422, str(error)) from None
+    except OSError:
+        raise HTTPException(500, '无法保存续写配置，请检查存储目录权限。') from None
+
+
+@app.put('/api/redaction-service')
+def put_redaction_service(request: Request, payload: dict):
+    _local_config_request(request)
+    from . import redaction_service
+    try:
+        return {'config': redaction_service.save_config(settings, payload).public()}
+    except (ValueError, TypeError) as error:
+        raise HTTPException(422, str(error)) from None
+    except OSError:
+        raise HTTPException(500, '无法保存打码服务配置，请检查存储目录权限。') from None
 
 
 @app.put('/api/redaction-settings')

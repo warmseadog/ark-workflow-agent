@@ -101,4 +101,6 @@ def get_router(settings_getter,templates):
         accounts.audit(actor['id'],'view_user_task',user_id+':'+run_id)
         return {'user_id':user_id,'username':user['username'],'task':result}
 
+    from .task_records import get_router as task_records_router
+    router.include_router(task_records_router(settings_getter,admin))
     return router

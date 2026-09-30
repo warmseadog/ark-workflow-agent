@@ -3,6 +3,7 @@
   const byId = id => document.getElementById(id);
   const tos = byId('tos-form'), tik = byId('tikhub-form'), prompts = byId('prompt-form');
   const redaction = byId('redaction-form');
+  const service = byId('redaction-service-form');
   let overview = null, templates = [], promptBaseline = '', templateId = '';
   const sectionLoads = new Map();
   function note(id, text, error = false) {
@@ -32,8 +33,7 @@
     });
     if (section === 'model') byId('model-settings').open = true;
     const embedded = section === 'users' || section === 'my-people';
-    byId('admin-intro').hidden = embedded;
-    byId('admin-section-name').textContent = section === 'users' ? '用户与任务' : section === 'my-people' ? '我的人物' : '后台配置';
+    byId('admin-section-name').textContent = byId('section-' + section).querySelector('h2')?.textContent || (section === 'users' ? '用户与任务' : '我的人物');
     document.querySelector('.content').classList.toggle('has-embedded-section', embedded);
     document.querySelectorAll('[data-admin-frame]').forEach(frame => {
       const visible = frame.closest('.section').id === 'section-' + section;
@@ -76,6 +76,31 @@
     }
     redactionLimits();
   }
+  function serviceMode() {
+    const external = service.elements.mode.value === 'http';
+    byId('redaction-api-fields').hidden = !external;
+    service.elements.endpoint.required = external;
+    service.elements.endpoint.disabled = !external;
+  }
+  function fillService(config) {
+    for (const name of ['mode','endpoint','timeout_seconds']) service.elements[name].value = config[name];
+    service.elements.api_key.value = '';
+    service.elements.clear_api_key.checked = false;
+    byId('redaction-key-status').textContent = config.has_api_key ? '已保存' : '未配置';
+    serviceMode();
+  }
+  service.elements.mode.addEventListener('change', serviceMode);
+  service.addEventListener('submit', event => {
+    event.preventDefault();
+    const payload = Object.fromEntries(new FormData(service));
+    payload.timeout_seconds = Number(payload.timeout_seconds);
+    payload.clear_api_key = service.elements.clear_api_key.checked;
+    operate(service, 'redaction-service-status', '正在保存…', async () => {
+      const {config} = await request('/api/redaction-service', 'PUT', payload);
+      fillService(config);
+      note('redaction-service-status', config.mode === 'local' ? '已使用本地打码。' : '已使用外部 API，新的打码处理将调用此接口。');
+    });
+  });
   function redactionLimits() {
     const hair = redaction.elements.mask_mode.value !== 'face';
     for (const option of redaction.elements.blur_style.options) option.disabled = hair && option.value !== 'mosaic';
@@ -104,9 +129,8 @@
       byId('overview-tikhub').textContent = tikhub.has_api_key ? '密钥已保存' : '等待配置';
       byId('overview-storage').textContent = storage.ready ? '已启用 TOS' : storage.enabled ? '配置待补全' : '尚未启用';
       byId('overview-storage-detail').textContent = storage.bucket || '上传打码视频，生成临时访问链接';
-      byId('overview-attention').textContent = model.generation_message || (model.mode === 'mock' ? '当前为演示模式。需要真实生成时，请在视频模型中切换运行模式。' : '生成所需配置已填写，可测试连接后开始制作。');
+      note('overview-attention', model.generation_message || (model.mode === 'mock' ? '当前为演示模式，可在视频模型中切换真实生成。' : ''));
       info('system-info', [['访问范围',system.access],['存储目录',system.storage_dir],['上传大小上限',system.max_upload_mb + ' MB'],['模型轮询间隔',system.seedance_poll_seconds + ' 秒'],['通用下载 Cookie',system.cookie_configured ? '已配置' : '未配置'],['配置生效','服务配置保存后用于新任务']]);
-      info('redaction-defaults', [['打码样式',redaction.blur_style],['马赛克颗粒',redaction.mosaic_size],['遮罩扩大倍数',redaction.mask_scale]]);
       note('page-error','');
       return true;
     } catch (error) { note('page-error',error.message,true); return false; }
@@ -191,7 +215,7 @@
     byId('delete-template').disabled = !selected; promptBaseline = promptValue();
   }
   async function loadTemplates(selected = '') {
-    templates = (await request('/api/prompt-templates')).items;
+    templates = (await request('/api/admin/prompt-templates')).items;
     const select = byId('admin-template-select'); select.replaceChildren();
     const blank = document.createElement('option'); blank.value=''; blank.textContent='新建模板'; select.append(blank);
     templates.forEach(item => { const option = document.createElement('option'); option.value=item.id; option.textContent=item.name; select.append(option); });
@@ -208,20 +232,22 @@
   prompts.addEventListener('submit',event => {
     event.preventDefault(); const payload={name:prompts.elements.namedItem('name').value,content:prompts.elements.content.value};
     operate(prompts,'prompt-status','正在保存模板…',async () => {
-      const data = await request('/api/prompt-templates' + (templateId ? '/' + encodeURIComponent(templateId) : ''),templateId ? 'PUT' : 'POST',payload);
+      const data = await request('/api/admin/prompt-templates' + (templateId ? '/' + encodeURIComponent(templateId) : ''),templateId ? 'PUT' : 'POST',payload);
       await loadTemplates(data.id); note('prompt-status','模板已保存，制作页刷新后可选用。');
     });
   });
   byId('delete-template').addEventListener('click',() => {
     if (!templateId || !confirm('确认删除此提示词模板？')) return;
-    operate(prompts,'prompt-status','正在删除…',async () => { await request('/api/prompt-templates/' + encodeURIComponent(templateId),'DELETE'); await loadTemplates(); note('prompt-status','模板已删除。'); });
+    operate(prompts,'prompt-status','正在删除…',async () => { await request('/api/admin/prompt-templates/' + encodeURIComponent(templateId),'DELETE'); await loadTemplates(); note('prompt-status','模板已删除。'); });
   });
   const sectionRequests = {
+    continuation: ['continuation-status', async () => window.ContinuationSettings.load()],
     overview: ['page-error', refreshOverview],
     system: ['page-error', async () => overview ? true : refreshOverview()],
     redaction: ['redaction-status', async () => {
+      const serviceData = await request('/api/redaction-service'); fillService(serviceData.config);
+      service.querySelector('fieldset').disabled = false;
       const data = await request('/api/redaction-settings'); fillRedaction(data.config);
-      info('redaction-defaults', [['打码样式',data.config.blur_style],['马赛克颗粒',data.config.mosaic_size],['遮罩扩大倍数',data.config.mask_scale]]);
       redaction.querySelector('fieldset').disabled = false;
     }],
     storage: ['tos-status', async () => { fillTos((await request('/api/storage-settings')).config); tos.querySelector('fieldset').disabled = false; }],

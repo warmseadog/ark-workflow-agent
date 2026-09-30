@@ -69,6 +69,8 @@ class ProductionStore:
                 result_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS production_person_preparations (
                 run_id TEXT PRIMARY KEY, data TEXT NOT NULL, next_check REAL NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS production_continuations (
+                run_id TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS production_run_timing (
                 run_id TEXT PRIMARY KEY, created_at TEXT NOT NULL,
                 started_at TEXT, finished_at TEXT, state TEXT NOT NULL, state_since TEXT NOT NULL,
@@ -171,7 +173,7 @@ class ProductionStore:
 
     def create_draft(self, values, *, ident=None):
         ident, stamp = ident or uuid.uuid4().hex, now()
-        data = {'name': default_name(), 'source_clip': None, 'source_asset_id': None, 'face_asset_ids': [],
+        data = {'name': default_name(), 'source_clip': None, 'target_duration': None, 'source_asset_id': None, 'face_asset_ids': [],
                 'person_reference_mode':'image','person_video_asset_id':None,
                 'clothing_asset_ids': [], 'hairstyle_asset_ids': [], 'scene_asset_ids': [],
                 **{kind+suffix: ([] if suffix=='_asset_ids' else False) for kind in ('bag','hat','watch','shoes','necklace','glasses','earrings') for suffix in ('_asset_ids','_enabled')},
@@ -264,8 +266,10 @@ class ProductionStore:
         audio = value['snapshot'].get('model', {}).get('generate_audio', generation.get('generate_audio', True))
         decorate_audio_failure(value, enabled=audio, supported=capabilities(generation.get('model') or '', generation.get('protocol') or 'ark')['audio_control'])
         value['name'] = self.run_name(value['id'],value['snapshot'].get('name', '未命名视频'))
-        has_remote = bool(value['provider_task_id'] or value['result_url'])
-        value['can_resume'] = value['status'] == 'needs_attention' and has_remote
+        continuation = self.get_continuation(value['id'])
+        value['continuation'] = {k:v for k,v in continuation.items() if k != 'result_url'}
+        has_remote = bool(value['provider_task_id'] or value['result_url'] or continuation.get('base_ready'))
+        value['can_resume'] = value['status'] == 'needs_attention' and has_remote and value['error_kind'] != 'submission_uncertain'
         value['can_cancel'] = value['status'] == 'queued' and not has_remote
         value['can_delete'] = value['status'] != 'running' and (value['status'] != 'queued' or not has_remote)
         preparation = self.get_preparation(value['id'])
@@ -391,7 +395,7 @@ class ProductionStore:
 
     def page_runs(self, page, page_size, legacy, status_filter=None):
         # Summaries are selected by SQLite before any snapshot/media decoration.
-        fields=['id','name','status','stage','message','progress','created_at','updated_at','error_kind','duration','model','source_clip','download_url','has_remote','legacy','generate_audio','protocol']
+        fields=['id','name','status','stage','message','progress','created_at','updated_at','error_kind','duration','model','source_clip','target_duration','download_url','has_remote','legacy','generate_audio','protocol']
         with self.connection() as db:
             db.execute('CREATE TEMP TABLE legacy_page (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
             db.executemany('INSERT INTO legacy_page VALUES (?,?)',[(x['id'],json.dumps({k:x.get(k) for k in fields})) for x in legacy])
@@ -399,7 +403,7 @@ class ProductionStore:
             sql="""WITH combined AS (
                 SELECT id,json_extract(snapshot,'$.name') AS name,status,stage,message,progress,created_at,updated_at,
                 CASE WHEN instr(COALESCE(error,''),'OutputAudioSensitiveContentDetected.PolicyViolation')>0 THEN 'audio_copyright' ELSE error_kind END AS error_kind,
-                json_extract(snapshot,'$.model.duration') AS duration,json_extract(snapshot,'$.model.model') AS model,json_extract(snapshot,'$.source_clip') AS source_clip,NULL AS download_url,
+                json_extract(snapshot,'$.model.duration') AS duration,json_extract(snapshot,'$.model.model') AS model,json_extract(snapshot,'$.source_clip') AS source_clip,json_extract(snapshot,'$.target_duration') AS target_duration,NULL AS download_url,
                 (provider_task_id IS NOT NULL OR result_url IS NOT NULL) AS has_remote,0 AS legacy,
                 COALESCE(json_extract(snapshot,'$.model.generate_audio'),json_extract(private,'$.generation.generate_audio'),1) AS generate_audio,
                 COALESCE(json_extract(private,'$.generation.protocol'),'ark') AS protocol
@@ -423,7 +427,9 @@ class ProductionStore:
             if item['name']:
                 import re
                 item['name']=re.sub(r'\s*(?:[（(]副本[）)]|副本)$','',item['name']).rstrip()
-            item['can_resume']=not item['legacy'] and item['status']=='needs_attention' and bool(remote)
+            continuation = {} if item['legacy'] else self.get_continuation(item['id'])
+            remote = remote or continuation.get('base_ready')
+            item['can_resume']=not item['legacy'] and item['status']=='needs_attention' and bool(remote) and item['error_kind'] != 'submission_uncertain'
             item['can_cancel']=not item['legacy'] and item['status']=='queued' and not remote
             item['can_delete']=item['status']!='running' and (item['status']!='queued' or (not item['legacy'] and not remote))
             preparation = None if item['legacy'] else self.get_preparation(item['id'])
@@ -466,6 +472,22 @@ class ProductionStore:
                     self._transition_timing(db, ident, 'cancelled', stamp)
                     db.execute("UPDATE production_runs SET status='cancelled',message='已撤销并删除任务',updated_at=? WHERE id=?", (stamp, ident))
             db.execute('INSERT INTO production_deleted_runs VALUES (?,?)', (ident, now()))
+
+    def get_continuation(self, ident):
+        with self.connection() as db:
+            row = db.execute('SELECT data FROM production_continuations WHERE run_id=?', (ident,)).fetchone()
+            return json.loads(row['data']) if row else {}
+
+    def update_continuation(self, ident, **changes):
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if not db.execute('SELECT 1 FROM production_runs WHERE id=?', (ident,)).fetchone():
+                raise LookupError('找不到生成任务。')
+            row = db.execute('SELECT data FROM production_continuations WHERE run_id=?', (ident,)).fetchone()
+            state = json.loads(row['data']) if row else {}
+            state.update(changes)
+            db.execute('INSERT OR REPLACE INTO production_continuations VALUES (?,?)', (ident,json.dumps(state,ensure_ascii=False)))
+        return state
 
     def update_run(self, ident, **changes):
         allowed = {'status','stage','message','progress','error','error_kind','request_id','provider_task_id','result_url'}
@@ -516,9 +538,20 @@ class ProductionStore:
             row=db.execute('SELECT * FROM production_runs WHERE id=?',(ident,)).fetchone()
             if not row:
                 raise LookupError('找不到任务。')
-            if row['status'] != 'needs_attention' or not (row['provider_task_id'] or row['result_url']):
+            state = db.execute('SELECT data FROM production_continuations WHERE run_id=?', (ident,)).fetchone()
+            base_ready = bool(state and json.loads(state['data']).get('base_ready'))
+            if row['status'] != 'needs_attention' or row['error_kind'] == 'submission_uncertain' or not (row['provider_task_id'] or row['result_url'] or base_ready):
                 raise Conflict('此任务无法直接恢复，请核对详情后复制为新草稿。')
             self.check_queue_limit(db,max_queued)
+            continuation = json.loads(state['data']) if state else {}
+            if continuation.get('terminal_failure'):
+                # Only an explicit user resume after a definitive remote failure
+                # may submit a fresh continuation; the base and plan are reused.
+                history=continuation.setdefault('previous_task_ids',[])
+                if continuation.get('provider_task_id'):
+                    history.append(continuation['provider_task_id'])
+                continuation.update(provider_task_id=None,result_url=None,terminal_failure=False)
+                db.execute('UPDATE production_continuations SET data=? WHERE run_id=?',(json.dumps(continuation,ensure_ascii=False),ident))
             stamp = now()
             self._transition_timing(db, ident, 'queued', stamp)
             db.execute("UPDATE production_runs SET status='queued',error=NULL,message='等待恢复查询',updated_at=? WHERE id=?",(stamp,ident))
@@ -529,6 +562,9 @@ class ProductionStore:
             db.execute('BEGIN IMMEDIATE')
             for row in db.execute("SELECT * FROM production_runs WHERE status='running'").fetchall():
                 uncertain = row['stage']=='submitting' and not row['provider_task_id']
+                if row['stage']=='continuation_submitting':
+                    state = db.execute('SELECT data FROM production_continuations WHERE run_id=?', (row['id'],)).fetchone()
+                    uncertain = not (state and json.loads(state['data']).get('provider_task_id'))
                 stamp = now()
                 state = 'needs_attention' if uncertain else 'queued'
                 self._transition_timing(db, row['id'], state, stamp, interrupted=True)

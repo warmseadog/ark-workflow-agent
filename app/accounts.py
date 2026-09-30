@@ -89,7 +89,7 @@ def _details(details) -> dict:
     if not isinstance(details, dict):
         return result
     for key in ('username', 'role', 'previous_role', 'remote_ip', 'reason', 'enabled',
-                'must_change_password', 'legacy_owner', 'max_concurrent', 'max_queued'):
+                'must_change_password', 'legacy_owner', 'max_concurrent', 'max_queued', 'resource'):
         value = details.get(key)
         if isinstance(value, (str, int, bool)):
             result[key] = _text(value, 128) if isinstance(value, str) else value
@@ -149,6 +149,7 @@ class Accounts:
                     details TEXT NOT NULL,
                     created_at REAL NOT NULL
                 );
+                CREATE INDEX IF NOT EXISTS audit_access_lookup ON audit(actor_id,action,target,created_at);
             ''')
             # Idempotent compatibility migration; never touch password hashes or
             # sessions. Explicit INSERT values below also handle old DEFAULT 1 schemas.
@@ -358,6 +359,22 @@ class Accounts:
         with self._connect(write=True) as conn:
             self._audit(conn, actor_id, action, target, details)
 
+    def audit_media_access(self, actor_id: str, owner_id: str, run_id: str, resource: str) -> None:
+        """Record cross-user access once per resource per 60 seconds, across workers."""
+        if actor_id == owner_id:
+            return
+        target = _text(owner_id + ':' + run_id)
+        details = _details({'resource': resource})
+        encoded = json.dumps(details, ensure_ascii=False)
+        with self._connect(write=True) as conn:
+            self._admin(conn, actor_id)
+            # The same write transaction serializes concurrent Range/HEAD requests.
+            recent = conn.execute('''SELECT 1 FROM audit WHERE actor_id=? AND action='view_user_media'
+                AND target=? AND details=? AND created_at>? LIMIT 1''',
+                (actor_id, target, encoded, time.time() - 60)).fetchone()
+            if not recent:
+                self._audit(conn, actor_id, 'view_user_media', target, details)
+
     def list_audit(self, limit: int = 100) -> list[dict]:
         if type(limit) is not int or not 1 <= limit <= 1000:
             raise AccountError(422, '审计记录条数需为 1–1000 之间的整数。')
@@ -369,11 +386,12 @@ class Accounts:
         # Keep the complete trail. Only the default presentation hides routine
         # reads, autosaves, uploads and duplicate HTTP entries for semantic events.
         where = '' if scope == 'all' else """WHERE
-            action LIKE 'user.%' OR action IN ('auth.login_failed','portrait.access')
+            action LIKE 'user.%' OR action IN ('auth.login_failed','portrait.access','view_user_media')
             OR action LIKE 'DELETE %'
             OR action LIKE 'POST /api/production/runs%'
             OR action LIKE 'PUT /api/admin/settings%'
             OR action LIKE 'PATCH /api/admin/settings%'
+            OR action LIKE '% /api/admin/prompt-templates%'
             OR action IN ('PUT /api/model-settings','PUT /api/model-catalog',
                 'PUT /api/redaction-settings','PUT /api/storage-settings','PUT /api/portrait/config')
             OR action LIKE 'PUT /api/link-settings%'

@@ -1,4 +1,12 @@
 @charset "UTF-8";
+.settings-details{margin:16px 0}.settings-details>summary{cursor:pointer;font-weight:500;font-size:13px}.settings-details[open]>summary{margin-bottom:14px}.notice:empty,.field-hint:empty{display:none}
+#section-model .config-heading{display:none}
+.workspace-shell .content{padding-top:24px}
+.workspace-shell .card,.workspace-shell #model-settings>.config-panel{padding:20px;margin-bottom:16px}
+.workspace-shell .summary-card{min-height:150px;padding:20px}
+.workspace-shell .summary-card strong{margin:12px 0 8px}
+.workspace-shell .actions{margin-top:20px}
+.workspace-shell .hint,.workspace-shell .field-hint{margin:8px 0 12px;line-height:1.6}
 .content.has-embedded-section{max-width:none;padding:20px 24px}
 .admin-content-frame{display:block;width:100%;height:calc(100dvh - 120px);min-height:560px;border:0;background:#f6f8f6;border-radius:8px}
 @media(max-width:720px){.content.has-embedded-section{padding:12px}.admin-content-frame{height:calc(100dvh - 160px);min-height:480px}}

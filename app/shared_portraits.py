@@ -284,7 +284,18 @@ def authorize_asset(settings, ident):
     provenance_store(store)
     with store.connection() as db:
         origins=db.execute('SELECT * FROM shared_portrait_provenance WHERE asset_id=? OR asset_id IN (SELECT id FROM production_assets WHERE sha256=(SELECT sha256 FROM production_assets WHERE id=?))',(ident,ident)).fetchall()
-        rows=db.execute('SELECT id,person_id,sha256 FROM portrait_photos WHERE account=? AND (asset_id=? OR sha256=(SELECT sha256 FROM production_assets WHERE id=?))',(cat.local.account,ident,ident)).fetchall()
+        # A rejected attempt is still visible on its original entry, but does
+        # not establish a real-person identity for an independent new upload.
+        # A virtual registration only governs its own asset, not independent
+        # uploads with equal bytes. Keep ALL real-content and shared-provenance
+        # restrictions, including revoked sources and cross-tenant copies.
+        rows=db.execute('''SELECT ph.id,ph.person_id,ph.sha256 FROM portrait_photos ph
+            LEFT JOIN portrait_people pe ON pe.id=ph.person_id AND pe.account=ph.account
+            WHERE ph.account=? AND (ph.asset_id=? OR ph.sha256=(SELECT sha256 FROM production_assets WHERE id=?))
+            AND NOT (COALESCE(pe.person_type,'')='AIGC' AND ph.asset_id<>?)
+            AND NOT (ph.status='failed' AND ph.checked=0 AND ph.asset_id<>?
+                     AND COALESCE(pe.person_type,'')='LivenessFace')''',
+            (cat.local.account,ident,ident,ident,ident)).fetchall()
     provenance_source=None
     for origin in origins:
         lib,photo=cat.photo_source(origin['photo_id'])
@@ -305,9 +316,21 @@ def authorize_asset(settings, ident):
     cat._build_index()
     for source in cat.libraries():
         photos=cat._photos_index.get(str(source.settings.storage_dir.resolve()),{})
+        # An existing verified binding remains authoritative even if a later
+        # upload attempt failed. Check it independently of the photo queue.
+        with source.store.connection() as db:
+            bound_people={row['id'] for row in db.execute('''SELECT pe.id
+                FROM production_portraits p JOIN production_assets a ON a.id=p.asset_id
+                JOIN portrait_people pe ON pe.group_id=p.group_id AND pe.account=p.fingerprint
+                WHERE p.fingerprint=? AND a.sha256=? AND pe.person_type='LivenessFace' ''',
+                (source.account,asset['sha256']))}
+        for pid in bound_people:
+            cat.sources(pid)
+            assert_available(settings,pid,asset['sha256'])
         for pid,entries in photos.items():
             real=any(person['person_type']=='LivenessFace' for _,person in cat._index.get(pid,[]))
-            if real and any(photo['sha256']==asset['sha256'] for photo in entries):
+            if real and any(photo['sha256']==asset['sha256']
+                            and (photo['status']!='failed' or photo['checked']>0) for photo in entries):
                 cat.sources(pid)
                 assert_available(settings,pid,asset['sha256'])
     return provenance_source or local_source

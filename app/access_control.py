@@ -92,6 +92,12 @@ def install(app, settings_getter):
             response.headers['X-Account-ID']=user['id']
             response.headers['X-Content-Type-Options']='nosniff'
             response.headers['Referrer-Policy']='same-origin'
+            media_access = getattr(request.state, 'admin_media_access', None)
+            if media_access and method in {'GET','HEAD'} and response.status_code < 400:
+                try:
+                    await run_in_threadpool(accounts.audit_media_access, user['id'], *media_access)
+                except AccountError as exc:
+                    return error(exc.status_code, exc.detail)
             if method not in {'GET','HEAD','OPTIONS'} and response.status_code < 400 and not path.startswith('/api/auth/'):
                 accounts.audit(user['id'],method+' '+path)
             return response

@@ -292,6 +292,8 @@ def test_browser_preserves_historical_name_and_polls_open_timing_details(setup):
             page.goto(origin+'/')
             expect(page.locator('#draft-save-status')).to_contain_text('已保存')
             expect(page.locator('#draft-task-name')).to_have_text('未命名视频')
+            page.locator('.production-tasks-shortcut').click()
+            expect(page.locator('.production-runs')).to_be_visible()
             row = page.locator('[data-run-id="'+run['id']+'"]')
             expect(row.locator('.run-wall-time')).to_have_text('已耗时 35 秒')
             expect(row.locator('.run-duration')).to_contain_text('视频 8 秒')

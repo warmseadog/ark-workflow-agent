@@ -345,7 +345,7 @@ def test_admin_users_mutations_filters_stats_and_safe_rendering(studio):
     page.locator('#task-filter button').click()
     page.wait_for_function("!document.querySelector('#task-filter button').disabled")
     task = [call for call in state['calls'] if call['path'] == '/api/admin/tasks'][-1]
-    assert parse_qs(urlparse(task['url']).query) == {'user_id': ['internal-id'], 'status': ['failed'], 'page': ['1'], 'page_size': ['50']}
+    assert parse_qs(urlparse(task['url']).query) == {'user_id': ['internal-id'], 'status': ['failed'], 'page': ['1'], 'page_size': ['10']}
 
 
 def test_normal_user_does_not_fetch_admin_data(studio):
@@ -419,7 +419,7 @@ def test_admin_pagination_and_backend_audit_timestamps(studio):
     page, state, _ = studio
     state['account']['user']['role'] = 'admin'
     state['replies'][('GET', '/api/admin/users')] = (200, {'items': [state['account']['user']]})
-    state['replies'][('GET', '/api/admin/tasks')] = (200, {'items': [], 'total': 120, 'page': 1, 'page_size': 50, 'stats': {'duration_unknown': 2}})
+    state['replies'][('GET', '/api/admin/tasks')] = (200, {'items': [], 'total': 120, 'page_size': 10, 'stats': {'duration_unknown': 2}})
     state['replies'][('GET', '/api/admin/audit')] = (200, {'items': [{'actor_id': 'alice-id', 'action': 'user.update', 'target': 'alice-id', 'created_at': 1790582400, 'details': {}}]})
     open_page(page, '/admin/users')
     page.wait_for_function("!document.getElementById('tasks-next').disabled")
@@ -428,20 +428,25 @@ def test_admin_pagination_and_backend_audit_timestamps(studio):
     assert '2026' in page.locator('#audit-list').inner_text()
     assert '修改账号设置' in page.locator('#audit-list').inner_text()
     assert page.locator('#audit-list td').nth(3).inner_text() == '小舟'
-    # Changing a filter without applying it must not silently alter page navigation.
-    page.locator('#task-status').select_option('failed')
+    # Filters apply immediately, reset to page one, and survive pagination.
     page.locator('#tasks-next').click()
-    page.wait_for_function("!document.getElementById('tasks-next').disabled")
+    page.wait_for_function("document.querySelector('#tasks-page').textContent.includes('第 2 / 12')")
+    page.locator('#task-status').select_option('failed')
+    page.wait_for_function("!document.getElementById('tasks-next').disabled && document.querySelector('#tasks-page').textContent.includes('第 1 / 12')")
+    query = parse_qs(urlparse(task_calls(state)[-1]['url']).query)
+    assert query == {'status': ['failed'], 'page': ['1'], 'page_size': ['10']}
+    page.locator('#tasks-next').click()
+    page.wait_for_function("document.querySelector('#tasks-page').textContent.includes('第 2 / 12')")
     task = [call for call in state['calls'] if call['path'] == '/api/admin/tasks'][-1]
     query = parse_qs(urlparse(task['url']).query)
-    assert query['page'] == ['2'] and 'status' not in query
+    assert query == {'status': ['failed'], 'page': ['2'], 'page_size': ['10']}
 
 
 def task_poll_reply(status='running', seconds=10, name='轮询任务'):
     return {'items': [{'name': name, 'status': status, 'timing': {
         'available': True, 'is_live': status in ('queued', 'running'),
         'total_seconds': seconds, 'queue_seconds': 5, 'execution_seconds': seconds - 5,
-    }}], 'stats': {}, 'total': 120, 'page_size': 50}
+    }}], 'stats': {}, 'total': 120, 'page_size': 10}
 
 
 def task_calls(state):
@@ -464,12 +469,11 @@ def test_tasks_poll_server_timing_preserving_filter_page_and_user_edits(studio, 
     page, state, _ = studio
     open_polling_admin(page, state, status)
     page.locator('#task-user').select_option('other-id')
+    page.wait_for_function("!document.querySelector('#task-filter button').disabled")
     page.locator('#task-status').select_option(status)
-    page.locator('#task-filter button').click()
     page.wait_for_function("!document.querySelector('#task-filter button').disabled")
     page.locator('#tasks-next').click()
     page.wait_for_function("document.querySelector('#tasks-page').textContent.includes('第 2 /')")
-    page.locator('#task-status').select_option('failed')  # Not applied.
     page.locator('#users-list .quota-input').first.fill('7')  # Not saved.
     before = len(task_calls(state))
     state['replies'][('GET', '/api/admin/tasks')] = (200, task_poll_reply(status, 65))
@@ -477,7 +481,7 @@ def test_tasks_poll_server_timing_preserving_filter_page_and_user_edits(studio, 
     page.wait_for_function("document.querySelector('#admin-tasks-list').textContent.includes('已耗时 1分5秒')", timeout=2000)
     assert len(task_calls(state)) == before + 1
     assert parse_qs(urlparse(task_calls(state)[-1]['url']).query) == {
-        'user_id': ['other-id'], 'status': [status], 'page': ['2'], 'page_size': ['50'],
+        'user_id': ['other-id'], 'status': [status], 'page': ['2'], 'page_size': ['10'],
     }
     assert page.locator('#users-list .quota-input').first.input_value() == '7'
     assert sum(call['path'] == '/api/admin/users' for call in state['calls']) == 1
@@ -607,25 +611,33 @@ def test_task_elapsed_time_is_distinct_from_video_duration(studio, timing, elaps
         assert '排队 —' in cells.nth(5).locator('[title]').get_attribute('title')
 
 
-@pytest.mark.parametrize('width,height', [(1440, 34), (390, 40)])
-def test_generation_controls_have_compact_measured_dimensions(studio, width, height):
+@pytest.mark.parametrize('width', [1440, 390])
+def test_generation_controls_fit_desktop_and_mobile(studio, width):
     page, _, _ = studio
     page.set_viewport_size({'width': width, 'height': 1000})
     open_page(page)
     sizes = page.evaluate("""() => {
       const box = selector => { const node = document.querySelector(selector); const rect = node.getBoundingClientRect(); return {width:rect.width, height:rect.height, font:getComputedStyle(node).fontSize}; };
-      return {model:box('#model-settings [name=model]'), resolution:box('#model-settings [name=resolution]'), duration:box('#model-settings [name=duration]'), generate:box('#studio-generate-submit'), overflow:document.documentElement.scrollWidth > innerWidth};
+      return {model:box('#model-settings [name=model]'), resolution:box('#model-settings [name=resolution]'), ratio:box('#model-settings [name=ratio]'), duration:box('#generation-duration-slider'), generate:box('#studio-generate-submit'), overflow:document.documentElement.scrollWidth > innerWidth};
     }""")
-    assert all(sizes[key]['height'] == height for key in ('model', 'resolution', 'duration', 'generate'))
-    assert all(sizes[key]['font'] == '12px' for key in ('model', 'resolution', 'duration', 'generate'))
+    controls = ('model', 'resolution', 'ratio', 'duration', 'generate')
+    for selector in ('#model-settings select', '#generation-duration-slider', '#studio-generate-submit'):
+        for control in page.locator(selector).all():
+            assert control.is_visible()
+            box = control.bounding_box()
+            assert box['width'] > 0 and 0 <= box['x'] < box['x'] + box['width'] <= width
     if width > 720:
-        assert [sizes[key]['width'] for key in ('model', 'resolution', 'duration', 'generate')] == [180, 90, 80, 116]
+        assert all(32 <= sizes[key]['height'] <= 40 for key in controls)
+        assert all(sizes[key]['font'] == '12px' for key in ('model', 'resolution', 'ratio', 'generate'))
+    else:
+        assert all(44 <= sizes[key]['height'] <= 60 for key in controls)
+        assert all(sizes[key]['font'] == '16px' for key in ('model', 'resolution', 'ratio'))
+        button = page.locator('#studio-generate-submit').bounding_box()
+        assert 0 <= button['y'] < button['y'] + button['height'] <= 1000
     assert sizes['overflow'] is False
-    page.evaluate("document.getElementById('generation-duration-field').hidden = true; document.getElementById('generation-follow-source').hidden = false")
-    follow = page.locator('#generation-duration-note').bounding_box()
-    assert follow['height'] == height
-    if width > 720:
-        assert follow['width'] == 140
+    assert page.locator('#generation-duration-slider').get_attribute('type') == 'range'
+    assert page.locator('#generation-duration-note').is_visible()
+    assert page.locator('#generation-source-duration').is_visible()
 
 
 @pytest.mark.parametrize('path', ['/login', '/account/password', '/admin/users'])

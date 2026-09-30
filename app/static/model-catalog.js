@@ -32,7 +32,7 @@
     }
   }
   async function load() {
-    try { render(await request()); report('新增模型需先完成账号验收，再开放给制作页。'); }
+    try { render(await request()); report(''); }
     catch (error) { report(error.message, true); }
   }
   form.addEventListener('submit', async event => {

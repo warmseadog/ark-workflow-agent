@@ -157,6 +157,8 @@ class PortraitLibrary:
                     LEFT JOIN portrait_people pe ON pe.id=ph.person_id AND pe.account=ph.account
                     LEFT JOIN portrait_hidden_people h ON h.person_id=pe.id AND h.account=pe.account
                     WHERE ph.account=? AND ph.sha256=? AND a.kind=?
+                    AND NOT (ph.status='failed' AND ph.checked=0 AND ph.asset_id<>?
+                             AND COALESCE(pe.person_type,'')='LivenessFace')
                     UNION ALL
                     SELECT pe.id,pe.person_type,h.person_id AS hidden
                     FROM production_portraits p
@@ -164,7 +166,7 @@ class PortraitLibrary:
                     LEFT JOIN portrait_people pe ON pe.group_id=p.group_id AND pe.account=p.fingerprint
                     LEFT JOIN portrait_hidden_people h ON h.person_id=pe.id AND h.account=pe.account
                     WHERE p.fingerprint=? AND a.sha256=? AND a.kind=?
-                    """, (self.account, asset['sha256'], asset['kind'],
+                    """, (self.account, asset['sha256'], asset['kind'], asset['id'],
                           self.account, asset['sha256'], asset['kind'])).fetchall()
                 for row in rows:
                     if not row['id']:

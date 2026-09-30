@@ -3,7 +3,7 @@
   if(!sidebar)return;
   const toggle=document.querySelector('.workspace-toggle'),backdrop=document.querySelector('.workspace-backdrop');
   const isProduction=['/','/studio','/v1'].includes(location.pathname);
-  const mobile=window.matchMedia('(max-width:800px)');
+  const mobile=window.matchMedia('(max-width:800px), (orientation:landscape) and (max-width:1100px)');
   function closeNav(){delete document.body.dataset.sidebarOpen;toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-label','展开导航');backdrop.hidden=true;sidebar.inert=mobile.matches;}
   toggle.addEventListener('click',()=>{if(document.body.hasAttribute('data-sidebar-open'))closeNav();else{sidebar.inert=false;document.body.dataset.sidebarOpen='';toggle.setAttribute('aria-expanded','true');toggle.setAttribute('aria-label','收起导航');backdrop.hidden=false;}});
   mobile.addEventListener('change',closeNav);

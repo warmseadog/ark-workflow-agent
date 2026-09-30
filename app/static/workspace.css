@@ -17,5 +17,27 @@
 .workspace-toggle,.workspace-backdrop{display:none}.workspace-shell>main:not([class]){margin-left:0}.workspace-shell .production-header{padding:18px 30px;min-height:70px}.workspace-shell .production-brand>span{display:none}.workspace-shell .production-brand h1{margin:0;padding:0;border:0;font-size:14px}.workspace-shell .production-main{max-width:1440px;padding:24px 30px 40px}.workspace-shell .topbar{padding-left:30px;padding-right:30px}.workspace-shell .account-topbar{padding:20px 30px}
 .workspace-shell .production-runs{scroll-margin-top:20px}.workspace-shell[data-workspace-view=create] .production-runs{display:none}.workspace-shell[data-workspace-view=tasks] .production-intro,.workspace-shell[data-workspace-view=tasks] #studio-generate-form{display:none}.workspace-shell[data-workspace-view=tasks] .production-runs{margin-top:8px;border-top:0;padding-top:0}
 .admin-embedded .workspace-sidebar,.admin-embedded .workspace-toggle,.admin-embedded .workspace-backdrop{display:none!important}.admin-embedded .workspace-shell{padding-left:0}
-@media(max-width:800px){.workspace-shell{padding-left:0;padding-top:54px}.workspace-sidebar{transform:translateX(-100%);transition:transform .18s ease;width:240px}.workspace-shell[data-sidebar-open] .workspace-sidebar{transform:translateX(0)}.workspace-toggle{display:block;position:fixed;top:10px;left:14px;z-index:100;width:36px;height:34px;background:#eeeae3;border:1px solid #d7d5cb;border-radius:7px;font-size:17px;color:#424a3e;cursor:pointer}.workspace-shell[data-sidebar-open] .workspace-toggle{left:190px}.workspace-shell[data-sidebar-open] .workspace-backdrop{display:block;position:fixed;inset:0;z-index:85;border:0;background:#181b174d;width:100%;height:100%}.workspace-brand{padding-top:60px}.workspace-shell .production-header,.workspace-shell .topbar{padding:12px 18px;min-height:50px}.workspace-shell .production-main{padding:18px 16px 32px}.workspace-shell .account-topbar{padding:16px}.admin-embedded .workspace-shell{padding-top:0}}
+@media(max-width:800px), (orientation:landscape) and (max-width:1100px){.workspace-shell{padding-left:0;padding-top:54px}.workspace-sidebar{transform:translateX(-100%);transition:transform .18s ease;width:240px}.workspace-shell[data-sidebar-open] .workspace-sidebar{transform:translateX(0)}.workspace-toggle{display:block;position:fixed;top:10px;left:14px;z-index:100;width:36px;height:34px;background:#eeeae3;border:1px solid #d7d5cb;border-radius:7px;font-size:17px;color:#424a3e;cursor:pointer}.workspace-shell[data-sidebar-open] .workspace-toggle{left:190px}.workspace-shell[data-sidebar-open] .workspace-backdrop{display:block;position:fixed;inset:0;z-index:85;border:0;background:#181b174d;width:100%;height:100%}.workspace-brand{padding-top:60px}.workspace-shell .production-header,.workspace-shell .topbar{padding:12px 18px;min-height:50px}.workspace-shell .production-main{padding:18px 16px 32px}.workspace-shell .account-topbar{padding:16px}.admin-embedded .workspace-shell{padding-top:0}}
 @media(prefers-reduced-motion:reduce){.workspace-sidebar{transition:none}}
+@media(max-width:800px), (orientation:landscape) and (max-width:1100px){
+ .workspace-shell.standalone-production{padding-top:64px}
+ .standalone-production .production-header{position:fixed;top:0;left:0;right:0;z-index:80;min-height:64px;padding:10px 16px 10px 70px;background:#fbf9f5;border-bottom:1px solid #d7d0c5;flex-wrap:nowrap;gap:12px}
+ .standalone-production .workspace-toggle{width:44px;height:44px;top:10px;left:14px}
+ .standalone-production[data-sidebar-open] .workspace-toggle{left:182px}
+ .standalone-production .production-brand{min-width:0;white-space:normal}
+ .standalone-production .production-brand h1{font-size:16px}
+ .production-tasks-shortcut{flex-shrink:0;min-height:44px;display:flex;align-items:center}
+ .workspace-shell[data-workspace-view=tasks] .production-tasks-shortcut{display:none}
+ .workspace-sidebar .workspace-nav a{min-height:44px}
+}
+@media(orientation:landscape) and (max-width:1100px){
+ .workspace-shell.standalone-production{padding-top:56px}
+ .standalone-production .production-header{min-height:56px;padding-top:6px;padding-bottom:6px;padding-left:calc(70px + env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
+ .standalone-production .workspace-toggle{top:6px;left:calc(14px + env(safe-area-inset-left))}
+ .standalone-production[data-sidebar-open] .workspace-toggle{left:182px}
+ .workspace-sidebar{height:100dvh}
+ .workspace-brand{padding-top:12px;padding-bottom:10px;padding-right:56px}
+ .workspace-navigation{min-height:0;padding-bottom:8px}
+ .workspace-footer{padding:4px 0}
+ .workspace-local{display:none}
+}

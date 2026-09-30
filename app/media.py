@@ -154,9 +154,13 @@ def run_deface(
     settings: Settings,
     options: BlurOptions | None = None,
 ) -> Path:
-    """Run the selected local face or hair-aware anonymization pipeline."""
+    """Run the configured local or external anonymization pipeline."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     options = options or BlurOptions.from_settings(settings)
+    from . import redaction_service
+    service = redaction_service.load_config(settings)
+    if service.mode == 'http':
+        return redaction_service.process(input_path, output_path, settings, options, service)
     if options.mask_mode != 'face':
         return run_local_mosaic(input_path, output_path, options)
     command = build_deface_command(input_path, output_path, settings, options)

@@ -297,6 +297,42 @@ class VideoProvider:
         self.progress(f'模型任务已提交，等待生成（{self._safe(task_id)}）', 70)
         return self._poll(task_id, output, on_result)
 
+    def extend(self, video: Path, prompt: str, output: Path, *, video_url=None,
+               on_submitted=None, on_result=None, resume_task_id=None, resume_result_url=None):
+        """Explicit continuation; never reuse the editing prompt constructor."""
+        if resume_task_id or resume_result_url:
+            return self.generate(video, [], [], prompt, output, resume_task_id=resume_task_id,
+                                 resume_result_url=resume_result_url, on_result=on_result)
+        from .model_catalog import capabilities
+        from .person_video import validate_file
+        if self.config.protocol != 'ark' or not capabilities(self.config.model,'ark')['follow_source']:
+            raise ProviderError('智能续写需要 Seedance 2.5。',error_kind='configuration')
+        if self.config.mode != 'http':
+            raise ProviderError('演示模式不会调用智能续写，请在后台配置真实视频模型。',error_kind='configuration')
+        problem = self.config.generation_problem(video_available=bool(video_url))
+        if problem:
+            raise ProviderError(problem,error_kind='configuration')
+        validate_file(video,person=False,max_seconds=30)
+        if type(self.config.duration) is not int or not 4 <= self.config.duration <= 30:
+            raise ProviderError('续写输出时长需为 4–30 秒。',error_kind='configuration')
+        self._content_roles = {1:'已生成的基础视频'}
+        structured = (f'向后延长 @Video1（视频1），完整成片总时长 {self.config.duration} 秒。'
+            '原有片段属于成片前段，保持该段内容；仅在其结尾之后发展新的动作和剧情。'
+            '衔接视频末尾的姿态、动作方向、镜头和光线，人物身份、服装、发型、配饰和场景保持一致。'
+            '新增内容按正常速度自然发展，不循环原动作、不慢放、不定格填充。续写内容：\n'+prompt.strip())
+        submitted = self._request('POST','/contents/generations/tasks',json={
+            'model':self.config.model,'content':[{'type':'text','text':structured},
+                {'type':'video_url','video_url':{'url':video_url},'role':'reference_video'}],
+            'omni_reference_task_type':'extend','duration':self.config.duration,
+            'ratio':'adaptive','resolution':self.config.resolution,'generate_audio':self.config.generate_audio})
+        task = submitted.get('data') if isinstance(submitted.get('data'),dict) else submitted
+        task_id = task.get('id') or task.get('task_id')
+        if not isinstance(task_id,str) or not task_id.strip() or len(task_id)>1024:
+            raise self._provider_error('续写提交结果不确定，请核对服务商任务记录。',error_kind='submission_uncertain',submission_uncertain=True)
+        if on_submitted:
+            on_submitted(task_id)
+        return self._poll(task_id,output,on_result)
+
     def _with_task(self, error: ProviderError, task_id: str | None) -> ProviderError:
         if task_id is not None and error.provider_task_id is None:
             error.provider_task_id = task_id
@@ -334,8 +370,10 @@ class VideoProvider:
                     on_result(url)
                 return self._download_result(url, output, task_id)
             if state in {'failed', 'error', 'cancelled', 'canceled', 'expired'}:
-                raise self._with_task(self._provider_error(f'模型任务{state}：',
+                error = self._with_task(self._provider_error(f'模型任务{state}：',
                     detail=current.get('error') or current.get('message')), task_id)
+                error.terminal_failure = True
+                raise error
             if state not in {'queued', 'running', 'pending', 'processing', 'in_progress', 'submitted'}:
                 raise self._with_task(self._provider_error(f'无法识别模型任务状态：{self._safe(state)}，请检查接口格式。',
                     error_kind='query_unavailable'), task_id)

@@ -2,6 +2,12 @@
 window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabels,media}) => {
   const list=document.getElementById('production-run-list'), status=document.getElementById('runs-status');
   const previous=document.getElementById('runs-previous'), next=document.getElementById('runs-next'), pageLabel=document.getElementById('runs-page');
+  const userControls=document.getElementById('runs-user-controls'), userFilter=document.getElementById('runs-user-filter');
+  const isAdmin=()=>window.currentAccount?.role==='admin';
+  const rowKey=item=>(item.user_id||'')+':'+item.id;
+  const readRun=(item,suffix='',options={})=>item.user_id
+    ? api('/'+encodeURIComponent(item.user_id)+'/'+encodeURIComponent(item.id)+suffix,'GET',undefined,{...options,adminRecords:true})
+    : api('/runs/'+encodeURIComponent(item.id)+suffix,'GET',undefined,options);
   const names={queued:'排队中',running:'生成中',succeeded:'已完成',failed:'失败',cancelled:'已取消',needs_attention:'需要处理',defaced:'预览完成'};
   let page=1,pages=1,total=0,active=0,sequence=0,loading=false,pollTimer=null,items=[];
   const observedPreparationPeople=new Set();
@@ -47,7 +53,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
   function refreshPreparedPeople(){
     const directory=window.portraitPeople;if(!directory||refreshingPeople)return;
     const known=new Set(directory.items.map(person=>person.id));
-    const missing=items.map(item=>item.person_preparation?.person_id).filter(id=>id&&!known.has(id)&&!observedPreparationPeople.has(id));
+    const missing=items.filter(item=>!item.read_only).map(item=>item.person_preparation?.person_id).filter(id=>id&&!known.has(id)&&!observedPreparationPeople.has(id));
     if(!missing.length)return;
     refreshingPeople=true;let succeeded=false;
     // One directory read for newly resolved identities; never select or change a draft.
@@ -65,17 +71,26 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     if(list.querySelector('.run-name-edit')){if(target!==page)status.textContent='请先保存或取消正在修改的名称。';schedule();return;}
     const token=++sequence;loading=true;previous.disabled=next.disabled=true;
     try {
-      const data=await api('/runs?page='+target+'&page_size=10');if(suspended||token!==sequence||list.querySelector('.run-name-edit'))return;
+      await window.accountReady;if(suspended||token!==sequence)return;
+      if(userControls)userControls.hidden=!isAdmin();
+      const data=await api((isAdmin()?'':'/runs')+'?page='+target+'&page_size=10'+(isAdmin()?'&user_id='+encodeURIComponent(userFilter?.value||''):''),'GET',undefined,{adminRecords:isAdmin()});if(suspended||token!==sequence||list.querySelector('.run-name-edit'))return;
+      if(isAdmin()&&userFilter){
+        const selected=userFilter.value,version=JSON.stringify(data.users||[]);
+        if(userFilter.dataset.version!==version){
+          userFilter.replaceChildren(new Option('全部用户',''),...(data.users||[]).map(user=>new Option(user.username+(user.enabled?'':'（已停用）'),user.id)));
+          userFilter.value=selected;userFilter.dataset.version=version;
+        }
+      }
       items=data.items||[];page=data.page||target;pages=data.pages||1;total=data.total??items.length;active=data.active_count??items.filter(x=>['queued','running'].includes(x.status)).length;
       render();refreshPreparedPeople();status.textContent=total?'共 '+total+' 个任务，最新创建的排在前面。':'还没有生成任务。';
     } catch(error){if(!suspended&&token===sequence&&error.name!=='AbortError')notice(error);}
     finally{if(token===sequence){loading=false;previous.disabled=page<=1;next.disabled=page>=pages;schedule();}}
   }
   function render(){
-    const old=new Map([...list.children].map(row=>[row.dataset.runId,row]));
-    for(const row of [...list.children])if(!items.some(item=>item.id===row.dataset.runId))row.remove();
+    const old=new Map([...list.children].map(row=>[row.dataset.runKey,row]));
+    for(const row of [...list.children])if(!items.some(item=>rowKey(item)===row.dataset.runKey)){row.querySelectorAll('video').forEach(media.releaseVideo);row.remove();}
     items.forEach((item,index)=>{
-      let row=old.get(item.id);const fingerprint=JSON.stringify(item);
+      let row=old.get(rowKey(item));const fingerprint=JSON.stringify(item);
       if(!row || (row.dataset.version!==fingerprint && !row.querySelector('.run-name-edit') && !row.querySelector('.run-menu[open]') && !row.querySelector('.run-detail-panel[open]'))){
         const replacement=createRow(item);if(row)row.replaceWith(replacement);row=replacement;row.dataset.version=fingerprint;
       }
@@ -85,16 +100,17 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     pageLabel.textContent=page+' / '+pages;document.getElementById('runs-pagination').hidden=!total;
   }
   function createRow(item){
-    const row=node('article','','production-run run-row');row.dataset.runId=item.id;row.dataset.state=item.status;
+    const row=node('article','','production-run run-row');row.dataset.runId=item.id;row.dataset.runKey=rowKey(item);row.dataset.state=item.status;
     const title=node('div','','run-title-cell'), text=node('span',item.name||'视频任务','run-name-text');
     const pencil=button('✎',()=>editName(item,row,title),'run-rename');pencil.setAttribute('aria-label','修改任务名称');
-    title.append(text,pencil);
+    title.append(text);if(!item.read_only)title.append(pencil);
+    if(item.username)title.append(node('small',item.username,'run-owner'));
     const date=new Date(item.created_at);const time=node('time',Number.isNaN(date.getTime())?'—':date.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}),'run-time');
     const state=node('span',(names[item.status]||item.status)+(['queued','running'].includes(item.status)?' '+(item.progress||0)+'%':''),'run-state');state.title=item.message||'';
     if(item.person_preparation?.message)state.append(node('small',item.person_preparation.message,'run-preparation-message'));
     const model=node('span',window.generationOptions?.label?.(item.model)||item.model||'未记录','run-model');
     const duration=node('span','','run-duration');
-    duration.append(node('span',item.source_clip ? `片段 ${item.source_clip.start}–${Number((item.source_clip.start + item.source_clip.duration).toFixed(3))} 秒 · ${item.source_clip.duration} 秒` : item.duration===-1?'视频跟随原片':item.duration>0?'视频 '+item.duration+' 秒':'视频时长未记录'),node('small',wallTime(item),'run-wall-time'));
+    duration.append(node('span',item.target_duration ? `目标 ${item.target_duration} 秒` : item.source_clip ? `片段 ${item.source_clip.start}–${Number((item.source_clip.start + item.source_clip.duration).toFixed(3))} 秒 · ${item.source_clip.duration} 秒` : item.duration===-1?'视频跟随原片':item.duration>0?'视频 '+item.duration+' 秒':'视频时长未记录'),node('small',wallTime(item),'run-wall-time'));
     const actions=node('div','','run-actions');
     if(item.download_url){const play=button('播放',()=>openPlayer(item));play.dataset.runAction='play';actions.append(play);const download=node('a','下载','run-text-button');download.href=item.download_url;download.download='';actions.append(download);}
     const more=node('details','','run-menu');more.append(node('summary','更多'));
@@ -106,12 +122,13 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     });
     async function showDetails(){more.open=false;panel.hidden=false;panel.open=!panel.open;if(!panel.open)return;
       if(!detailLoaded){const token=++detailToken;detailRead?.abort();detailRead=new AbortController();const loading=node('p','正在读取详情…');panel.append(loading);
-        try{const full=await api('/runs/'+encodeURIComponent(item.id),'GET',undefined,{signal:detailRead.signal});loading.remove();if(suspended||token!==detailToken||!panel.open)return;fillDetails(panel,full);detailLoaded=true;}
+        try{const full=await readRun(item,'',{signal:detailRead.signal});loading.remove();if(suspended||token!==detailToken||!panel.open||!panel.isConnected)return;fillDetails(panel,full);detailLoaded=true;}
         catch(error){if(error.name==='AbortError'||token!==detailToken)loading.remove();else loading.textContent=error.message;}
       }
     }
     const add=(action,label,fn,disabled=false)=>{const b=button(label,async()=>{more.open=false;try{await fn();}catch(error){notice(error);}});b.dataset.runAction=action;b.disabled=disabled;menu.append(b);};
     add('details','查看详情',showDetails);
+    if(!item.read_only){
     add('copy','复制为草稿',()=>changeDraft(()=>api('/runs/'+encodeURIComponent(item.id)+'/copy','POST',{})));
     if(item.can_cancel)add('cancel','取消排队',async()=>{await api('/runs/'+item.id+'/cancel','POST',{});await refresh();});
     if(item.can_resume)add('resume','继续查询 / 下载',async()=>{await api('/runs/'+item.id+'/resume','POST',{});await refresh();});
@@ -120,12 +137,13 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
       if(!window.confirm('删除这条任务记录？草稿和原始视频文件会保留。'+(item.status==='needs_attention'?' 此操作不会取消服务商端的任务。':'')))return;
       await api('/runs/'+item.id,'DELETE');if(playerRun?.id===item.id)dialog.close();await refresh();
     },item.can_delete===false);
+    }
     actions.append(more);row.append(title,time,state,model,duration,actions);
     if(item.error_kind==='audio_copyright' && item.status==='failed'){
       const help=node('div','','run-audio-help');
       help.append(node('strong','生成声音未通过版权检查'),node('p','服务商认为生成的音频可能涉及版权限制。'+(item.can_retry_without_audio?'可以关闭声音后，重新生成无声视频。':'请检查参考素材，或联系服务商核查。')));
       const tools=node('div','','run-audio-actions');
-      if(item.can_retry_without_audio && retryWithoutAudio){
+      if(!item.read_only && item.can_retry_without_audio && retryWithoutAudio){
         const retry=button('关闭声音并重试',async()=>{
           if(audioRetries.has(item.id))return;
           audioRetries.add(item.id);retry.disabled=true;retry.textContent='正在提交…';
@@ -145,7 +163,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     if(title.querySelector('input'))return;
     const edit=node('div','','run-name-edit'),input=node('input');input.value=item.name||'';input.maxLength=120;input.setAttribute('aria-label','任务名称');
     const error=node('small','','run-name-error');error.setAttribute('role','status');
-    const cancel=()=>{title.replaceChildren(node('span',item.name||'视频任务','run-name-text'));const pen=button('✎',()=>editName(item,row,title),'run-rename');pen.setAttribute('aria-label','修改任务名称');title.append(pen);};
+    const cancel=()=>{title.replaceChildren(node('span',item.name||'视频任务','run-name-text'));const pen=button('✎',()=>editName(item,row,title),'run-rename');pen.setAttribute('aria-label','修改任务名称');title.append(pen);if(item.username)title.append(node('small',item.username,'run-owner'));};
     let saving=false;
     const save=async()=>{if(saving)return;const name=input.value.trim();if(!name){error.textContent='请输入任务名称';return;}saving=true;saveButton.disabled=true;
       try{const data=await api('/runs/'+item.id+'/name','PUT',{name});item.name=data.name;const current=items.find(x=>x.id===item.id);if(current)current.name=data.name;cancel();if(playerRun?.id===item.id){playerRun.name=data.name;playerTitle.textContent=data.name;}await refresh();}
@@ -159,6 +177,18 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     const timing=node('div','','run-timing-details');timingDetails(timing,item);panel.append(timing);
     panel.append(node('p','生成声音：'+(item.snapshot?.model?.generate_audio === false ? '关闭（无声视频）' : '开启')));
     panel.append(node('p',item.message||names[item.status]||''));
+    if(item.continuation?.base_ready){
+      panel.append(node('p',item.continuation.complete ? '基础片与剧情续写已完成' : '基础片已保存；恢复任务将继续续写阶段'));
+      if(item.base_url){
+        const base=node('a','查看已保存的基础片');base.href=item.base_url;base.target='_blank';base.rel='noopener';panel.append(base);
+      }
+      if(item.continuation.plan){
+        const extension=node('details');
+        extension.append(node('summary','查看自动续写提示词'),node('p',item.continuation.plan.continuation_prompt));
+        extension.append(node('small',`LLM：${item.continuation.llm_model} · Skill：${item.continuation.skill_version}`));
+        panel.append(extension);
+      }
+    }
     if(item.person_preparation){
       const preparation=node('div','','run-person-preparation');
       preparation.append(node('p',item.person_preparation.message||'正在准备人物素材'));
@@ -204,7 +234,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
   }
   async function checkPlayback(token,initial=false){
     try{
-      const data=await api('/runs/'+playerRun.id+'/playback','GET',undefined,{signal:playerRead.signal});
+      const data=await readRun(playerRun,'/playback',{signal:playerRead.signal});
       if(token!==playerToken||!dialog.open)return;playback=data;
       qualityButtons[0].disabled=!data.smooth_url;
       playerStatus.textContent=data.smooth_url?'流畅预览适合在线观看，下载保留原始画质。':data.status==='processing'?'流畅版本准备中，当前播放原片。':'当前播放原片；流畅版本暂不可用。';
@@ -224,6 +254,12 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
   video.addEventListener('error',()=>{if(dialog.open)playerStatus.textContent='视频暂时无法播放，可以切换原画或下载查看。';});
   previous.addEventListener('click',()=>refresh(page-1));next.addEventListener('click',()=>refresh(page+1));
   document.getElementById('runs-refresh').addEventListener('click',()=>refresh());
+  userFilter?.addEventListener('change',()=>{
+    if(list.querySelector('.run-name-edit')){userFilter.value=userFilter.dataset.applied||'';notice('请先保存或取消正在修改的名称。');return;}
+    userFilter.dataset.applied=userFilter.value;if(dialog.open)dialog.close();
+    list.querySelectorAll('video').forEach(media.releaseVideo);list.replaceChildren();
+    status.textContent='正在读取任务…';refresh(1);
+  });
   document.addEventListener('click',event=>{list.querySelectorAll('.run-menu[open]').forEach(menu=>{if(!menu.contains(event.target))menu.open=false;});});
   return {refresh,submitted:()=>refresh(1),suspend(){suspended=true;sequence++;clearTimeout(pollTimer);playerToken++;playerRead?.abort();clearTimeout(playbackTimer);if(dialog.open)dialog.close();list.querySelectorAll('video').forEach(media.releaseVideo);}};
 };

@@ -65,6 +65,33 @@ def test_runs_capture_snapshot_deduplicate_and_cancel_queue(client):
     assert copied['prompt']=='original' and copied['id']!=draft['id']
 
 
+@pytest.mark.parametrize('enabled', [True, False])
+def test_reference_authorization_precedes_queue_creation(client, monkeypatch, enabled):
+    from app import shared_portraits
+    from app.production_store import ProductionStore
+    draft = complete_draft(client)
+    hair = asset(client, 'hairstyle', 'removed-hair.png')
+    draft = client.put('/api/production/drafts/'+draft['id'], json={
+        'revision': draft['revision'], 'hairstyle_asset_ids': [hair['id']],
+        'hairstyle_enabled': enabled}).json()
+    original = shared_portraits.authorize_asset
+    def check(settings, ident):
+        if ident == hair['id']: raise LookupError('来源授权已撤销。')
+        return original(settings, ident)
+    monkeypatch.setattr(shared_portraits, 'authorize_asset', check)
+    key = 'preflight-'+str(enabled)
+    response = client.post('/api/production/runs', json={
+        'draft_id': draft['id'], 'revision': draft['revision'], 'idempotency_key': key})
+    run = ProductionStore(main.settings.storage_dir).run_by_key(key)
+    if enabled:
+        assert response.status_code == 422, response.text
+        assert '发型参考图' in response.text and 'removed-hair.png' in response.text
+        assert run is None
+    else:
+        assert response.status_code == 200, response.text
+        assert run is not None
+
+
 def test_missing_asset_and_private_fields_rejected(client):
     draft=client.post('/api/production/drafts',json={}).json()
     assert client.put('/api/production/drafts/'+draft['id'],json={'revision':1,'source_asset_id':'missing'}).status_code==422

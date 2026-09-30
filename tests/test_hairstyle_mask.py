@@ -53,6 +53,30 @@ def test_no_face_and_detection_failure_are_distinct(tmp_path,monkeypatch):
     with pytest.raises(hair.MediaPipelineError):hair.process_hairstyle(cfg,asset,{'mask_scale':1.05})
 
 
+@pytest.mark.parametrize('damage', ['bytes', 'legacy_metadata'])
+def test_mask_cache_verifies_output_and_rebuilds_unverified_entries(tmp_path, monkeypatch, damage):
+    import json
+    asset, _ = asset_at(tmp_path)
+    asset['id'] = 'hair-source'
+    cfg = replace(settings, storage_dir=tmp_path)
+    monkeypatch.setattr(hair, '_detect_faces', lambda *args: [[30,40,70,80,.9]])
+    first = hair.process_hairstyle(cfg, asset)
+    expected = first['path'].read_bytes()
+    if damage == 'bytes':
+        first['path'].write_bytes(Path(asset['path']).read_bytes())
+    else:
+        first['path'].with_suffix('.json').write_text(json.dumps({'faces_detected': 1, 'settings': first['settings']}))
+    rebuilt = hair.process_hairstyle(cfg, asset)
+    assert rebuilt['path'].read_bytes() == expected
+    assert rebuilt['output_sha256'] == hashlib.sha256(expected).hexdigest()
+    assert rebuilt['source_sha256'] == asset['sha256']
+    assert rebuilt['output_sha256'] != asset['sha256']
+    assert rebuilt['source_asset_id'] == 'hair-source'
+    # An identical independent upload can reuse pixels without inheriting an ID.
+    again = hair.process_hairstyle(cfg, {**asset, 'id': 'second-upload'})
+    assert again['source_asset_id'] == 'second-upload'
+
+
 def test_preview_api_validates_kind_and_returns_local_image(tmp_path,monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

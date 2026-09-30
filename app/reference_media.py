@@ -14,8 +14,25 @@ _lock = Lock()
 
 
 def _scoped_video(path: Path, storage: Path) -> bool:
-    return (path.is_relative_to((storage / 'work').resolve())
-            and path.name == 'defaced.mp4' and path.is_file())
+    work = (storage / 'work').resolve()
+    if not path.is_relative_to(work) or not path.is_file():
+        return False
+    if path.name == 'defaced.mp4':
+        return True
+    # A generated base is a separate, durable artifact. Never admit arbitrary
+    # uploaded originals or other files merely because they sit under work/.
+    if path.name == 'base.mp4' and path.parent.parent == work and re.fullmatch(r'[0-9a-f]{32}',path.parent.name):
+        import sqlite3
+        database=storage/'production.db'
+        if not database.is_file():
+            return False
+        try:
+            with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as db:
+                row=db.execute('SELECT c.data FROM production_continuations c JOIN production_runs r ON r.id=c.run_id WHERE c.run_id=? AND r.id NOT IN (SELECT id FROM production_deleted_runs)',(path.parent.name,)).fetchone()
+                return bool(row and json.loads(row[0]).get('base_ready'))
+        except (sqlite3.Error,ValueError):
+            return False
+    return False
 
 
 def publish_video(path: Path, storage: Path, public_base_url: str) -> str:

@@ -132,9 +132,9 @@ def test_connection(config):
 
 def upload_redacted_video(path, settings, config):
     resolved = Path(path).resolve()
-    if (not resolved.is_relative_to((settings.storage_dir / 'work').resolve())
-            or resolved.name != 'defaced.mp4' or not resolved.is_file()):
-        raise ValueError('只能上传当前任务的打码视频。')
+    from .reference_media import _scoped_video
+    if not _scoped_video(resolved,settings.storage_dir):
+        raise ValueError('只能上传当前任务的打码视频或已生成的基础片。')
     if not config.ready:
         raise ValueError(config.problem() or '请先启用 TOS。')
     if not 0 < resolved.stat().st_size <= 50 * 1024 * 1024:
@@ -143,7 +143,7 @@ def upload_redacted_video(path, settings, config):
         import tos
         client = make_client(config)
         try:
-            key = f'{config.prefix}{uuid4().hex}/defaced.mp4'
+            key = f'{config.prefix}{uuid4().hex}/{resolved.name}'
             client.put_object_from_file(config.bucket, key, str(resolved),
                                         content_type='video/mp4', acl=tos.ACLType.ACL_Private)
             return client.pre_signed_url(tos.HttpMethodType.Http_Method_Get, config.bucket, key,

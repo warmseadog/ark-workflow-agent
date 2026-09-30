@@ -4,7 +4,7 @@
   <form id="studio-generate-form" class="creation-workspace">
     <div class="asset-grid">
       <article class="asset-entry" id="flow-stage-source">
-        <div class="asset-heading"><span>01</span><h3>参考视频</h3><small>动作与场景</small></div>
+        <div class="asset-heading"><span>01</span><h3>参考视频</h3><small>必填 · 动作与场景</small></div>
         <div class="asset-picker" id="video-picker">
           <span class="asset-empty"><b>＋</b><strong>上传参考视频</strong><small>点击选择视频文件</small></span>
           <span class="asset-thumbnails" id="video-reference-preview"></span>
@@ -31,39 +31,17 @@
         </div>
       </article>
       <article class="asset-entry" id="flow-stage-references">
-        <div class="asset-heading"><span>02</span><h3>衣服参考图</h3><small>款式与材质</small></div>
+        <div class="asset-heading"><span>02</span><h3>衣服参考图</h3><small>必填 · 款式与材质</small></div>
         <div class="asset-picker" id="clothing-picker">
           <span class="asset-empty"><b>＋</b><strong>上传衣服参考图</strong><small>支持选择多张图片</small></span>
           <span class="asset-thumbnails" id="clothing-reference-preview"></span>
           <input id="studio-clothing-image" type="file" name="clothing_image" accept="image/*" multiple required aria-label="上传衣服参考图">
         </div>
         <div class="asset-footer"><span id="clothing-file-name">款式清晰、完整展示</span><button type="button" data-add-images="clothing" data-asset-edit>＋ 添加</button></div>
-        <details class="accessory-references" id="accessory-references">
-          <summary>更多搭配 <span id="accessory-count">可选</span></summary>
-          <p class="field-hint">点击类别上传对应图片，每类一张；关闭“本次使用”可暂时停用。</p>
-          <div class="accessory-buttons">
-          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜'),('earrings','耳环')] %}
-            <button type="button" data-add-images="{{ kind }}" data-asset-edit id="{{ kind }}-add">{{ label }}<span id="{{ kind }}-reference-state">可选</span></button>
-          {% endfor %}
-          </div>
-          <div class="accessory-previews">
-          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜'),('earrings','耳环')] %}
-          <div class="accessory-card" id="{{ kind }}-references" hidden>
-            <strong>{{ label }}</strong>
-            <div class="asset-picker" id="{{ kind }}-picker">
-              <span class="asset-empty"><b>＋</b><strong>上传{{ label }}参考图</strong></span>
-              <span class="asset-thumbnails" id="{{ kind }}-reference-preview"></span>
-              <input id="studio-{{ kind }}-image" type="file" name="{{ kind }}_image" accept="image/*" aria-label="上传{{ label }}参考图">
-            </div>
-            <span class="field-hint" id="{{ kind }}-file-name">未设置</span>
-            <label class="optional-enable"><input id="{{ kind }}-enabled" type="checkbox"> 本次使用{{ label }}</label>
-          </div>
-          {% endfor %}
-          </div>
-        </details>
+
       </article>
       <article class="asset-entry" id="person-reference-card">
-        <div class="asset-heading person-reference-heading"><span>03</span><h3>人物参考</h3>
+        <div class="asset-heading person-reference-heading"><span>03</span><h3>人物参考</h3><small>必填</small>
           <details id="person-picker" class="person-picker">
             <summary aria-label="从人物库选择" aria-haspopup="dialog">从人物库选择</summary>
             <div class="person-menu" aria-label="人物选择面板">
@@ -94,7 +72,28 @@
         <div class="person-source-note" id="person-bar" hidden><span id="person-current"></span><button type="button" id="person-photos-open">更换</button></div>
         <div class="person-media-switch"><button type="button" data-person-media="video">改用人物视频</button><button type="button" data-person-media="image" hidden>改用人物图片</button></div>
         <p id="person-photos-hint" class="field-hint">虚拟人物可直接上传；真人请从人物库选择已授权照片。</p>
-        <details class="hairstyle-references" id="hairstyle-references">
+
+      </article>
+
+    </div>
+    <div class="optional-reference-group" aria-label="可选调整">
+<details class="asset-entry scene-references" id="scene-references">
+        <summary class="asset-heading"><h3>场景设置</h3><small id="scene-reference-state">保留原视频场景</small></summary>
+        <div class="optional-reference-body">
+          <label class="optional-enable scene-switch"><input id="scene-enabled" type="checkbox" aria-controls="scene-custom-fields"> 更换场景（关闭时保留原视频场景）</label>
+          <div id="scene-custom-fields" hidden><div class="asset-picker" id="scene-picker">
+            <span class="asset-empty"><b>＋</b><strong>上传场景参考图</strong><small>可选，上传一张图片</small></span>
+            <span class="asset-thumbnails" id="scene-reference-preview"></span>
+            <input id="studio-scene-image" type="file" name="scene_image" accept="image/*" aria-label="上传场景参考图">
+          </div>
+          <div class="asset-footer"><span id="scene-file-name">未设置</span></div>
+          <label class="scene-description-label" for="scene-description">场景补充（可选）</label>
+          <textarea id="scene-description" rows="3" maxlength="2000" placeholder="补充光线、氛围或需要保留的细节"></textarea>
+          <p class="field-hint">可上传场景图或仅填写场景描述；启用时替换背景，不使用时保留原视频场景。</p>
+          </div>
+        </div>
+      </details>
+<details class="hairstyle-references" id="hairstyle-references">
           <summary>发型参考 <span id="hairstyle-reference-state">可选</span></summary>
           <div class="optional-reference-body"><div class="asset-picker" id="hairstyle-picker">
             <span class="asset-empty"><b>＋</b><strong>上传发型参考图</strong><small>可选，上传一张图片</small></span>
@@ -116,21 +115,29 @@
             </div>
           </div>
         </details>
-      </article>
-      <article class="asset-entry scene-references" id="scene-references">
-        <div class="asset-heading"><span>04</span><h3>场景参考图</h3><small id="scene-reference-state">可选</small></div>
-        <div class="optional-reference-body"><div class="asset-picker" id="scene-picker">
-            <span class="asset-empty"><b>＋</b><strong>上传场景参考图</strong><small>可选，上传一张图片</small></span>
-            <span class="asset-thumbnails" id="scene-reference-preview"></span>
-            <input id="studio-scene-image" type="file" name="scene_image" accept="image/*" aria-label="上传场景参考图">
+<details class="accessory-references" id="accessory-references">
+          <summary>更多搭配 <span id="accessory-count">可选</span></summary>
+          <p class="field-hint">点击类别上传对应图片，每类一张；关闭“本次使用”可暂时停用。</p>
+          <div class="accessory-buttons">
+          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜'),('earrings','耳环')] %}
+            <button type="button" data-add-images="{{ kind }}" data-asset-edit id="{{ kind }}-add">{{ label }}<span id="{{ kind }}-reference-state">可选</span></button>
+          {% endfor %}
           </div>
-          <div class="asset-footer"><span id="scene-file-name">未设置</span></div>
-          <label class="optional-enable"><input id="scene-enabled" type="checkbox"> 使用场景参考（图片 / 文字）</label>
-          <label class="scene-description-label" for="scene-description">场景补充（可选）</label>
-          <textarea id="scene-description" rows="3" maxlength="2000" placeholder="补充光线、氛围或需要保留的细节"></textarea>
-          <p class="field-hint">可上传场景图或仅填写场景描述；启用时替换背景，不使用时保留原视频场景。</p>
-        </div>
-      </article>
+          <div class="accessory-previews">
+          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜'),('earrings','耳环')] %}
+          <div class="accessory-card" id="{{ kind }}-references" hidden>
+            <strong>{{ label }}</strong>
+            <div class="asset-picker" id="{{ kind }}-picker">
+              <span class="asset-empty"><b>＋</b><strong>上传{{ label }}参考图</strong></span>
+              <span class="asset-thumbnails" id="{{ kind }}-reference-preview"></span>
+              <input id="studio-{{ kind }}-image" type="file" name="{{ kind }}_image" accept="image/*" aria-label="上传{{ label }}参考图">
+            </div>
+            <span class="field-hint" id="{{ kind }}-file-name">未设置</span>
+            <label class="optional-enable"><input id="{{ kind }}-enabled" type="checkbox"> 本次使用{{ label }}</label>
+          </div>
+          {% endfor %}
+          </div>
+        </details>
     </div>
     <div class="reference-summary"><p id="reference-count" class="field-hint reference-count" role="status" aria-live="polite">本次参考图 0 / 9 张</p><button id="clear-reference-images" type="button" class="secondary" disabled title="清空本次已选参考图，保留视频、提示词和素材库">清空参考图</button></div>
     <details class="compact-prompt" id="flow-stage-generation">
@@ -156,14 +163,15 @@
       <textarea id="generation-prompt" name="prompt" rows="4">保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图中的脸和身份；应用@Image2衣服参考图中的服装款式、颜色和材质，保持全片自然稳定。</textarea>
       <p class="field-hint">默认严格遵循参考：视频控制动作，人物控制身份，服装控制穿着；独立发型、场景与配饰按各自参考执行。下方规则自动更新，文字只补充细节。全部参考图合计最多 9 张。</p>
     </details>
-    <div class="generation-action">
+    <h3 class="generation-settings-heading" id="generation-settings-heading">生成设置</h3>
+    <div class="generation-action" id="generation-settings" aria-labelledby="generation-settings-heading">
       <div class="generation-task">
         <div class="draft-task-title"><span>任务名称</span><strong id="draft-task-name">正在读取…</strong><button type="button" id="draft-name-edit" class="run-rename" aria-label="修改本次任务名称">✎</button></div>
         <div id="draft-name-editor" class="draft-name-editor" hidden><input id="draft-name-input" maxlength="120" aria-label="本次任务名称"><button type="button" id="draft-name-save">保存</button><button type="button" id="draft-name-cancel">取消</button></div>
       </div>
       {% include "generation_options_panel.html" %}
     </div>
-    <div id="source-clip-controls" class="source-clip-controls" hidden><label for="source-clip-start">片段起点（秒）<input id="source-clip-start" type="number" min="0" max="86400" step="0.1" value="0"></label><button type="button" id="source-clip-preview" class="secondary">预览片段</button><span id="source-clip-note" role="status" aria-live="polite"></span></div>
+    <div id="source-clip-controls" class="source-clip-controls" hidden><label for="source-clip-start">片段起点（秒）<input id="source-clip-start" type="number" min="0" max="86400" step="0.1" value="0"></label><label for="source-clip-duration">基础片段时长（秒）<input id="source-clip-duration" type="number" min="2" max="30" step="0.1" placeholder="自动"></label><button type="button" id="source-clip-preview" class="secondary">预览片段</button><span id="source-clip-note" role="status" aria-live="polite"></span></div>
     <dialog id="source-clip-dialog" class="run-player-dialog"><div class="run-player-heading"><h3>动作视频片段预览</h3><button type="button" id="source-clip-close" aria-label="关闭片段预览">×</button></div><video id="source-clip-video" controls playsinline preload="metadata"></video><p>预览所选原片片段；生成时将对该片段打码并替换人物与服装。</p></dialog>
     <p id="production-status" class="production-status" role="status" aria-live="polite"></p>
     <div id="save-notice" class="save-notice" hidden>
@@ -175,6 +183,7 @@
   </form>
   <section class="production-runs" aria-labelledby="production-runs-heading">
     <div class="runs-heading"><h3 id="production-runs-heading">任务记录</h3><button type="button" class="secondary" id="runs-refresh">刷新任务</button></div>
+    <div id="runs-user-controls" class="runs-user-controls" hidden><label for="runs-user-filter">所属用户</label><select id="runs-user-filter"><option value="">全部用户</option></select></div>
     <p id="runs-status" role="status">正在读取任务…</p>
     <div class="run-list-header" aria-hidden="true"><span>任务名称</span><span>创建时间</span><span>状态</span><span>使用模型</span><span>视频时长 / 任务耗时</span><span>操作</span></div>
     <div id="production-run-list" aria-label="生成任务列表"></div>

@@ -80,7 +80,7 @@
     const badge = document.getElementById('model-service-status');
     badge.textContent = config.status === 'demo' ? '演示模式' : config.status === 'incomplete' ? '模型待配置' : '配置已保存';
     const sourceHint = document.getElementById('model-video-source-hint');
-    if (sourceHint) sourceHint.textContent = config.generation_message || (config.protocol === 'ark' ? (config.video_source === 'tos' ? '参考视频通过 TOS 上传，无需工作台公网地址。' : '参考视频通过工作台公网地址读取。') : '参考视频使用当前服务商的上传方式。');
+    if (sourceHint) sourceHint.textContent = config.generation_message || '';
     showError('');
     clearConnectionResult();
   }

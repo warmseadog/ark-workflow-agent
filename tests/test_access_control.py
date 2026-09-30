@@ -112,6 +112,8 @@ def test_normal_account_cannot_access_global_admin_or_legacy(accounts_clients):
     for path in ('/api/portrait/people/sync','/api/portrait/people/resolve','/api/portrait/import'):
         assert a.post(path,json={}).status_code==403,path
     assert a.put('/api/redaction-settings',json={}).status_code==403
+    assert a.get('/api/redaction-service').status_code==403
+    assert a.put('/api/redaction-service',json={'mode':'http','endpoint':'https://mask.example'}).status_code==403
     assert a.get('/api/production/model-options').status_code==200
     draft=a.post('/api/production/drafts',json={}).json()
     changed={**draft['mask'],'mask_scale':2.8}
@@ -218,13 +220,23 @@ def test_person_thumbnail_and_callback_capabilities_are_tenant_scoped(accounts_c
     _,users,(_,a,b)=accounts_clients
     portrait_service.save_config(main.settings,{'access_key':'test-ak','secret_key':'test-sk'})
     alice=tenancy.user_settings(main.settings,users[1])
-    person=PortraitLibrary(alice).add_person('group-alice','Alice person')
-    thumb=alice.storage_dir/'portrait-thumbs'/(person['id']+'.jpg')
-    thumb.parent.mkdir(parents=True,exist_ok=True)
-    thumb.write_bytes(b'alice-image')
+    # Virtual people are tenant-private; real people may be shared by policy.
+    library=PortraitLibrary(alice)
+    person=library.add_person('group-alice','Alice person',person_type='AIGC')
+    from io import BytesIO
+    from PIL import Image
+    picture=BytesIO()
+    Image.new('RGB',(400,500),'blue').save(picture,format='JPEG')
+    uploaded=a.post('/api/production/assets',data={'kind':'face'},files={'file':('alice.jpg',picture.getvalue(),'image/jpeg')})
+    assert uploaded.status_code==200,uploaded.text
+    photo=library.enqueue(person['id'],uploaded.json()['id'])
+    library.update(photo['id'],status='active',remote_id='asset-alice',checked=time.time())
+    library.thumbnail(library.get_photo(photo['id'],private=True))
     assert len(a.get('/api/portrait/people').json()['items'])==1
     assert b.get('/api/portrait/people').json()['items']==[]
-    assert a.get('/api/portrait/people/'+person['id']+'/thumbnail').content==b'alice-image'
+    thumbnail=a.get('/api/portrait/people/'+person['id']+'/thumbnail')
+    assert thumbnail.status_code==200 and thumbnail.headers['content-type'].startswith('image/')
+    Image.open(BytesIO(thumbnail.content)).verify()
     for suffix in ('thumbnail','photos','reference'):
         assert b.get('/api/portrait/people/'+person['id']+'/'+suffix).status_code==404
     assert b.delete('/api/portrait/people/'+person['id']).status_code==404

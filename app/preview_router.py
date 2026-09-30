@@ -154,9 +154,10 @@ def _update(store, ident, status, error=None):
 
 def _work(settings, store, ident, source_id, mask):
     try:
-        from . import production_worker
+        from . import production_worker, redaction_service
         from .source_clip import clip_video, fingerprint as clip_fingerprint
         values = json.loads(mask)
+        values.pop('service_fingerprint', None)
         clip = values.pop('source_clip', None)
         ratio = values.pop('ratio', 'adaptive')
         options = production_worker.mask_options(values)
@@ -168,7 +169,7 @@ def _work(settings, store, ident, source_id, mask):
             # Match production's cache fingerprint, but only within THIS tenant.
             key = hashlib.sha256((asset['sha256'] +
                 json.dumps(options.model_dump(mode='json'), sort_keys=True) +
-                settings.deface_bin + ':v1' + clip_fingerprint(clip)).encode()).hexdigest()
+                redaction_service.fingerprint(settings) + clip_fingerprint(clip)).encode()).hexdigest()
             cache = _inside(store.storage, 'cache', 'redacted', key + '.mp4')
             output.parent.mkdir(parents=True, exist_ok=True)
             temporary = output.with_name('defaced.tmp.mp4')
@@ -275,6 +276,9 @@ def get_router(settings_getter, local_guard):
             mask = json.dumps({**json.loads(mask), 'source_clip': clip}, sort_keys=True)
         if ratio != 'adaptive':
             mask = json.dumps({**json.loads(mask), 'ratio': ratio}, sort_keys=True)
+        from . import redaction_service
+        settings = redaction_service.freeze(settings)
+        mask = json.dumps({**json.loads(mask), 'service_fingerprint': redaction_service.fingerprint(settings)}, sort_keys=True)
         return _submit(settings, store, payload['source_asset_id'], mask)
 
     @router.get('/{ident}')

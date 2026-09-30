@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>方舟 · 后台配置</title>
   <link rel="stylesheet" href="/static/model-settings.css?v=20260928-model-selection-1">
-  <link rel="stylesheet" href="/static/admin-settings.css?v=20260929-admin-pages-1">
+  <link rel="stylesheet" href="/static/admin-settings.css?v=20260930-settings-simple-1">
   <link rel="stylesheet" href="/static/portrait.css?v=20260928-backend-1">
   <link rel="stylesheet" href="/static/virtual-library.css?v=20260930-batch-mobile-1">
   <link rel="stylesheet" href="/static/account.css?v=20260929-navigation-people-1">
@@ -18,66 +18,75 @@
     <header class="topbar"><span>工作台 / <strong id="admin-section-name">后台配置</strong></span></header>
     <p class="account-banner" data-account-error role="alert" hidden></p>
     <div class="content">
-      <div id="admin-intro"><p class="eyebrow">WORKSPACE SETTINGS</p><h1>后台配置</h1>
-      <p class="lead">管理员统一管理共享服务密钥与生成默认值。个人素材与任务在各自账号内管理。</p>
-      </div>
       <section id="section-users" class="section embedded-section" hidden><iframe class="admin-content-frame" data-admin-frame data-src="/admin/users?embedded=1" title="用户与任务"></iframe></section>
       <section id="section-my-people" class="section embedded-section" hidden><iframe class="admin-content-frame" data-admin-frame data-src="/people?embedded=1" title="我的人物"></iframe></section>
       <p id="page-error" class="notice error" role="alert" hidden></p>
       <section id="section-overview" class="section">
-        <div class="section-title"><div><h2>配置概览</h2><p>当前已保存的配置状态。连接是否可用，请在对应分区测试。</p></div><button id="refresh-overview" class="secondary">刷新状态</button></div>
+        <div class="section-title"><div><h2>配置概览</h2></div><button id="refresh-overview" class="secondary">刷新状态</button></div>
         <div class="summary-grid">
           <a href="#model" class="summary-card"><span>视频模型</span><strong id="overview-model">读取中…</strong><small id="overview-model-detail">—</small><b>查看配置 ↗</b></a>
           <a href="#tikhub" class="summary-card"><span>链接解析 · TikHub</span><strong id="overview-tikhub">读取中…</strong><small>抖音 / 小红书 / 快手 / B 站</small><b>管理 API Key ↗</b></a>
           <a href="#storage" class="summary-card"><span>对象存储 · TOS</span><strong id="overview-storage">读取中…</strong><small id="overview-storage-detail">—</small><b>管理存储 ↗</b></a>
         </div>
-        <div class="card"><p class="eyebrow">YOUR WORKFLOW</p><h3>从参考视频到生成结果</h3><div class="workflow"><span>链接 / 本地视频</span><i>→</i><span>本地打码</span><i>→</i><span>TOS / 公网地址</span><i>→</i><span>视频模型</span></div><p class="hint">启用 TOS 后，火山方舟读取带有效期的打码视频链接。其他服务商继续使用各自的素材上传方式。</p><p id="overview-attention" class="notice"></p></div>
-        <div class="card compact"><h3>配置生效方式</h3><p>模型、TikHub 和 TOS 保存后用于新任务。打码默认参数用于新建草稿；已有草稿和正在生成的任务保留原参数。</p></div>
+        <p id="overview-attention" class="notice" hidden></p>
       </section>
       <section id="section-people" class="section" hidden>
         <div class="section-title"><div><h2>人物库</h2><p>在这里添加和管理人物，制作页直接按名字选用。</p></div></div>
-        <div class="card" id="people-management"><h3>人物与照片</h3><p data-library-counts class="hint">正在读取…</p><div class="actions"><button type="button" class="primary" id="manage-people">管理人物与照片</button><button type="button" class="secondary" data-portrait-open="invite">新增真人授权</button></div><p class="hint">已有官方照片：打开管理 → 选择真人或虚拟人物 → 按照片编号导入。</p></div>
+        <div class="card" id="people-management"><h3>人物与照片</h3><p data-library-counts class="hint">正在读取…</p><div class="actions"><button type="button" class="primary" id="manage-people">管理人物与照片</button><button type="button" class="secondary" data-portrait-open="invite">新增真人授权</button></div></div>
       </section>
       <section id="section-model" class="section" hidden>
-        <div class="section-title"><div><h2>视频模型</h2><p>管理服务连接与新草稿的默认模型。制作页单独选择每条视频的模型。</p></div><span id="model-service-status" class="badge"></span></div>
+        <div class="section-title"><div><h2>视频模型</h2></div><span id="model-service-status" class="badge"></span></div>
         <details id="model-settings" open><summary id="model-settings-toggle">模型配置</summary>{% include "model_settings_panel.html" %}</details>
-        <div class="card"><h3>制作页可选模型</h3><p class="hint">连接测试只检查接口鉴权。新增模型请先在服务商控制台完成此账号的实际生成验收，再勾选“已验收”和“在制作页开放”。更换服务地址或密钥后需重新验收。</p>
+        <details class="card settings-details"><summary>制作页可选模型</summary><p class="hint">模型实际生成验收通过后再开放；更换地址或密钥需重新验收。</p>
           <form id="model-catalog-form"><div id="model-catalog-list"></div><div class="actions"><button id="save-model-catalog" class="primary" type="submit">保存模型目录</button></div></form>
           <p id="model-catalog-status" role="status" class="notice"></p>
-        </div>
+        </details>
+      </section>
+      <section id="section-continuation" class="section" hidden>
+        <div class="section-title"><div><h2>视频续写</h2><p>目标时长比参考视频长至少 1 秒时，结合关键帧规划新增动作，原始提示词保持不变。</p></div></div>
+        <div class="card"><form id="continuation-form" autocomplete="off"><fieldset disabled>
+          <label class="enable-row"><span><strong>启用智能续写规划</strong></span><input name="enabled" type="checkbox"></label>
+          <div class="form-grid"><label>多模态模型 ID<input name="model" required maxlength="2048" placeholder="doubao-seed-2-1-lite-260915"></label><label>超时时间（秒）<input name="timeout_seconds" type="number" min="10" max="180" required></label></div>
+          <label>接口基础地址<input name="base_url" type="url" required maxlength="2048" placeholder="https://ark.cn-beijing.volces.com/api/v3"></label>
+          <label>API Key <span id="continuation-key-status" class="badge"></span><input name="api_key" type="password" autocomplete="new-password" maxlength="2048" placeholder="填写独立的续写模型密钥"></label>
+          <p class="hint">同一接口地址下留空保留密钥；更换地址后请填写新密钥。保存配置不会调用模型。</p>
+          <label class="check"><input name="clear_api_key" type="checkbox">清除已保存的密钥</label>
+          <label>续写 Skill<textarea name="skill" required maxlength="20000" rows="12" aria-describedby="continuation-skill-help"></textarea></label>
+          <p id="continuation-skill-help" class="hint">纯文本创作规则，用于人物、服装展示视频的结尾续写。系统始终要求动作衔接、外观一致、正常速度及严格的新增时间段。</p>
+          <p class="hint">Skill 版本：<span id="continuation-skill-version">—</span></p>
+          <div class="actions"><button type="submit" class="primary">保存续写配置</button></div>
+        </fieldset></form><p id="continuation-status" class="notice" role="status" hidden></p></div>
       </section>
       <section id="section-tikhub" class="section" hidden>
-        <div class="section-title"><div><h2>链接解析</h2><p>通过你购买的 TikHub API 获取分享链接中的视频。</p></div><span class="badge">TikHub</span></div>
-        <div class="card"><h3>TikHub 账户配置</h3><p class="hint">支持抖音、小红书、快手与 B 站。这里和制作页链接输入处共用同一份密钥。</p>
+        <div class="section-title"><div><h2>链接解析</h2></div><span class="badge">TikHub</span></div>
+        <div class="card">
           <form id="tikhub-form" autocomplete="off"><fieldset disabled>
-            <label>官方接口地址<input value="https://api.tikhub.io" readonly></label>
             <label for="admin-tikhub-key">API Key <span id="tikhub-key-status" class="badge"></span></label>
             <input id="admin-tikhub-key" name="api_key" type="password" maxlength="2048" autocomplete="new-password" placeholder="填写 TikHub API Key">
-            <p class="hint">留空保留已保存的密钥；输入新值可替换。密钥不会回传或写入浏览器存储。</p>
+            <p class="hint">留空保留密钥，输入新值替换。</p>
             <label class="check"><input name="clear_api_key" type="checkbox"> 清除已保存的密钥</label>
             <div class="actions"><button type="button" id="test-tikhub" class="secondary">测试连接</button><button type="submit" class="primary">保存 TikHub 配置</button></div>
           </fieldset></form><p id="tikhub-status" class="notice" role="status" hidden></p>
-          <p class="hint">连接测试仅验证账户，不抓取视频。实际解析按 TikHub 账户规则计费。</p>
         </div>
       </section>
       <section id="section-storage" class="section" hidden>
-        <div class="section-title"><div><h2>对象存储</h2><p>把打码后的视频上传到 TOS，供火山方舟读取。</p></div><span class="badge">火山引擎 TOS</span></div>
+        <div class="section-title"><div><h2>对象存储</h2></div><span class="badge">火山引擎 TOS</span></div>
         <div class="card"><form id="tos-form" autocomplete="off"><fieldset disabled>
-          <label class="enable-row"><span><strong>启用 TOS 视频上传</strong><small>用于新的火山方舟生成任务</small></span><input name="enabled" type="checkbox"></label>
+          <label class="enable-row"><span><strong>启用 TOS 视频上传</strong></span><input name="enabled" type="checkbox"></label>
           <div class="form-grid"><label>Bucket 名称<input name="bucket" placeholder="例如 my-video-bucket" maxlength="63"></label><label>地域（Region）<input name="region" list="tos-regions" placeholder="cn-beijing" required></label></div>
           <datalist id="tos-regions"><option value="cn-beijing"><option value="cn-shanghai"><option value="cn-guangzhou"></datalist>
           <label>公网 Endpoint<input name="endpoint" type="url" placeholder="https://tos-cn-beijing.volces.com" required></label>
-          <p class="hint">填写桶所在地域的官方公网 Endpoint；地域修改后会自动更新地址。</p>
           <div class="form-grid"><label>Access Key（AK） <span id="tos-ak-status" class="badge"></span><input name="access_key" type="password" autocomplete="new-password" placeholder="输入 Access Key" maxlength="2048"></label><label>Secret Key（SK） <span id="tos-sk-status" class="badge"></span><input name="secret_key" type="password" autocomplete="new-password" placeholder="输入 Secret Key" maxlength="2048"></label></div>
           <p class="hint">同一 Endpoint 下留空保留密钥；更换地域或 AK 时，请同时填写对应的 AK/SK。</p>
           <label class="check"><input name="clear_credentials" type="checkbox"> 清除已保存的 AK / SK</label>
+          <details class="settings-details"><summary>高级配置</summary>
           <div class="form-grid"><label>视频对象目录<input name="prefix" placeholder="ark/redacted/" required></label><label>下载链接有效期<select name="expires_seconds"><option value="3600">1 小时</option><option value="7200">2 小时</option><option value="21600">6 小时</option><option value="86400">24 小时（推荐）</option><option value="259200">3 天</option><option value="604800">7 天</option></select></label></div>
-          <div class="notice">仅上传打码后的视频，对象设为私有，并使用临时签名链接。链接过期不会删除文件，可在 TOS 控制台为上述目录设置生命周期清理。</div>
+          </details>
           <div class="actions"><button type="button" id="test-tos" class="secondary">测试 Bucket 连接</button><button type="submit" class="primary">保存 TOS 配置</button></div>
-        </fieldset></form><p id="tos-status" class="notice" role="status" hidden></p><p class="hint">测试验证 HeadBucket 权限，不上传素材；实际任务需要 PutObject、GetObject 权限。无需公开桶或将工作台部署到公网。</p></div>
+        </fieldset></form><p id="tos-status" class="notice" role="status" hidden></p></div>
       </section>
       <section id="section-prompts" class="section" hidden>
-        <div class="section-title"><div><h2>提示词模板</h2><p>保存常用的生成要求，在制作页直接选用。</p></div></div>
+        <div class="section-title"><div><h2>共享提示词模板</h2><p>管理员在此维护全员可用的模板；个人模板请在制作页另存。</p></div></div>
         <div class="card"><form id="prompt-form"><fieldset disabled>
           <label>已有模板<select id="admin-template-select"><option value="">新建模板</option></select></label>
           <label>模板名称<input name="name" required maxlength="60" placeholder="例如：自然换装"></label>
@@ -87,36 +96,52 @@
         </fieldset></form><p id="prompt-status" class="notice" role="status" hidden></p></div>
       </section>
       <section id="section-redaction" class="section" hidden>
-        <div class="section-title"><div><h2>打码设置</h2><p>保存后供新建草稿使用，无需重启。已有草稿和已提交任务保留原参数。</p></div></div>
+        <div class="section-title"><h2>人物打码</h2></div>
+        <div class="card"><form id="redaction-service-form" autocomplete="off"><fieldset disabled>
+          <label>处理方式<select name="mode"><option value="local">本地打码（默认）</option><option value="http">外部 API</option></select></label>
+          <div id="redaction-api-fields" hidden>
+            <label>接口地址<input name="endpoint" type="url" placeholder="https://example.com/redact" maxlength="2048"></label>
+            <label>API Key <span id="redaction-key-status" class="badge"></span><input name="api_key" type="password" autocomplete="new-password" placeholder="留空保留；无鉴权接口可不填" maxlength="2048"></label>
+            <details class="settings-details"><summary>高级配置与接口协议</summary>
+              <label>超时时间（秒）<input name="timeout_seconds" type="number" min="10" max="3600" required value="600"></label>
+              <label class="check"><input name="clear_api_key" type="checkbox">清除已保存的 API Key</label>
+              <p class="hint">同步 POST：multipart 文件字段 video，JSON 文本字段 options；使用 Bearer 鉴权，返回 MP4 视频。其他协议需适配后接入。</p>
+            </details>
+            <p class="hint">启用后，待打码视频会发送到此接口处理。</p>
+          </div>
+          <div class="actions"><button type="submit" class="primary">保存打码服务</button></div>
+        </fieldset></form><p id="redaction-service-status" class="notice" role="status" hidden></p></div>
+        <div class="section-title"><div><h3>默认参数</h3><p>用于新建草稿。</p></div></div>
         <div class="card"><form id="redaction-form"><fieldset disabled>
           <div class="form-grid">
             <label>打码样式<select name="blur_style"><option value="mosaic">马赛克</option><option value="blur">高斯模糊</option><option value="solid">黑色遮挡</option></select></label>
             <label>遮挡目标<select name="mask_mode"><option value="face">只遮人脸</option><option value="face_hair_primary">人脸 + 主人物头发</option><option value="hair_primary">只遮主人物头发</option><option value="face_hair_all">所有人物脸和头发</option></select></label>
             <label>遮罩倍数<input name="mask_scale" type="number" min="0.1" max="3" step="0.1" required></label>
-            <label>检测阈值<input name="threshold" type="number" min="0.01" max="1" step="0.01" required></label>
             <label>马赛克颗粒<input name="mosaic_size" type="number" min="4" max="100" step="1" required></label>
+          </div>
+          <details class="settings-details"><summary>高级参数</summary><div class="form-grid">
+            <label>检测阈值<input name="threshold" type="number" min="0.01" max="1" step="0.01" required></label>
             <label>模糊遮罩形状<select name="shape"><option value="ellipse">椭圆</option><option value="box">矩形</option></select></label>
             <label>检测尺寸<select name="detection_size"><option value="">原始尺寸</option><option>320</option><option>640</option><option>960</option><option>1280</option><option>1920</option><option>2560</option><option>4096</option></select></label>
           </div>
-          <label class="check"><input name="keep_audio" type="checkbox">保留原视频音频</label>
           <label class="check"><input name="robust_tracking" type="checkbox">稳定跟踪</label>
-          <p class="hint">头发遮挡仅支持马赛克样式。制作页生成前会自动打码，也可以在参考视频下方预览效果。</p>
+          </details>
+          <label class="check"><input name="keep_audio" type="checkbox">保留原视频音频</label>
           <div class="actions"><button type="submit" class="primary">保存打码设置</button></div>
         </fieldset></form><p id="redaction-status" class="notice" role="status" hidden></p></div>
-        <div class="card"><h3>已保存的默认值</h3><dl id="redaction-defaults" class="info-list"></dl></div>
       </section>
       <section id="section-system" class="section" hidden>
         <div class="section-title"><div><h2>系统信息</h2><p>查看当前服务的存储位置与运行参数。</p></div><span class="badge">只读</span></div>
         <div class="card"><dl id="system-info" class="info-list"></dl><p class="hint">这些参数来自当前服务环境，修改环境配置后需要重启。</p></div>
       </section>
-      <footer>方舟 · 配置中心 <span>配置按分区独立保存</span></footer>
     </div>
   </main>
   {% include "portrait_panel.html" %}
-  <script src="/static/model-settings.js?v=20260929-navigation-people-1"></script>
-  <script src="/static/model-catalog.js?v=20260929-navigation-people-1"></script>
-  <script src="/static/admin-settings.js?v=20260929-admin-pages-1"></script>
-  <script src="/static/virtual-library.js?v=20260930-batch-mobile-1"></script>
+  <script src="/static/model-settings.js?v=20260930-settings-simple-1"></script>
+  <script src="/static/model-catalog.js?v=20260930-settings-simple-1"></script>
+  <script src="/static/continuation-settings.js?v=20260930-continuation-1"></script>
+  <script src="/static/admin-settings.js?v=20260930-continuation-1"></script>
+  <script src="/static/virtual-library.js?v=20260930-settings-simple-1"></script>
   <script src="/static/portrait.js?v=20260928-account-1"></script>
 </body>
 </html>

@@ -16,7 +16,7 @@ def removed_video(client, tmp_path):
     lib = portrait_library.PortraitLibrary(main.settings)
     person = lib.add_person('group-preview', '授权人物')
     job = lib.enqueue(person['id'], original['id'])
-    lib.update(job['id'], status='failed', message='视频与所选人物不一致。')
+    lib.update(job['id'], status='active', remote_id='asset-verified', checked=1234)
     with policy_store(main.settings).connection() as db:
         db.execute('INSERT INTO shared_portrait_removed VALUES (?,?)', ('photo', photo_key(person['id'], original['sha256'])))
     return upload(client, content).json(), lib, person, job

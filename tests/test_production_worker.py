@@ -225,3 +225,32 @@ def test_failed_hairstyle_mask_never_sends_original_to_provider(setup,monkeypatc
     run=store.create_run(draft['id'],draft['revision'],'hair-mask-failure',private)
     worker.execute_run(cfg,store,store.claim_next())
     assert store.get_run(run['id'])['status']=='failed'
+
+
+def test_submitted_hairstyle_has_traceable_original_and_output_hashes(setup, monkeypatch):
+    import json
+    from app import hairstyle_mask
+    from tests.test_hairstyle_mask import asset_at
+    cfg, store, draft, private = setup
+    asset, _ = asset_at(cfg.storage_dir)
+    path = Path(asset['path'])
+    original = path.read_bytes()
+    store.add_asset('hair', 'hair.png', 'hairstyle', path, len(original), 'image/png', asset['sha256'])
+    monkeypatch.setattr(hairstyle_mask, '_detect_faces', lambda *args: [[30,40,70,80,.9]])
+    draft = store.save_draft(draft['id'], draft['revision'], {
+        'hairstyle_asset_ids': ['hair'], 'hairstyle_enabled': True})
+    submitted = []
+    def generate(self, video, faces, clothes, prompt, output, **kwargs):
+        submitted.append(kwargs['hairstyles'][0].read_bytes())
+        output.write_bytes(b'result')
+    monkeypatch.setattr(worker.VideoProvider, 'generate', generate)
+    run = store.create_run(draft['id'], draft['revision'], 'traceable-hair', private)
+    worker.execute_run(cfg, store, store.claim_next())
+    assert store.get_run(run['id'])['status'] == 'succeeded'
+    assert len(submitted) == 1 and submitted[0] != original
+    records = json.loads((cfg.storage_dir/'work'/run['id']/'hairstyle-references.json').read_text())
+    assert len(records) == 1
+    assert records[0]['source_asset_id'] == 'hair'
+    assert records[0]['source_sha256'] == hashlib.sha256(original).hexdigest()
+    assert records[0]['output_sha256'] == hashlib.sha256(submitted[0]).hexdigest()
+    assert records[0]['settings'] == {'mask_scale': 1.0, 'threshold': 0.2}

@@ -49,7 +49,7 @@
       if (item.id === selected) { const badge = document.createElement('span'); badge.className = 'person-selected-label'; badge.textContent = '已选'; button.append(badge); }
       button.addEventListener('click', () => selectPhoto(item)); el('options').append(button);
     }
-    if (!matches.length) { const note = document.createElement('p'); note.className = 'person-empty'; note.textContent = query ? /^asset-/i.test(query) ? '这里按名称搜索；照片编号请到后台人物库导入。' : '没有找到这个人物，请换个名称搜索。' : '暂无人物，请到后台人物库添加。'; el('options').prepend(note); }
+    if (!matches.length) { const note = document.createElement('p'); note.className = 'person-empty'; note.textContent = query ? '没有找到这个人物，请按人物名称搜索。' : '暂无人物，请到人物库添加。'; el('options').prepend(note); }
   }
   function selectPhoto(person) {
     if (locked) return;

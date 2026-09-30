@@ -15,7 +15,11 @@
     </fieldset>
     <div class="generation-submit-row">
       <label class="generation-audio-field"><input name="generate_audio" type="checkbox" aria-label="生成声音" aria-describedby="generation-audio-note"><span>生成声音</span><output id="generation-audio-state">关闭</output></label>
-      <button class="primary" type="submit" id="studio-generate-submit" disabled>生成视频 →</button>
+      <div class="generation-dock">
+        <button type="button" class="generation-dock-summary" id="generation-dock-summary">正在读取生成设置…</button>
+        <div class="generation-dock-feedback"><span id="generation-readiness" role="status" aria-live="polite">正在恢复素材…</span><button type="button" id="generation-fix" hidden>去添加</button><a href="#tasks" id="generation-view-task" hidden>查看任务</a></div>
+        <button class="primary" type="submit" id="studio-generate-submit" disabled aria-describedby="generation-readiness">生成视频 →</button>
+      </div>
     </div>
     <small id="generation-audio-note" class="sr-only">关闭后生成无声视频，可在后期添加配音或音乐。</small>
   </div>

@@ -14,9 +14,11 @@
   const display = value => Number(value.toFixed(1)).toString();
   function sourceClip() {
     if (!limits().follow_source || selected === null || rawSeconds() === null) return null;
-    const start = Number(byId('source-clip-start').value), duration = selected;
+    const start = Number(byId('source-clip-start').value);
+    const fixed = byId('source-clip-duration').value;
+    const duration = fixed === '' ? Math.min(selected, rawSeconds() - start) : Number(fixed);
     if (start === 0 && Math.abs(duration - rawSeconds()) < 0.001) return null;
-    return {start, duration, ...(duration > rawSeconds() - start + 0.02 ? {retime:'slow'} : {})};
+    return {start, duration};
   }
   function problem() {
     const value = seconds(), item = limits();
@@ -26,6 +28,8 @@
     if (!item.follow_source && !Number.isInteger(value) && !item.auto_duration) return '当前模型仅支持整数秒，请选择整数刻度。';
     const clip = sourceClip();
     if (clip && (!Number.isFinite(clip.start) || clip.start < 0 || rawSeconds() - clip.start < 2)) return '片段起点之后需至少保留 2 秒原视频。';
+    if (clip && (!Number.isFinite(clip.duration) || clip.duration < 2 || clip.duration > rawSeconds() - clip.start + .02)) return '基础片段需至少 2 秒，且不能超出原视频。';
+    if (clip && clip.duration > value + .02) return '目标时长不能短于基础片段，请缩短基础片段。';
     return '';
   }
   function getForm() {
@@ -39,7 +43,7 @@
   function refreshSource() {
     const info = sourceInfo(), key = info.id || info.url || null;
     if (key && key !== sourceKey) {
-      if (sourceKey && !restoringSelection) { selected = null; byId('source-clip-start').value = 0; }
+      if (sourceKey && !restoringSelection) { selected = null; byId('source-clip-start').value = 0; byId('source-clip-duration').value = ''; }
       sourceKey = key; restoringSelection = false;
     }
     if (!key) { sourceKey = null; selected = null; }
@@ -63,20 +67,25 @@
       }));
     }
     const clip = sourceClip(), issue = problem();
-    byId('source-clip-controls').hidden = !clip;
-    byId('source-clip-start').disabled = locked || !clip;
-    byId('source-clip-preview').disabled = locked || !clip || Boolean(issue) || !info.url;
-    const explanation = clip?.retime === 'slow' ? `放慢原片动作至 ${display(clip.duration)} 秒，保留原视频。`
+    const canSelectSegment = item.follow_source && selected !== null;
+    byId('source-clip-controls').hidden = !canSelectSegment;
+    byId('source-clip-start').disabled = locked || !canSelectSegment;
+    byId('source-clip-duration').disabled = locked || !canSelectSegment;
+    byId('source-clip-preview').disabled = locked || !canSelectSegment || Boolean(issue) || !info.url;
+    const baseSeconds = clip?.duration ?? raw;
+    const extra = value !== null && baseSeconds !== null ? value - baseSeconds : 0;
+    const explanation = item.follow_source && extra >= 1 - 1e-9 ? `保留原片正常速度，自动分析结尾并续写至 ${display(value)} 秒。`
+      : item.follow_source && extra > 0 ? `多出不足 1 秒，保持 ${display(baseSeconds)} 秒原片时长。`
       : clip ? `从第 ${clip.start} 秒截取 ${display(clip.duration)} 秒，保留原视频。`
-      : item.follow_source ? '默认跟随原片；缩短截取片段，延长放慢动作。'
+      : item.follow_source ? '默认跟随原片；缩短截取片段，多出至少 1 秒时自动续写剧情。'
       : value !== null && !Number.isInteger(value) ? '当前模型不支持小数秒输出，此刻度使用模型自动时长；选择整数可指定生成时长。'
       : '当前模型按所选整数秒生成；原片内容作为动作参考。';
     byId('generation-duration-help').textContent = issue || explanation;
     byId('generation-duration-help').dataset.error = String(Boolean(issue && raw !== null));
-    byId('generation-duration-help').classList.toggle('sr-only', !issue || raw === null);
+    byId('generation-duration-help').classList.toggle('sr-only', (!issue && extra <= 0) || raw === null);
     slider.title = issue || explanation;
     byId('generation-ratio-note').textContent = item.follow_source
-      ? (control('ratio').value !== 'adaptive' ? '按所选比例补边，保留完整画面；时长缩短截取，延长放慢。' : '时长默认跟随原片；缩短截取，延长放慢。')
+      ? (control('ratio').value !== 'adaptive' ? '按所选比例补边，保留完整画面；多出至少 1 秒时自动续写。' : '时长默认跟随原片；缩短截取，多出至少 1 秒时自动续写。')
       : '按所选时长与比例生成；小数时长由模型自动决定。';
     byId('source-clip-note').textContent = issue || explanation;
     byId('source-clip-note').dataset.error = String(Boolean(issue));
@@ -115,18 +124,21 @@
     label: id => find(id)?.label || id || '未记录', get: () => applied ? {...applied} : null,
     limits: () => limits(), available: () => loaded && valid(),
     sourceClip: () => { if (sourceClip() && problem()) throw new Error(problem()); return sourceClip(); },
-    effectiveDuration: original => limits().follow_source ? seconds() ?? original : original,
+    targetDuration: () => limits().follow_source ? selected : null,
+    effectiveDuration: original => limits().follow_source ? sourceClip()?.duration ?? original : original,
     refreshSource, setLocked,
-    restore(values,clip = null) {
+    restore(values,clip = null,target = null) {
       restoringSelection = true;
-      selected = clip?.duration ?? (values.duration > 0 && !find(values.model)?.follow_source ? values.duration : null);
+      selected = target ?? clip?.duration ?? (values.duration > 0 && !find(values.model)?.follow_source ? values.duration : null);
       byId('source-clip-start').value = clip?.start || 0;
+      byId('source-clip-duration').value = clip && target > clip.duration && !clip.retime ? clip.duration : '';
       applied = {...values, generate_audio:values.generate_audio !== false}; render(applied);
     },
   };
-  control('model').addEventListener('change', () => { selected = null; byId('source-clip-start').value = 0; render(getForm()); apply(); });
+  control('model').addEventListener('change', () => { selected = null; byId('source-clip-start').value = 0; byId('source-clip-duration').value = ''; render(getForm()); apply(); });
   slider.addEventListener('input', () => { selected = ticks[Number(slider.value)]; apply(); });
   byId('source-clip-start').addEventListener('input', apply);
+  byId('source-clip-duration').addEventListener('input', apply);
   control('resolution').addEventListener('change', apply);
   control('ratio').addEventListener('change', apply);
   control('generate_audio').addEventListener('change', () => { renderAudio(); apply(); });
@@ -134,14 +146,14 @@
   let previewRange = null;
   byId('source-clip-preview').addEventListener('click', () => {
     if (locked || problem() || !sourceInfo().url) return;
-    previewRange = sourceClip(); player.src = sourceInfo().url; dialog.showModal();
+    previewRange = sourceClip() || {start:0,duration:rawSeconds()}; player.src = sourceInfo().url; dialog.showModal();
   });
   player.addEventListener('loadedmetadata', () => {
     if (!previewRange) return;
-    player.playbackRate = previewRange.retime === 'slow' ? (rawSeconds()-previewRange.start)/previewRange.duration : 1;
+    player.playbackRate = 1;
     player.currentTime = previewRange.start; void player.play().catch(() => {});
   });
-  const end = () => previewRange.retime === 'slow' ? rawSeconds() : previewRange.start + previewRange.duration;
+  const end = () => previewRange.start + previewRange.duration;
   player.addEventListener('play', () => { if (previewRange && (player.currentTime < previewRange.start || player.currentTime >= end())) player.currentTime = previewRange.start; });
   player.addEventListener('timeupdate', () => { if (previewRange && player.currentTime >= end()) player.pause(); });
   player.addEventListener('seeked', () => {

@@ -266,6 +266,54 @@
   function referenceTotal() { return (personMode === 'video' ? 0 : imageFiles.face.length) + imageFiles.clothing.length + extraKinds.reduce((n,k)=>n+(document.getElementById(k+'-enabled').checked ? imageFiles[k].length : 0),0); }
   function modelLimits() { return window.generationOptions?.limits() || {max_images:9,max_video_seconds:15}; }
   function referenceOverLimit() { const max = modelLimits().max_images; return max != null && referenceTotal()>max; }
+  function focusSection(id) {
+    const target = document.getElementById(id);
+    if (!target) return;
+    for (let parent = target; parent; parent = parent.parentElement) if (parent.tagName === 'DETAILS') parent.open = true;
+    target.tabIndex = -1;
+    target.focus({preventScroll:true});
+    target.scrollIntoView({block:'start', behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
+  }
+  document.getElementById('generation-dock-summary').addEventListener('click', () => focusSection('generation-settings'));
+  document.getElementById('generation-fix').addEventListener('click', event => focusSection(event.currentTarget.dataset.target));
+  function updateReadiness(durationOver) {
+    const present = {video:hasSource(), clothing:Boolean(imageFiles.clothing.length), person:Boolean(personMode === 'video' ? personVideo && (personInputPolicy === 'auto_virtual' || window.portraitPeople?.selected) : imageFiles.face.length)};
+    let message = '素材已选齐，可以生成', target = '', action = '去检查';
+    if (busy) message = '正在处理，请稍候…';
+    else if (!sessionReady) { message = saveStatus?.dataset.error === 'true' ? '素材恢复失败，请重试' : '正在恢复素材…'; target = 'save-notice'; }
+    else if (pendingSubmission) message = '上次提交结果待确认，可安全恢复';
+    else if (!present.video) { message = '还缺参考视频'; target = 'flow-stage-source'; action = '去添加'; }
+    else if (!present.clothing) { message = '还缺服装参考'; target = 'flow-stage-references'; action = '去添加'; }
+    else if (!present.person) { message = '还缺人物参考'; target = 'person-reference-card'; action = '去添加'; }
+    else if (saveStatus.dataset.error === 'true') { message = '素材尚未保存，请重试'; target = 'save-notice'; }
+    else if (referenceOverLimit()) { message = '参考图超过模型上限'; target = 'reference-count'; }
+    else if (durationOver) { message = '视频时长超出模型限制'; target = 'generation-settings'; }
+    else if (personMode === 'video' && !personVideoCheck) { message = '正在核实人物视频'; target = 'person-reference-card'; }
+    else if (personMode === 'video' && !personVideoCheck.can_use) { message = '人物视频暂不可用'; target = 'person-reference-card'; }
+    else if (window.generationOptions?.available() === false) { message = '请检查模型与时长设置'; target = 'generation-settings'; }
+    else if (status.textContent) message = status.textContent;
+    const feedback = document.getElementById('generation-readiness');
+    feedback.textContent = message;
+    feedback.title = message;
+    const fix = document.getElementById('generation-fix');
+    fix.hidden = !target || busy; fix.dataset.target = target; fix.textContent = action;
+    document.getElementById('generation-view-task').hidden = !status.textContent.startsWith('任务已加入队列');
+    const selectedText = name => modelForm.querySelector(`[name="${name}"]`)?.selectedOptions?.[0]?.textContent;
+    const audio = modelForm.querySelector('[name="generate_audio"]');
+    document.getElementById('generation-dock-summary').textContent = [selectedText('model'), selectedText('resolution'), document.getElementById('generation-duration-note').textContent, audio?.checked ? '有声' : '无声'].filter(Boolean).join(' · ') + ' ›';
+  }
+  // The real submit button stays in its form; the dock only changes its layout.
+  const dock = document.querySelector('.generation-dock');
+  if (window.ResizeObserver) new ResizeObserver(() => {
+    document.documentElement.style.setProperty('--generation-dock-height', `${Math.ceil(dock.getBoundingClientRect().height)}px`);
+  }).observe(dock);
+  function syncKeyboard() {
+    const editing = document.activeElement?.matches('input:not([type=checkbox]):not([type=range]):not([type=file]), textarea');
+    document.body.classList.toggle('production-keyboard-open', Boolean(editing && window.visualViewport && innerHeight - visualViewport.height > 150));
+  }
+  window.visualViewport?.addEventListener('resize', syncKeyboard);
+  document.addEventListener('focusin', syncKeyboard);
+  document.addEventListener('focusout', () => requestAnimationFrame(syncKeyboard));
   function updateButtons() {
     window.generationOptions?.refreshSource();
     const total = referenceTotal(), over = referenceOverLimit();
@@ -286,12 +334,14 @@
     counter.textContent = `本次参考图 ${total}${modelLimits().max_images == null ? '' : ' / '+modelLimits().max_images} 张` + (over ? ' · 请关闭部分可选项后生成' : '');
     counter.classList.toggle('over-limit',over);
     document.getElementById('clear-reference-images').disabled = busy || !sessionReady || !Object.values(imageFiles).some(files => files.length);
+    document.getElementById('clear-reference-images').hidden = !Object.values(imageFiles).some(files => files.length);
     importButton.disabled = busy || !sessionReady || !sourceUrl.value.trim();
     previewButton.disabled = busy || !sessionReady || !hasSource() || window.generationOptions?.available() === false;
     generateButton.disabled = busy || !sessionReady || (!pendingSubmission && (window.generationOptions?.available() === false || referenceOverLimit() || durationOver || (personMode === 'video' && (!personVideoCheck || !personVideoCheck.can_use)) || !(hasSource() && (personMode === 'video' ? personVideo && (personInputPolicy === 'auto_virtual' || window.portraitPeople?.selected) : imageFiles.face.length) && imageFiles.clothing.length)));
     generateButton.formNoValidate = Boolean(pendingSubmission);
     for (const id of ['replace-source-video', 'remove-source-video']) document.getElementById(id).hidden = !hasSource();
     if (!busy) generateButton.textContent = pendingSubmission ? '确认上次提交结果' : '生成视频 →';
+    updateReadiness(durationOver);
   }
   function lock(value) {
     busy = value;
@@ -391,6 +441,7 @@
   }
   document.getElementById('clear-reference-images').addEventListener('click', async () => {
     if (busy || !sessionReady) return;
+    if (!window.confirm('清空本次所有参考图和场景描述？视频、提示词和素材库会保留。')) return;
     lock(true); personInputVersion++;
     try {
       clearTimeout(photoTimer); photoTimer = null;
@@ -554,6 +605,11 @@
       const enabled = document.getElementById(kind+'-enabled');
       const present = imageFiles[kind].length > 0 || (kind==='scene' && document.getElementById('scene-description').value.trim());
       document.getElementById(kind+'-reference-state').textContent = !present ? '可选' : enabled.checked ? '已设置' : '未启用';
+      if (kind === 'scene') {
+        const description = document.getElementById('scene-description').value.trim();
+        document.getElementById('scene-custom-fields').hidden = !enabled.checked;
+        document.getElementById('scene-reference-state').textContent = !enabled.checked ? '保留原视频场景' : !present ? '更换场景 · 待添加参考' : `更换场景 · ${imageFiles.scene.length && description ? '图片和描述' : description ? '文字描述' : '已添加图片'}`;
+      }
       if (accessoryLabels[kind]) {
         document.getElementById(kind+'-references').hidden = !imageFiles[kind].length;
         document.getElementById(kind+'-add').classList.toggle('has-reference',Boolean(imageFiles[kind].length));
@@ -723,7 +779,7 @@
   const defaultMask = maskValues(), defaultPrompt = generationForm.elements.namedItem('prompt').value;
 
   async function api(path, method = 'GET', body, options = {}) {
-    const response = await fetch('/api/production' + path, {
+    const response = await fetch((options.adminRecords ? '/api/admin/task-records' : '/api/production') + path, {
       method, cache: 'no-store', headers: body ? {'Content-Type':'application/json'} : {},
       body: body ? JSON.stringify(body) : undefined,
       signal: method === 'GET' ? AbortSignal.any([pageReads.signal, ...(path.startsWith('/drafts/') ? [draftReads.signal] : []), ...(options.signal ? [options.signal] : [])]) : undefined,
@@ -740,9 +796,13 @@
     saveStatus.textContent = text; saveStatus.dataset.error = String(error);
     document.getElementById('save-notice').hidden = !error;
     retrySave.hidden = !error;
+    updateButtons();
   }
   function changed() {
     if (!sessionReady || restoring || pageInactive) return;
+    // Submission feedback belongs to the previous revision. Keep uncertain
+    // submissions intact so their idempotency key can still be recovered.
+    if (!busy && !pendingSubmission) status.textContent = '';
     queueMicrotask(() => { window.productionDraftModel = publicModel(); });
     dirtyVersion++; showSave('有修改，正在保存…');
     clearTimeout(saveTimer);
@@ -931,7 +991,7 @@
     const videoFile = sourceItem(), faceFiles = [...imageFiles.face], clothingFiles = [...imageFiles.clothing];
     const extraFiles = Object.fromEntries(extraKinds.map(kind=>[kind,[...imageFiles[kind]]]));
     const selectedPerson = window.portraitPeople?.selected || null;
-    const values = {source_clip:window.generationOptions?.sourceClip?.() || null,person_input_policy:personInputPolicy,person_reference_mode:personMode,person_video_asset_id:personVideo?.id || null,person_id:selectedPerson, name:draftName || draft?.name || '未命名视频', prompt:generationForm.elements.namedItem('prompt').value, mask:maskValues(), model:publicModel()};
+    const values = {source_clip:window.generationOptions?.sourceClip?.() || null,target_duration:window.generationOptions?.targetDuration?.() ?? null,person_input_policy:personInputPolicy,person_reference_mode:personMode,person_video_asset_id:personVideo?.id || null,person_id:selectedPerson, name:draftName || draft?.name || '未命名视频', prompt:generationForm.elements.namedItem('prompt').value, mask:maskValues(), model:publicModel()};
     for (const kind of extraKinds) values[kind+'_enabled'] = document.getElementById(kind+'-enabled').checked;
     values.scene_description = document.getElementById('scene-description').value;
     values.hairstyle_mask = hairMaskValues();
@@ -1000,7 +1060,7 @@
       window.portraitPeople?.restore(item.person_id);
       generationForm.elements.namedItem('prompt').value = item.prompt ?? defaultPrompt;
       applyMask({...defaultMask,...item.mask}); savedMask = maskValues();
-      window.generationOptions.restore(item.model, item.source_clip);
+      window.generationOptions.restore(item.model, item.source_clip, item.target_duration);
       window.productionDraftModel = {...item.model};
       setPersonMode(personMode); showFiles(source,'video'); Object.keys(imageFiles).forEach(syncImages); invalidate();
       dirtyVersion = savedVersion = 0;

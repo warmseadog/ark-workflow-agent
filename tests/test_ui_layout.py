@@ -1,4 +1,5 @@
 from pathlib import Path
+from html.parser import HTMLParser
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -108,12 +109,24 @@ def test_standalone_production_exposes_core_creation_flow():
 def test_all_entrypoints_open_standalone_production():
     from fastapi.testclient import TestClient
     from app.main import app
+
+    class BodyParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.classes = set()
+
+        def handle_starttag(self, tag, attrs):
+            if tag == 'body':
+                self.classes.update((dict(attrs).get('class') or '').split())
+
     client = TestClient(app)
     for path in ('/', '/v1', '/studio'):
         response = client.get(path)
         assert response.status_code == 200
         assert '<title>方舟 · 制作流程</title>' in response.text
-        assert 'class="standalone-production production-view"' in response.text
+        body = BodyParser()
+        body.feed(response.text)
+        assert {'standalone-production', 'production-view'} <= body.classes
         assert '素材发现' not in response.text
         assert '成功案例' not in response.text
 

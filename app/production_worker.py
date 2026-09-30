@@ -69,11 +69,18 @@ def execute_run(settings, store, run):
     config = GenerationConfig(**private['generation'])
     storage = StorageConfig(**private['storage'])
     provider_id, result_url = run.get('provider_task_id'), run.get('result_url')
+    continuation_intent = private.get('continuation')
+    continuation_state = store.get_continuation(ident) if continuation_intent else {}
+    base_ready = continuation_state.get('base_ready',False)
+    continuation_started = bool(base_ready)
+    base_output = work/'base.mp4' if continuation_intent else output
     try:
+        from . import redaction_service
+        settings = redaction_service.freeze(settings)
         faces, clothes, video_url = [], [], None
         image_asset_uris = {}
         extra_references = {'reference_roles':snapshot_content_roles(snapshot)} if provider_id or result_url else {}
-        if not provider_id and not result_url:
+        if not provider_id and not result_url and not base_ready:
             authorize_run_inputs(settings, store, snapshot)
             if private.get('portrait') or private.get('person_preparation'):
                 from .portrait_generation import verify, PortraitPending
@@ -114,6 +121,12 @@ def execute_run(settings, store, run):
                     if kind=='hairstyle':
                         store.update_run(ident,stage='preprocess',message='正在处理发型参考图人脸打码',progress=4)
                         extra_references[argument] = [process_hairstyle(settings,asset,snapshot.get('hairstyle_mask',{}))['path'] for asset in assets]
+                        from .artifacts import sha256_file
+                        records = [{'source_asset_id':asset['id'], 'source_sha256':asset['sha256'],
+                                    'output_sha256':sha256_file(path),
+                                    'settings':snapshot.get('hairstyle_mask',{})}
+                                   for asset,path in zip(assets,extra_references[argument])]
+                        (work/'hairstyle-references.json').write_text(json.dumps(records),encoding='utf-8')
                     else: extra_references[argument] = [Path(asset['path']) for asset in assets]
             accessories = {kind: [Path(store.get_asset(x,private=True)['path']) for x in snapshot.get(kind+'_asset_ids',[])]
                            for kind in ACCESSORY_LABELS if snapshot.get(kind+'_enabled',False)}
@@ -121,7 +134,7 @@ def execute_run(settings, store, run):
             if snapshot.get('scene_enabled',False):
                 extra_references['scene_description'] = snapshot.get('scene_description','')
             options = mask_options(snapshot['mask'])
-            key = hashlib.sha256((source['sha256'] + json.dumps(options.model_dump(mode='json'), sort_keys=True) + settings.deface_bin + ':v1' + clip_fingerprint(snapshot.get('source_clip'))).encode()).hexdigest()
+            key = hashlib.sha256((source['sha256'] + json.dumps(options.model_dump(mode='json'), sort_keys=True) + redaction_service.fingerprint(settings) + clip_fingerprint(snapshot.get('source_clip'))).encode()).hexdigest()
             cache = settings.storage_dir / 'cache' / 'redacted' / (key + '.mp4')
             store.update_run(ident, stage='preprocess', message='等待本地视频预处理', progress=5)
             with _preprocess_lock:
@@ -158,24 +171,32 @@ def execute_run(settings, store, run):
             store.update_run(ident, provider_task_id=task_id, stage='generating', message='模型任务已接收', progress=70)
         def result(url):
             store.update_run(ident, result_url=url, stage='downloading', message='正在下载生成结果', progress=95)
-        client = VideoProvider(config, settings.seedance_poll_seconds, progress)
-        client.generate(defaced, faces, clothes, snapshot['prompt'], output, video_url=video_url,
-                        on_submitted=submitted, on_result=result,
-                        resume_task_id=provider_id, resume_result_url=result_url, **extra_references,
-                        **({'image_asset_uris':image_asset_uris} if image_asset_uris else {}))
+        if not base_ready:
+            client = VideoProvider(config, settings.seedance_poll_seconds, progress)
+            client.generate(defaced, faces, clothes, snapshot['prompt'], base_output, video_url=video_url,
+                            on_submitted=submitted, on_result=result,
+                            resume_task_id=provider_id, resume_result_url=result_url, **extra_references,
+                            **({'image_asset_uris':image_asset_uris} if image_asset_uris else {}))
+        if continuation_intent:
+            continuation_started = True
+            store.update_continuation(ident,base_ready=True)
+            from .continuation import execute
+            execute(settings,store,run,base_output,output,config,storage)
         store.update_run(ident, status='succeeded', stage='complete', message='生成完成', progress=100,
                          error=None, error_kind=None)
     except Exception as exc:
         current = store.get_run(ident, private=True)
         kind = getattr(exc, 'error_kind', None) or 'processing_failed'
         uncertain = bool(getattr(exc, 'submission_uncertain', False))
+        if continuation_started and current['stage']=='continuation_submitting' and not isinstance(exc,ProviderError):
+            uncertain = not store.get_continuation(ident).get('provider_task_id')
         if not isinstance(exc, ProviderError) and current['stage'] == 'submitting':
             uncertain = True
-        if not isinstance(exc, ProviderError) and current.get('provider_task_id'):
+        if not continuation_started and not isinstance(exc, ProviderError) and current.get('provider_task_id'):
             kind = 'download_failed' if current['stage']=='downloading' else 'query_unavailable'
         if uncertain:
             kind = 'submission_uncertain'
-        needs_attention = uncertain or kind in {'query_unavailable', 'download_failed'} or bool(getattr(exc, 'retryable', False) and private.get('person_preparation') and current['stage'] == 'authorizing')
+        needs_attention = continuation_started or uncertain or kind in {'query_unavailable', 'download_failed'} or bool(getattr(exc, 'retryable', False) and private.get('person_preparation') and current['stage'] == 'authorizing')
         message = VideoProvider(config)._safe(str(exc))
         store.update_run(ident, status='needs_attention' if needs_attention else 'failed',
                          error=VideoProvider(config)._safe(str(exc)), error_kind=kind,

@@ -10,7 +10,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse
 from .media_transport import media_file_response
-from .production_store import ProductionStore, Conflict, unknown_timing
+from .production_store import ProductionStore, Conflict
 from . import generation_settings, storage_settings, admin_settings, media, production_worker, redaction_settings
 from .media_errors import MediaPipelineError
 from .person_video import is_video, person_ids, validate_file, validate_pair
@@ -21,7 +21,7 @@ from . import tenancy
 _MODEL_FIELDS = {'provider','protocol','mode','base_url','model','duration','fps','resolution','ratio','public_base_url','generate_audio'}
 _DRAFT_FIELDS = {'source_clip','person_reference_mode','person_video_asset_id','name','person_id','source_asset_id','face_asset_ids','clothing_asset_ids','hairstyle_asset_ids','scene_asset_ids','hairstyle_enabled','hairstyle_mask','scene_enabled','scene_description','prompt','mask','model'}
 _DRAFT_FIELDS |= {kind+suffix for kind in ACCESSORY_LABELS for suffix in ('_asset_ids','_enabled')}
-_DRAFT_FIELDS.add('person_input_policy')
+_DRAFT_FIELDS.update({'person_input_policy','target_duration'})
 _MASK_FIELDS = {'blur_style','style','shape','mask_mode','robust_tracking','mask_scale','mosaic_size','threshold','detection_size','keep_audio'}
 
 
@@ -57,6 +57,7 @@ def get_router(settings_getter, local_guard):
     def decorate_run(run):
         root = settings_getter().storage_dir
         run['defaced_url'] = '/api/production/runs/'+run['id']+'/defaced' if (root/'work'/run['id']/'defaced.mp4').is_file() else None
+        run['base_url'] = '/api/production/runs/'+run['id']+'/base' if run.get('continuation',{}).get('base_ready') and (root/'work'/run['id']/'base.mp4').is_file() else None
         run['download_url'] = '/api/production/runs/'+run['id']+'/download' if run['status']=='succeeded' and (root/'outputs'/(run['id']+'.mp4')).is_file() else None
         run['snapshot'] = decorate_draft(run['snapshot'])
         return run
@@ -64,6 +65,9 @@ def get_router(settings_getter, local_guard):
     def validate_changes(values, current=None):
         if set(values)-_DRAFT_FIELDS:
             raise ValueError('草稿包含不支持的字段。')
+        if 'target_duration' in values:
+            from .continuation import normalize_target
+            values['target_duration'] = normalize_target(values['target_duration'])
         from .person_preparation import POLICIES
         if 'person_input_policy' in values:
             if not isinstance(values['person_input_policy'], str) or values['person_input_policy'] not in POLICIES:
@@ -319,8 +323,15 @@ def get_router(settings_getter, local_guard):
                 raise ValueError(f"人物、衣服、发型、场景和配饰参考图合计最多 {limits['max_images']} 张，请关闭部分可选项。")
             for ident in [draft['source_asset_id']]+person_ids(draft)+draft['clothing_asset_ids']+extra_ids:
                 if not Path(store().get_asset(ident,private=True)['path']).is_file(): raise ValueError('素材文件不存在，请重新导入。')
+            # Reject unavailable active references before preparing people or
+            # creating a queued run. The worker rechecks before submission.
+            production_worker.authorize_run_inputs(settings_getter(),store(),draft)
+            from .continuation import preflight as continuation_preflight
+            continuation_intent = continuation_preflight(settings_getter(),store(),draft,config)
             from .portrait_generation import prepare
             private={'generation':asdict(config),'storage':asdict(storage)}
+            if continuation_intent:
+                private['continuation'] = continuation_intent
             if policy == 'auto_virtual':
                 private['person_preparation'] = preflight(settings_getter(),store(),draft,config)
             else:
@@ -332,22 +343,8 @@ def get_router(settings_getter, local_guard):
         return guarded(operation)
 
     def legacy_runs():
-        if not tenancy.legacy_allowed(settings_getter()): return []
-        from .jobs import store as jobs
-        result=[]
-        deleted = store().deleted_run_ids()
-        for job in jobs.list():
-            if 'legacy-'+job.id in deleted: continue
-            value=job.public()
-            value.update(id='legacy-'+job.id, name='历史视频 '+job.created_at[:16].replace('T',' '), legacy=True,
-                         stage='complete' if job.status=='succeeded' else 'legacy',snapshot={},draft_id=None,
-                         error_kind='material_rejected' if 'may contain real person' in (job.error or '') else None,
-                         request_id=None,provider_task_id=None,can_delete=job.status not in {'running','queued'},
-                         timing=unknown_timing())
-            if value['error_kind']=='material_rejected': value['message']='人物参考图未通过模型检查，请复制为草稿后修改。'
-            value['name']=store().run_name(value['id'],value['name'])
-            result.append(value)
-        return result
+        from .task_records import legacy_records
+        return legacy_records(settings_getter())
 
     @router.get('/runs')
     def list_runs(page:int | None=Query(None,ge=1),page_size:int=Query(10,ge=1,le=50)):
@@ -521,6 +518,7 @@ def get_router(settings_getter, local_guard):
         guarded(lambda:store().require_visible(ident))
         run=guarded(lambda:store().get_run(ident))
         if kind=='defaced': path=settings_getter().storage_dir/'work'/run['id']/'defaced.mp4'
+        elif kind=='base' and run.get('continuation',{}).get('base_ready'): path=settings_getter().storage_dir/'work'/run['id']/'base.mp4'
         elif kind=='download' and run['status']=='succeeded': path=settings_getter().storage_dir/'outputs'/(run['id']+'.mp4')
         else: raise HTTPException(404,'视频尚未就绪。')
         if not path.is_file(): raise HTTPException(404,'视频文件不存在。')
