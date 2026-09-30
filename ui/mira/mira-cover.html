@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mira — 氛围感 AI 时尚总监</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC",sans-serif;color:white;background:#77747a;color-scheme:light}*{box-sizing:border-box}body{margin:0}button,a,input{font:inherit}button,a{touch-action:manipulation;-webkit-tap-highlight-color:transparent}button{border:0;color:inherit;background:none;cursor:pointer}a{color:inherit;text-decoration:none}button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #e6d6f7;outline-offset:5px}[hidden]{display:none!important}.cover{height:100svh;min-height:540px;position:relative;overflow:hidden;isolation:isolate}.media{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 24%;z-index:-3}.shade{position:absolute;inset:0;z-index:-2;background:linear-gradient(180deg,#18151e35 0%,#18151e05 28%,#18151e12 65%,#18151e60 100%)}.topbar{position:absolute;inset:0 0 auto;padding:30px 42px;display:flex;justify-content:space-between;align-items:center;gap:20px}.brand-note{font-size:11px;font-weight:500;letter-spacing:.16em;line-height:1.8;text-shadow:0 1px 12px #0005}.top-right{display:flex;align-items:center;gap:25px}.login{font-size:12px;letter-spacing:.08em;padding:13px 22px;border:1px solid #ffffff80;border-radius:30px;background:#ffffff10;transition:background .2s}.login:hover{background:#ddd1e644}.setting-button{font-size:11px;min-height:44px;text-shadow:0 1px 6px #0006}.signature{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(360px,38vw);text-align:center;pointer-events:none}.signature img{width:100%;height:auto;filter:brightness(0) invert(1);display:block}.signature p{font-size:12px;letter-spacing:.16em;margin:0;text-shadow:0 1px 12px #0005}.previous,.next{position:absolute;top:50%;transform:translateY(-50%);min-height:52px;padding:14px 8px;display:flex;align-items:center;gap:12px;font-size:12px;text-shadow:0 1px 10px #0008}.previous{left:34px}.previous .current{font-size:23px;font-weight:300;letter-spacing:.08em}.total{font-size:12px;opacity:.85}.next{right:34px;letter-spacing:.04em}.previous:disabled,.next:disabled{cursor:default;opacity:.65}.bottom{position:absolute;inset:auto 42px 30px;display:flex;justify-content:space-between;align-items:flex-end;gap:30px}.caption{max-width:55%}.caption p{margin:0;font-size:11px;letter-spacing:.12em;line-height:1.9}.caption h1{font-weight:400;font-size:17px;margin:8px 0 0;line-height:1.5;overflow-wrap:anywhere}.controls{display:flex;gap:18px;align-items:center;font-size:11px}.controls button{min-height:44px}.preview-note{font-size:10px;line-height:1.8;opacity:.88;max-width:215px;text-align:right}.play-controls{display:flex;gap:14px}dialog{color:#302836;background:#fff;border:1px solid #e5dfeb;border-radius:24px;max-width:440px;width:calc(100% - 32px);padding:26px;max-height:85svh;overflow:auto;box-shadow:0 20px 90px #17102030}dialog::backdrop{background:#20152950;backdrop-filter:blur(6px)}.dialog-top{display:flex;align-items:center;justify-content:space-between;gap:15px}dialog h2{font-size:20px;font-weight:500;margin:0}.close{color:#57465f;background:#f2edf6;border-radius:50%;width:44px;height:44px;font-size:23px}dialog p{font-size:12px;line-height:1.9;color:#71667a}dialog label{display:block;font-size:12px;margin:22px 0 10px}input{max-width:100%;font-size:12px;padding:12px;background:#f5f1f8;border-radius:12px;width:100%}input::file-selector-button{border:0;padding:8px 10px;border-radius:8px;background:#e4dcec;color:#594465;margin-right:8px}.status{min-height:25px}#error{color:#9b354e}.reset{background:#64506e;color:white;border-radius:12px;min-height:44px;padding:10px 18px}.privacy{font-size:10px!important}.loading{opacity:.5}.media{transition:opacity .35s ease}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+@media(max-width:700px){.topbar{padding:22px}.brand-note{font-size:9px}.top-right{gap:12px}.login{font-size:11px;padding:11px 16px}.setting-button{font-size:10px}.signature{width:240px;max-width:58vw}.signature p{font-size:10px;letter-spacing:.08em}.previous{left:14px;gap:5px}.previous .current{font-size:18px}.next{right:14px;font-size:10px;gap:6px}.total{font-size:10px}.bottom{inset:auto 22px 24px;gap:16px;align-items:end}.caption{max-width:55%}.caption h1{font-size:14px}.caption p{font-size:9px}.preview-note{max-width:125px;font-size:9px}.controls{flex-direction:column;gap:2px;align-items:end}.media{object-position:50% 25%}}
+#poster,#film{object-position:center;object-fit:cover}.has-media .cover{background:#242128}.has-media .media{z-index:0}.has-media .shade{z-index:1;pointer-events:none}.topbar,.signature,.previous,.next,.bottom{z-index:2}@media(max-width:700px){.signature{top:70%;width:180px}.signature p{font-size:9px}}
+body:has(dialog[open]){overflow:hidden}
+#login-dialog{width:min(480px,calc(100% - 32px));max-width:480px;max-height:calc(100svh - 32px);padding:38px;overflow-y:auto;color:var(--mira-ink)}
+#login-dialog::backdrop{background:rgb(10 7 16 / 76%);backdrop-filter:blur(5px)}
+#login-dialog .login-modal-brand{width:110px;height:auto;display:block;margin:0 0 20px -10px}
+#login-dialog .close{position:absolute;right:18px;top:18px;display:grid;place-items:center;width:40px;height:40px;background:#eee6f5;color:#735980}
+#login-dialog h2{font-size:27px;letter-spacing:-.025em;line-height:1.4;margin:0 0 10px}
+#login-dialog .intro{font-size:13px;line-height:1.8;margin:0 0 24px;color:var(--mira-muted)}
+#login-dialog .login-field{margin:18px 0 0;font-size:13px}
+#login-dialog .login-field input{padding:13px 14px;margin-top:8px;min-height:46px;font-size:13px}
+#login-dialog .mira-action{margin-top:24px;min-height:48px}
+#login-dialog .login-note{font-size:11px;line-height:1.8;margin:16px 0 0}
+@media(max-width:480px){#login-dialog{padding:28px 24px}#login-dialog h2{font-size:25px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<link rel="stylesheet" href="assets/mira-system.css">
+</head>
+<body class="mira-cover-page">
+<main class="cover" aria-label="mira 作品展示封面">
+  <img id="poster" class="media" alt="你选择的封面海报" hidden>
+  <video id="film" class="media" muted playsinline loop hidden></video><div class="shade"></div>
+  <header class="topbar"><div class="brand-note">MIRA<br>VISUAL STUDIO</div><div class="top-right"><button id="settings" class="setting-button">预览设置</button><button class="login" id="open-login" type="button" aria-haspopup="dialog" aria-controls="login-dialog">Log in</button></div></header>
+  <div class="signature"><img src="assets/brand/mira-wordmark-transparent-v1.png" alt="mira"><p>氛围感 AI 时尚总监</p></div>
+  <button class="previous" id="previous" aria-label="上一个作品" disabled><span aria-hidden="true">‹</span><span class="current" id="current">00</span><span class="total">/ <span id="total">00</span></span></button>
+  <button class="next" id="next" aria-label="下一个作品" disabled>NEXT <span aria-hidden="true">›</span></button>
+  <footer class="bottom"><div class="caption"><p id="kind">MIRA / VISUAL STUDIO</p><h1 id="title">让衣服，拥有自己的氛围。</h1></div><div class="controls"><div class="play-controls"><button id="play" hidden>播放</button><button id="sound" hidden>开启声音</button></div><span class="preview-note" id="preview-note">纯色占位 · 尚未添加正式 MV / 海报</span></div></footer>
+  <p class="sr-only" role="status" id="announcement">尚未添加作品。</p>
+</main>
+<dialog id="settings-dialog" aria-labelledby="settings-title"><div class="dialog-top"><h2 id="settings-title">替换封面素材</h2><button class="close" id="close" aria-label="关闭预览设置">×</button></div><p>仅用于逐页看稿。放入多张海报或视频后，可以体验左右切换。文件仅在当前浏览器使用，不上传。</p><label for="files">选择横版 MV 或海报（可多选）</label><input id="files" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime" multiple><p>图片最大 20 MB，视频最大 200 MB。页码按真实数量显示。</p><p id="error" class="status" role="alert"></p><button class="reset" id="reset">清空本地预览素材</button><p class="privacy">登录入口进入同一套 mira 视觉预览，不再跳往旧站。正式登录服务尚未接入。</p></dialog>
+<dialog id="login-dialog" aria-labelledby="login-title" aria-describedby="login-description">
+ <button type="button" class="close" id="close-login" aria-label="关闭登录框" autofocus>×</button>
+ <img class="login-modal-brand" src="assets/brand/mira-wordmark-transparent-v1.png" alt="mira">
+ <h2 id="login-title">回到你的创作现场。</h2>
+ <p class="intro" id="login-description">继续制作，管理你的素材与作品。</p>
+ <label class="login-field">用户名<input type="text" placeholder="正式登录服务尚未接入" disabled></label>
+ <label class="login-field">密码<input type="password" placeholder="此预览不收集账号或密码" disabled></label>
+ <a class="mira-action" href="mira-workspace.html">查看工作台预览 →</a>
+ <p class="login-note">当前仅为登录框视觉预览，不会发送账号或密码。</p>
+</dialog>
+<script>
+(()=>{'use strict';const $=s=>document.querySelector(s),poster=$('#poster'),film=$('#film'),modal=$('#settings-dialog');
+const curated=[
+ {url:'assets/cover/film-city-original.mp4',name:'街头，自有态度。',video:true,silent:true,poster:'assets/cover/still-city-original.png',position:'50% 20%'},
+ {url:'assets/cover/film-dusk-original.mp4',name:'暮色，自成氛围。',video:true,silent:true,poster:'assets/cover/still-dusk-original.png',position:'50% 40%'}
+];
+// Original footage with full-bleed cover cropping; no blurred-side exports.
+let slides=[...curated],index=0,revision=0;
+$('#reset').textContent='恢复首页 MV';
+const reduced=matchMedia('(prefers-reduced-motion: reduce)');
+const narrow=matchMedia('(max-width:700px)');narrow.addEventListener('change',()=>render());
+function announce(){ $('#current').textContent=String(slides.length?index+1:0).padStart(2,'0');$('#total').textContent=String(slides.length).padStart(2,'0');$('#previous').disabled=$('#next').disabled=slides.length<2;$('#announcement').textContent=slides.length?`第 ${index+1} 个，共 ${slides.length} 个。`:'尚未添加作品。'; }
+function render(){const s=slides[index];document.body.classList.toggle('has-media',!!s);film.pause();film.removeAttribute('src');film.load();if(!s){poster.hidden=film.hidden=true;poster.removeAttribute('src');$('#play').hidden=$('#sound').hidden=true;$('#kind').textContent='MIRA / VISUAL STUDIO';$('#title').textContent='让衣服，拥有自己的氛围。';$('#preview-note').textContent='纯色占位 · 尚未添加正式 MV / 海报';announce();return;}poster.hidden=s.video;film.hidden=!s.video;$('#play').hidden=$('#sound').hidden=!s.video;
+ $('#kind').textContent=s.video?'MIRA / FASHION FILM':'MIRA / FILM STILL';$('#title').textContent=s.name;$('#preview-note').textContent=s.url.startsWith('blob:')?'本地素材预览 · 未上传':'原片全屏裁切预览';
+ const mediaUrl=s.url;film.style.objectPosition=poster.style.objectPosition=narrow.matches?'50% 35%':(s.position||'center');
+ if(s.video){film.src=mediaUrl;if(s.poster)film.poster=s.poster;else film.removeAttribute('poster');film.muted=true;$('#play').textContent='播放';$('#sound').hidden=!!s.silent;$('#sound').textContent='开启声音';if(!reduced.matches)film.play().catch(()=>{});}else{poster.src=mediaUrl;poster.alt=s.name;}
+ announce();}
+function navigate(delta){if(!slides.length)return;index=(index+delta+slides.length)%slides.length;render();}
+$('#next').onclick=()=>navigate(1);$('#previous').onclick=()=>navigate(-1);
+document.addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||['INPUT','BUTTON','A'].includes(document.activeElement.tagName))return;if(e.key==='ArrowRight'){e.preventDefault();navigate(1)}if(e.key==='ArrowLeft'){e.preventDefault();navigate(-1)}});
+$('#play').onclick=()=>{if(film.paused)film.play().catch(()=>{$('#preview-note').textContent='无法播放此视频，请在预览设置中更换素材'});else film.pause()};
+film.onplay=()=>$('#play').textContent='暂停';film.onpause=()=>$('#play').textContent='播放';film.onerror=()=>{$('#preview-note').textContent='视频无法解码，请更换 MP4 或 WebM 文件'};
+$('#sound').onclick=()=>{film.muted=!film.muted;$('#sound').textContent=film.muted?'开启声音':'静音'};
+$('#settings').onclick=()=>modal.showModal();$('#close').onclick=()=>modal.close();modal.addEventListener('close',()=>$('#settings').focus());
+const loginDialog=$('#login-dialog');
+$('#open-login').onclick=()=>loginDialog.showModal();$('#close-login').onclick=()=>loginDialog.close();
+loginDialog.addEventListener('close',()=>$('#open-login').focus());
+let backdropDown=false;
+function outsideDialog(e){const r=loginDialog.getBoundingClientRect();return e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom;}
+loginDialog.addEventListener('pointerdown',e=>{backdropDown=e.target===loginDialog&&outsideDialog(e)});
+loginDialog.addEventListener('click',e=>{if(backdropDown&&e.target===loginDialog&&outsideDialog(e))loginDialog.close();backdropDown=false;});
+function dispose(list){list.forEach(s=>{if(s.url.startsWith('blob:'))URL.revokeObjectURL(s.url)})}
+$('#reset').onclick=()=>{++revision;const old=slides;slides=[...curated];index=0;render();dispose(old);$('#error').textContent='';$('#files').value='';modal.close()};
+function readable(url,video){return new Promise(resolve=>{const node=document.createElement(video?'video':'img');const timer=setTimeout(()=>finish(false),8000);function finish(ok){clearTimeout(timer);node.onload=node.onloadedmetadata=node.onerror=null;node.removeAttribute('src');if(video)node.load();resolve(ok)}node.onerror=()=>finish(false);if(video){node.preload='metadata';node.onloadedmetadata=()=>finish(true)}else node.onload=()=>finish(node.naturalWidth>0);node.src=url})}
+$('#files').onchange=async e=>{const files=[...e.target.files];e.target.value='';if(!files.length)return;const ticket=++revision,accepted=[],errors=[];$('#error').textContent='正在读取本地素材…';
+for(const file of files){const video=file.type.startsWith('video/');if(!['image/jpeg','image/png','image/webp','video/mp4','video/webm','video/quicktime'].includes(file.type)||file.size>(video?200:20)*1024*1024){errors.push(file.name);continue}const url=URL.createObjectURL(file);if(await readable(url,video))accepted.push({url,name:file.name,video});else{URL.revokeObjectURL(url);errors.push(file.name)}}
+if(ticket!==revision){dispose(accepted);return}if(accepted.length){const old=slides;slides=accepted;index=0;render();dispose(old)}$('#error').textContent=errors.length?`这些文件未读入，请检查格式或大小：${errors.join('、')}`:'';if(!errors.length)modal.close();};
+document.addEventListener('visibilitychange',()=>{if(document.hidden)film.pause()});reduced.addEventListener('change',e=>{if(e.matches)film.pause()});window.addEventListener('pagehide',()=>film.pause());render();})();
+</script>
+</body></html>
