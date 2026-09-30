@@ -16,13 +16,22 @@
     event.preventDefault();
     if (!locked) window.portraitPhotos.openLibrary();
   });
-  async function request(path, method = 'GET', body) {
+  const directoryReads = new AbortController();
+  window.addEventListener('pagehide', () => directoryReads.abort());
+  async function request(path, method = 'GET', body, options = {}) {
+    const timeout = method === 'GET' ? AbortSignal.timeout(8000) : null;
+    try {
     const response = await fetch('/api/portrait/' + path, {method,
       headers: body === undefined ? {} : {'Content-Type':'application/json'},
-      body: body === undefined ? undefined : JSON.stringify(body)});
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: method === 'GET' ? AbortSignal.any([directoryReads.signal,timeout,...(options.signal ? [options.signal] : [])]) : undefined});
     const data = await response.json();
     if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : '人物读取失败，请稍后重试');
     return data;
+    } catch (error) {
+      if (error.name === 'TimeoutError') throw new Error('人物读取超时，请重试。');
+      throw error;
+    }
   }
   function render() {
     const person = people.find(x => x.id === selected);
@@ -65,8 +74,9 @@
     render(); picker.open = false;
     if (notify) window.dispatchEvent(new CustomEvent('portrait-person-changed', {detail:{id:selected}}));
   }
-  async function refresh(sync = false) {
-    const data = await request(sync ? 'people/sync' : 'people', sync ? 'POST' : 'GET', sync ? {person_type:personType} : undefined);
+  async function refresh(sync = false, options = {}) {
+    const data = await request(sync ? 'people/sync' : 'people', sync ? 'POST' : 'GET', sync ? {person_type:personType} : undefined, options);
+    if (directoryReads.signal.aborted || options.signal?.aborted) throw new DOMException('Page closed', 'AbortError');
     people = (data.items || []).sort((a,b) => Number(b.photo_count > 0 || b.video_count > 0)-Number(a.photo_count > 0 || a.video_count > 0)); render(); return people;
   }
   el('search').addEventListener('input',render);
@@ -79,8 +89,8 @@
     ready, request, refresh, choose, get items() { return [...people]; }, get selected() { return selected; },
     restore(id) { choose(id, false); },
     lock(value) { locked = value; picker.inert = value; if (value) picker.open = false; render(); },
-    async selectPerson(id) {
-      await refresh();
+    async selectPerson(id, options = {}) {
+      await refresh(false, options);
       if (!people.some(person => person.id === id)) throw new Error('所选人物不在当前人物库中，请刷新后重试。');
       choose(id, false);
     },

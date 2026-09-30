@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import asdict
 import mimetypes
 from pathlib import Path
+import re
 import shutil
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse
+from .media_transport import media_file_response
 from .production_store import ProductionStore, Conflict, unknown_timing
 from . import generation_settings, storage_settings, admin_settings, media, production_worker, redaction_settings
 from .media_errors import MediaPipelineError
@@ -16,8 +18,8 @@ from .reference_roles import ACCESSORY_LABELS, OPTIONAL_KINDS
 from .model_catalog import TASK_FIELDS, task_values, resolve_task_config, editor_options, capabilities
 from . import tenancy
 
-_MODEL_FIELDS = {'provider','protocol','mode','base_url','model','duration','fps','resolution','public_base_url'}
-_DRAFT_FIELDS = {'person_reference_mode','person_video_asset_id','name','person_id','source_asset_id','face_asset_ids','clothing_asset_ids','hairstyle_asset_ids','scene_asset_ids','hairstyle_enabled','hairstyle_mask','scene_enabled','scene_description','prompt','mask','model'}
+_MODEL_FIELDS = {'provider','protocol','mode','base_url','model','duration','fps','resolution','ratio','public_base_url','generate_audio'}
+_DRAFT_FIELDS = {'source_clip','person_reference_mode','person_video_asset_id','name','person_id','source_asset_id','face_asset_ids','clothing_asset_ids','hairstyle_asset_ids','scene_asset_ids','hairstyle_enabled','hairstyle_mask','scene_enabled','scene_description','prompt','mask','model'}
 _DRAFT_FIELDS |= {kind+suffix for kind in ACCESSORY_LABELS for suffix in ('_asset_ids','_enabled')}
 _DRAFT_FIELDS.add('person_input_policy')
 _MASK_FIELDS = {'blur_style','style','shape','mask_mode','robust_tracking','mask_scale','mosaic_size','threshold','detection_size','keep_audio'}
@@ -40,11 +42,13 @@ def get_router(settings_getter, local_guard):
     def guarded(operation):
         try: return operation()
         except HTTPException: raise
+        except PermissionError as exc: raise HTTPException(403,str(exc)) from None
         except Conflict as exc: raise HTTPException(409,str(exc)) from None
         except LookupError as exc: raise HTTPException(404,str(exc)) from None
         except (ValueError,TypeError,MediaPipelineError) as exc: raise HTTPException(422,str(exc)) from None
 
     def decorate_draft(draft):
+        draft['model'] = {'generate_audio':True, **draft.get('model', {})}
         ids = ([draft['source_asset_id']] if draft.get('source_asset_id') else []) + draft['face_asset_ids'] + draft['clothing_asset_ids'] + [ident for kind in OPTIONAL_KINDS for ident in draft.get(kind+'_asset_ids',[])]
         if draft.get('person_video_asset_id'):ids.append(draft['person_video_asset_id'])
         draft['assets'] = [store().get_asset(x) for x in dict.fromkeys(ids)]
@@ -100,6 +104,9 @@ def get_router(settings_getter, local_guard):
                     try: asset=store().get_asset(ident)
                     except LookupError: raise ValueError('参考素材不存在，请重新选择。') from None
                     if asset['kind']!=kind: raise ValueError('参考素材类型不匹配。')
+        if 'source_clip' in values:
+            from .source_clip import normalize_clip
+            values['source_clip'] = normalize_clip(values['source_clip'])
         if 'source_asset_id' in values and values['source_asset_id'] is not None and (not isinstance(values['source_asset_id'],str) or len(values['source_asset_id'])>100):
             raise ValueError('视频素材标识不正确。')
         if values.get('source_asset_id'):
@@ -192,13 +199,32 @@ def get_router(settings_getter, local_guard):
                 return register(path,'reference'+path.suffix,'video')
         return guarded(operation)
 
-    @router.get('/assets/{ident}/file')
+    @router.api_route('/assets/{ident}/file', methods=['GET','HEAD'])
     def asset_file(ident: str):
-        asset=guarded(lambda:store().get_asset(ident,private=True))
+        from .asset_preview import preview_asset
+        asset=guarded(lambda:preview_asset(settings_getter(),ident))
         path=Path(asset['path']).resolve()
         if not path.is_relative_to((settings_getter().storage_dir/'assets').resolve()) or not path.is_file():
             raise HTTPException(404,'素材文件不存在。')
-        return FileResponse(path,media_type=asset['mime'],headers={'X-Content-Type-Options':'nosniff'})
+        return media_file_response(settings_getter(),path,media_type=asset['mime'])
+
+    @router.get('/assets/{ident}/thumbnail')
+    def asset_thumbnail(ident: str):
+        from .asset_preview import preview_asset
+        from .asset_thumbnails import thumbnail_response
+        def operation():
+            return thumbnail_response(settings_getter(),preview_asset(settings_getter(),ident))
+        return guarded(operation)
+
+    @router.get('/assets/{ident}/reference-status')
+    def asset_reference_status(ident: str):
+        from .asset_preview import reference_status
+        return guarded(lambda:reference_status(settings_getter(),ident))
+
+    @router.api_route('/assets/{ident}/preview', methods=['GET','HEAD'])
+    def asset_preview(ident: str):
+        from .asset_preview import preview_response
+        return guarded(lambda:preview_response(settings_getter(),ident))
 
     @router.post('/drafts')
     def create_draft(payload: dict):
@@ -208,7 +234,11 @@ def get_router(settings_getter, local_guard):
             if payload.get('copy_from'):
                 old=store().get_draft(payload['copy_from'])
                 values={k:v for k,v in old.items() if k in _DRAFT_FIELDS}
+                values['model'] = {'generate_audio':True, **values.get('model', {})}
+                source_name=values.get('name','')
+                plain_name=re.sub(r'\s*(?:[（(]副本[）)]|副本)$','',source_name).rstrip()
                 values.pop('name', None)
+                if plain_name != source_name: values['name']=plain_name
             else:
                 values={'model':public_model(),'mask':redaction_settings.load_config(settings_getter()),
                         'prompt':'保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图；应用@Image2服装参考图，保持自然稳定。'}
@@ -268,6 +298,8 @@ def get_router(settings_getter, local_guard):
             policy = input_policy(draft, store())
             if policy == 'existing_person' and not draft.get('person_id') and not any(store().portrait_binding(x) for x in person_ids(draft)):
                 raise ValueError('请先从人物库选择人物或素材。')
+            if draft.get('source_clip') and not limits['follow_source']:
+                raise ValueError('指定片段仅用于视频编辑模型，请切换模型或改用完整视频。')
             if is_video(draft):
                 if not draft.get('person_id') and policy != 'auto_virtual':raise ValueError('人物视频请先选择人物并入库检查。')
                 from .portrait_generation import OFFICIAL_BASE
@@ -275,9 +307,10 @@ def get_router(settings_getter, local_guard):
                     raise ValueError('人物视频目前支持火山官方接口，请在后台检查模型配置。')
                 if not limits['person_video']:
                     raise ValueError('人物视频需要支持人物素材的 Seedance 2.0 或 2.5 模型。')
-                validate_pair(store().get_asset(draft['source_asset_id'],private=True)['path'],store().get_asset(draft['person_video_asset_id'],private=True)['path'],max_seconds=limits['max_video_seconds'])
+                validate_pair(store().get_asset(draft['source_asset_id'],private=True)['path'],store().get_asset(draft['person_video_asset_id'],private=True)['path'],max_seconds=limits['max_video_seconds'],source_clip=draft.get('source_clip'))
             elif limits['follow_source']:
-                validate_file(store().get_asset(draft['source_asset_id'],private=True)['path'],person=False,max_seconds=limits['max_video_seconds'])
+                from .source_clip import validate_source
+                validate_source(store().get_asset(draft['source_asset_id'],private=True)['path'],draft.get('source_clip'),max_seconds=limits['max_video_seconds'])
             storage=storage_settings.load_config(settings_getter())
             problem=admin_settings.generation_problem(config,storage)
             if problem: raise HTTPException(409,problem)
@@ -328,6 +361,31 @@ def get_router(settings_getter, local_guard):
                 return result
             items=[decorate_run(x) for x in store().list_runs()]+legacy_runs()
             return {'items':sorted(items,key=lambda x:x['created_at'],reverse=True)}
+        return guarded(operation)
+
+    @router.get('/videos')
+    def video_library(page:int=Query(1,ge=1),page_size:int=Query(12,ge=1,le=24)):
+        def operation():
+            result=store().page_runs(page,page_size,legacy_runs(),status_filter='succeeded')
+            for item in result['items']:
+                base='/api/production/runs/'+item['id']
+                item['poster_url']=base+'/poster'
+                item['download_url']=('/api/jobs/'+item['id'][7:]+'/download') if item['legacy'] else base+'/download'
+            return result
+        return guarded(operation)
+
+    @router.get('/runs/{ident}/poster')
+    def video_poster(ident:str):
+        def operation():
+            from .playback import status, source_path, signature
+            from .asset_thumbnails import video_thumbnail
+            settings=settings_getter()
+            # Reuse playback authorization, deleted-run and readiness checks.
+            status(settings,ident)
+            source=source_path(settings,ident)
+            return video_thumbnail(settings,{'path':str(source),'sha256':ident+':'+signature(source)},
+                                   {'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'},
+                                   allowed_root=settings.storage_dir/'outputs',size=640,wait_seconds=5)
         return guarded(operation)
 
     @router.get('/runs/{ident}')
@@ -416,18 +474,49 @@ def get_router(settings_getter, local_guard):
             return decorate_draft(store().create_draft(values))
         return guarded(operation)
 
+    @router.post('/runs/{ident}/retry-without-audio')
+    def retry_without_audio(ident: str):
+        def operation():
+            storage = store()
+            storage.require_visible(ident)
+            original = storage.get_run(ident)
+            if not original['can_retry_without_audio']:
+                raise Conflict('此任务不支持关闭声音重试，请查看错误详情。')
+            key = 'audio-off:' + ident
+            previous = storage.run_by_key(key)
+            if previous:
+                storage.require_visible(previous['id'])
+                return {'run':decorate_run(previous), 'draft':decorate_draft(storage.get_draft(previous['draft_id']))}
+            values = {k:v for k,v in original['snapshot'].items() if k in _DRAFT_FIELDS}
+            values['model'] = {**values.get('model', {}), 'generate_audio':False}
+            preparation = storage.get_preparation(ident)
+            if preparation and preparation.get('person_id'):
+                from .portrait_library import PortraitLibrary
+                if PortraitLibrary(settings_getter()).account == preparation['account']:
+                    values.update(person_id=preparation['person_id'], person_input_policy='existing_person')
+            validate_changes(values)
+            # Stable draft and submission IDs survive concurrent clicks and lost responses.
+            retry_draft_id = uuid.uuid5(uuid.NAMESPACE_URL, 'ark-audio-off:'+ident).hex
+            draft = storage.create_draft(values, ident=retry_draft_id)
+            # Never submit an edited retry draft as if it were the original snapshot.
+            if any(draft.get(field) != value for field, value in values.items()):
+                raise Conflict('无声重试草稿已修改，请检查草稿后手动生成。')
+            run = submit_run({'draft_id':draft['id'], 'revision':draft['revision'], 'idempotency_key':key})
+            return {'run':run, 'draft':decorate_draft(draft)}
+        return guarded(operation)
+
     @router.get('/runs/{ident}/playback')
     def playback_status(ident:str):
         from .playback import status
         return guarded(lambda:status(settings_getter(),ident))
 
-    @router.get('/runs/{ident}/playback/{quality}')
+    @router.api_route('/runs/{ident}/playback/{quality}', methods=['GET','HEAD'])
     def playback_file(ident:str,quality:str):
         from .playback import media_path
         path=guarded(lambda:media_path(settings_getter(),ident,quality))
-        return FileResponse(path,media_type='video/mp4',headers={'Cache-Control':'private, max-age=86400'})
+        return media_file_response(settings_getter(),path,media_type='video/mp4')
 
-    @router.get('/runs/{ident}/{kind}')
+    @router.api_route('/runs/{ident}/{kind}', methods=['GET','HEAD'])
     def run_file(ident: str,kind: str):
         guarded(lambda:store().require_visible(ident))
         run=guarded(lambda:store().get_run(ident))
@@ -437,6 +526,6 @@ def get_router(settings_getter, local_guard):
         if not path.is_file(): raise HTTPException(404,'视频文件不存在。')
         import re
         filename=re.sub(r'[\\/:*?"<>|]', '_',run['name']).strip(' .') or '视频'
-        return FileResponse(path,media_type='video/mp4',filename=filename+'.mp4' if kind=='download' else None,headers={'Cache-Control':'private, max-age=3600'})
+        return media_file_response(settings_getter(),path,media_type='video/mp4',filename=filename+'.mp4' if kind=='download' else None)
 
     return router

@@ -52,7 +52,10 @@ class GenerationConfig:
     duration: int = 5
     fps: int = 0
     resolution: str = '720p'
+    ratio: str = 'adaptive'
     public_base_url: str = ''
+    # Missing values in historical jobs/settings preserve their original audio behavior.
+    generate_audio: bool = True
 
     def problem(self) -> str:
         if self.mode == 'mock':
@@ -105,7 +108,7 @@ def resolve_config(settings: Settings, payload: dict) -> GenerationConfig:
         raise ValueError('包含不支持的配置字段。')
     for name in allowed & payload.keys():
         values[name] = payload[name]
-    for name in ('provider', 'protocol', 'mode', 'base_url', 'model', 'resolution', 'public_base_url'):
+    for name in ('provider', 'protocol', 'mode', 'base_url', 'model', 'resolution', 'ratio', 'public_base_url'):
         if not isinstance(values[name], str) or len(values[name]) > 2048:
             raise ValueError('配置字段格式不正确。')
         values[name] = values[name].strip()
@@ -127,7 +130,13 @@ def resolve_config(settings: Settings, payload: dict) -> GenerationConfig:
         raise ValueError('请填写有效的模型 ID（不超过 160 字符）。')
     from .model_catalog import capabilities
     limits = capabilities(values['model'], values['protocol'])
-    if type(values['duration']) is not int or not (4 <= values['duration'] <= limits['max_duration'] or (limits['follow_source'] and values['duration'] == -1)):
+    if values['ratio'] not in limits['ratios']:
+        raise ValueError('当前模型不支持所选画面比例，请选择支持的比例。')
+    if type(values['generate_audio']) is not bool:
+        raise ValueError('生成声音请选择开启或关闭。')
+    if not values['generate_audio'] and not limits['audio_control']:
+        raise ValueError('当前模型不支持关闭声音，请选择支持声音设置的模型。')
+    if type(values['duration']) is not int or not (4 <= values['duration'] <= limits['max_duration'] or (limits['auto_duration'] and values['duration'] == -1)):
         raise ValueError(f"生成时长应为 4–{limits['max_duration']} 秒。")
     if type(values['fps']) is not int or values['fps'] not in {0, 24, 25, 30}:
         raise ValueError('帧率应为自动、24、25 或 30 fps。')

@@ -36,6 +36,28 @@ def test_whole_pipeline_runs_without_browser_and_reuses_redaction(setup,monkeypa
     assert len(calls)==1
 
 
+def test_clip_is_processed_before_redaction_and_changes_cache_key(setup,monkeypatch):
+    cfg,store,draft,private=setup
+    private['generation'].update(model='doubao-seedance-2-5-260628',duration=-1)
+    processed=[]
+    def cut(source,target,clip,**kwargs):
+        target.write_bytes(str(clip['start']).encode());return target
+    def redact(source,target,*args):
+        processed.append(source.read_bytes());target.write_bytes(source.read_bytes())
+    monkeypatch.setattr(worker,'clip_video',cut)
+    monkeypatch.setattr(worker,'run_deface',redact)
+    from app import person_video
+    monkeypatch.setattr(person_video,'validate_file',lambda *args,**kwargs:{'duration':4})
+    for index,start in enumerate((0,2,2)):
+        current=store.create_draft({'source_asset_id':'source','source_clip':{'start':start,'duration':4},'face_asset_ids':['face'],'clothing_asset_ids':['clothes'],'prompt':'original'})
+        run=store.create_run(current['id'],1,str(index),private)
+        worker.execute_run(cfg,store,store.claim_next())
+        assert store.get_run(run['id'])['status']=='succeeded'
+        assert store.get_run(run['id'])['snapshot']['source_clip']['start']==start
+    assert processed==[b'0',b'2']
+    assert store.page_runs(1,10,[])['items'][0]['source_clip']['duration']==4
+
+
 def test_provider_id_persisted_before_query_failure_and_resume_uses_same_id(setup,monkeypatch):
     cfg,store,draft,private=setup
     submitted=[]

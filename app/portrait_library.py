@@ -322,7 +322,12 @@ class PortraitLibrary:
                 FROM production_runs r LEFT JOIN production_person_preparations p ON p.run_id=r.id
                 WHERE r.status='succeeded' AND COALESCE(json_extract(r.snapshot,'$.model.mode'),'')!='mock'
                 ORDER BY r.updated_at DESC""").fetchall()
-        ids={row['id'] for row in people}
+        ids={row['id'] for row in people if self.available(row['id'])}
+        visible_photos=[photo for ident in ids for photo in self.photos_for_person(ident)]
+        summary={}
+        for photo in visible_photos: summary[photo['status']]=summary.get(photo['status'],0)+1
+        counts=[{'status':status,'count':count} for status,count in summary.items()]
+        failures=[row for row in failures if any(self.person(ident)['name']==row['name'] for ident in ids)]
         last=None
         for run in runs:
             snapshot=json.loads(run['snapshot'])
@@ -346,20 +351,23 @@ class PortraitLibrary:
         return self.person(ident)
 
     def import_verified(self):
+        with self.store.connection() as db:
+            known={row[0] for row in db.execute('SELECT group_id FROM portrait_people WHERE account=?',(self.account,))}
         path = self.settings.storage_dir/'private'/'portrait-sessions.db'
         if path.is_file():
             with sqlite3.connect(path) as db:
                 rows = db.execute('SELECT data FROM sessions WHERE account=?',(self.account,)).fetchall()
             for row in rows:
                 data = json.loads(row[0])
-                if data.get('status') == 'verified' and data.get('group_id'):
+                if data.get('status') == 'verified' and data.get('group_id') and data['group_id'] not in known:
                     self.add_person(data['group_id'])
+                    known.add(data['group_id'])
         with self.store.connection() as db:
             rows = db.execute('SELECT DISTINCT group_id FROM production_portraits WHERE fingerprint=?',(self.account,)).fetchall()
         for row in rows:
-            with self.store.connection() as db:
-                existing=db.execute('SELECT id FROM portrait_people WHERE account=? AND group_id=?',(self.account,row['group_id'])).fetchone()
-            if not existing: self.add_person(row['group_id'])
+            if row['group_id'] not in known:
+                self.add_person(row['group_id'])
+                known.add(row['group_id'])
 
     def person(self, ident, private=False):
         with self.store.connection() as db:
@@ -386,9 +394,8 @@ class PortraitLibrary:
         if not self.config.ready: return []
         self.import_verified()
         with self.store.connection() as db:
-            membership = 'IN' if removed else 'NOT IN'
-            ids = [x[0] for x in db.execute(f'SELECT id FROM portrait_people WHERE account=? AND id {membership} (SELECT person_id FROM portrait_hidden_people WHERE account=?) ORDER BY created',(self.account,self.account))]
-        return [self.person(ident) for ident in ids]
+            ids = [x[0] for x in db.execute('SELECT id FROM portrait_people WHERE account=? ORDER BY created',(self.account,))]
+        return [self.person(ident) for ident in ids if self.available(ident)!=removed]
 
     def set_removed(self, ident, removed):
         person = self.person(ident)
@@ -410,7 +417,21 @@ class PortraitLibrary:
                  'url':'/api/production/assets/'+row['asset_id']+'/file',
                  'status':row['status'],'message':row['message'],
                  'remote_asset_id':row['remote_id'] if row['status']=='active' else None}
-                for row in rows]
+                for row in rows if self.available(ident, photo_id=row['id'])]
+
+    def available(self, person_id, *, photo_id=None, sha256=None):
+        from .shared_portraits import assert_available
+        with self.store.connection() as db:
+            if db.execute('SELECT 1 FROM portrait_hidden_people WHERE person_id=?',(person_id,)).fetchone(): return False
+            if photo_id:
+                row=db.execute('SELECT sha256 FROM portrait_photos WHERE id=?',(photo_id,)).fetchone()
+                sha256=row['sha256'] if row else None
+        try: assert_available(self.settings,person_id,sha256)
+        except LookupError: return False
+        return True
+
+    def require_available(self, person_id, **kwargs):
+        if not self.available(person_id,**kwargs): raise LookupError('人物或照片已从素材库移除。')
 
     def use_video(self, ident):
         job=self.get_photo(ident,private=True)
@@ -427,12 +448,11 @@ class PortraitLibrary:
         return {**self.store.get_asset(asset['id']),'person_type':person['person_type']}
 
     def reference(self, ident):
-        person = self.person(ident)
-        with self.store.connection() as db:
-            photo = db.execute("SELECT ph.remote_id FROM portrait_photos ph JOIN production_assets a ON a.id=ph.asset_id WHERE ph.person_id=? AND ph.account=? AND ph.status='active' AND ph.remote_id IS NOT NULL AND a.kind='face' ORDER BY ph.checked DESC,ph.created DESC LIMIT 1",(ident,self.account)).fetchone()
-        if not photo:
-            raise ValueError('还没有可用照片，请先添加照片并等待检查通过。')
-        return {'remote_asset_id':photo['remote_id']}
+        self.require_available(ident)
+        for photo in self.photos_for_person(ident):
+            if photo['kind']=='face' and photo['status']=='active' and photo['remote_asset_id']:
+                return {'remote_asset_id':photo['remote_asset_id']}
+        raise ValueError('还没有可用照片，请先添加照片并等待检查通过。')
 
     def rename(self, ident, name):
         self.person(ident)
@@ -448,6 +468,7 @@ class PortraitLibrary:
                 FROM portrait_photos ph LEFT JOIN portrait_photo_errors e ON e.photo_id=ph.id
                 WHERE ph.id=? AND ph.account=?''',(ident,self.account)).fetchone()
         if not row: raise LookupError('照片校验记录不可用，请重新选择人物和照片。')
+        self.require_available(row['person_id'],sha256=row['sha256'])
         result = dict(row)
         result['retryable'] = bool(result['retryable'])
         if not private:
@@ -493,6 +514,7 @@ class PortraitLibrary:
     def enqueue(self, person_id, asset_id):
         person = self.person(person_id,private=True)
         asset = self.store.get_asset(asset_id,private=True)
+        self.require_available(person_id,sha256=asset['sha256'])
         validate_photo(self.settings,asset)
         with self.store.connection() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -530,6 +552,9 @@ class PortraitLibrary:
                 row = db.execute("SELECT * FROM portrait_photos WHERE account=? AND status IN ('queued','processing','uncertain') AND next_check<=? ORDER BY next_check,created LIMIT 1",(self.account,time.time())).fetchone()
             if not row: return
             job=dict(row); ident=job['id']
+            if not self.available(job['person_id'],sha256=job['sha256']):
+                self.update(ident,status='removed',next_check=0,message='已从素材库移除，保留历史文件')
+                return
             person=self.person(job['person_id'],private=True)
             asset=self.store.get_asset(job['asset_id'],private=True)
             api=self.api(person['person_type'],'Video' if asset['kind']=='person_video' else 'Image')
@@ -540,6 +565,9 @@ class PortraitLibrary:
                     api.get_group(group)
                     asset=self.store.get_asset(job['asset_id'],private=True)
                     url=upload_photo(self.settings,asset,ident)
+                    from .shared_portraits import authorize_asset
+                    authorize_asset(self.settings,asset['id'])
+                    self.require_available(job['person_id'],sha256=job['sha256'])
                     self.update(ident,status='submitting',message='正在提交官方照片校验')
                     remote=api.create_asset(group,url,'portrait-'+ident)
                     self.update(ident,status='processing',remote_id=remote,next_check=time.time()+5,message='正在核对是否为所选人物')

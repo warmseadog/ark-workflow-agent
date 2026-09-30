@@ -12,7 +12,7 @@
         </div>
         <div class="asset-footer"><span id="source-file-name">建议 5–15 秒</span><span class="asset-edit-actions"><button type="button" id="replace-source-video" data-asset-edit hidden>更换视频</button><button type="button" id="remove-source-video" data-asset-edit hidden>移除视频</button><button type="button" id="toggle-video-url" aria-expanded="false">使用链接</button></span></div>
         <p id="source-model-hint" class="field-hint" role="status" hidden></p>
-        <details class="source-redaction-preview" id="flow-stage-redaction"><summary>预览打码效果</summary><button type="button" class="secondary" id="studio-preview-submit" disabled>预览打码视频</button><p id="studio-preview-status" role="status">选择参考视频后可预览</p><div id="studio-preview" hidden><video id="studio-defaced-video" controls playsinline preload="metadata"></video></div></details>
+        <details class="source-redaction-preview" id="flow-stage-redaction"><summary>预览打码效果</summary><button type="button" class="secondary" id="studio-preview-submit" disabled>预览打码视频</button><p id="studio-preview-status" role="status">选择参考视频后可预览</p><div id="studio-preview" hidden><video id="studio-defaced-video" controls playsinline preload="none"></video></div></details>
         <div id="video-url-entry" hidden>
           <textarea name="video_url" form="studio-job-form" rows="3" maxlength="10000" placeholder="粘贴链接或整段分享文案，自动识别视频链接" aria-label="参考视频链接" aria-describedby="video-link-status"></textarea>
           <div class="link-import-actions"><button type="button" class="primary" id="confirm-video-url" disabled>确认并加载视频</button></div>
@@ -42,12 +42,12 @@
           <summary>更多搭配 <span id="accessory-count">可选</span></summary>
           <p class="field-hint">点击类别上传对应图片，每类一张；关闭“本次使用”可暂时停用。</p>
           <div class="accessory-buttons">
-          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜')] %}
+          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜'),('earrings','耳环')] %}
             <button type="button" data-add-images="{{ kind }}" data-asset-edit id="{{ kind }}-add">{{ label }}<span id="{{ kind }}-reference-state">可选</span></button>
           {% endfor %}
           </div>
           <div class="accessory-previews">
-          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜')] %}
+          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜'),('earrings','耳环')] %}
           <div class="accessory-card" id="{{ kind }}-references" hidden>
             <strong>{{ label }}</strong>
             <div class="asset-picker" id="{{ kind }}-picker">
@@ -85,11 +85,11 @@
         </div>
         <div id="person-video-panel" hidden>
           <label class="person-video-empty person-video-upload" id="person-video-upload">上传人物参考视频<input id="person-video-file" type="file" accept=".mp4,.mov" aria-label="上传人物参考视频"></label>
-          <video id="person-video-preview" controls playsinline preload="metadata" hidden></video>
+          <video id="person-video-preview" controls playsinline preload="none" hidden></video>
           <div class="asset-footer"><span id="person-video-name">未设置</span><div><button type="button" id="person-video-replace" hidden>替换</button><button type="button" id="person-video-remove" hidden>移除</button></div></div>
-          <p class="field-hint">仅参考人物身份；支持 MP4 / MOV，2–15 秒、50 MB 内。建议使用 2–5 秒的清晰单人视频。</p>
-          <p id="person-video-status" class="field-hint" role="status">新视频自动入库检查，通过后可选。</p>
-          <p id="person-video-duration" class="field-hint" role="status">动作视频 + 人物视频，合计不超过 15 秒。</p>
+          <p class="field-hint" title="仅参考人物身份，建议清晰单人视频，时长 2–5 秒。">MP4 / MOV · 2–15 秒 · ≤ 50 MB</p>
+          <p id="person-video-status" class="field-hint" role="status"></p>
+          <p id="person-video-duration" class="field-hint" role="status">动作 + 人物视频合计 ≤ 15 秒</p>
         </div>
         <div class="person-source-note" id="person-bar" hidden><span id="person-current"></span><button type="button" id="person-photos-open">更换</button></div>
         <div class="person-media-switch"><button type="button" data-person-media="video">改用人物视频</button><button type="button" data-person-media="image" hidden>改用人物图片</button></div>
@@ -132,7 +132,7 @@
         </div>
       </article>
     </div>
-    <p id="reference-count" class="field-hint reference-count" role="status" aria-live="polite">本次参考图 0 / 9 张</p>
+    <div class="reference-summary"><p id="reference-count" class="field-hint reference-count" role="status" aria-live="polite">本次参考图 0 / 9 张</p><button id="clear-reference-images" type="button" class="secondary" disabled title="清空本次已选参考图，保留视频、提示词和素材库">清空参考图</button></div>
     <details class="compact-prompt" id="flow-stage-generation">
       <summary>提示词与模板 <span id="prompt-reference-status">已启用严格参考</span></summary>
       <div class="prompt-templates" id="prompt-template-list" aria-label="提示词模板"></div>
@@ -156,26 +156,29 @@
       <textarea id="generation-prompt" name="prompt" rows="4">保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图中的脸和身份；应用@Image2衣服参考图中的服装款式、颜色和材质，保持全片自然稳定。</textarea>
       <p class="field-hint">默认严格遵循参考：视频控制动作，人物控制身份，服装控制穿着；独立发型、场景与配饰按各自参考执行。下方规则自动更新，文字只补充细节。全部参考图合计最多 9 张。</p>
     </details>
-    <div class="draft-task-title"><span>任务名称</span><strong id="draft-task-name">正在读取…</strong><button type="button" id="draft-name-edit" class="run-rename" aria-label="修改本次任务名称">✎</button></div>
-    <div id="draft-name-editor" class="draft-name-editor" hidden><input id="draft-name-input" maxlength="120" aria-label="本次任务名称"><button type="button" id="draft-name-save">保存</button><button type="button" id="draft-name-cancel">取消</button></div>
     <div class="generation-action">
+      <div class="generation-task">
+        <div class="draft-task-title"><span>任务名称</span><strong id="draft-task-name">正在读取…</strong><button type="button" id="draft-name-edit" class="run-rename" aria-label="修改本次任务名称">✎</button></div>
+        <div id="draft-name-editor" class="draft-name-editor" hidden><input id="draft-name-input" maxlength="120" aria-label="本次任务名称"><button type="button" id="draft-name-save">保存</button><button type="button" id="draft-name-cancel">取消</button></div>
+      </div>
       {% include "generation_options_panel.html" %}
-      <button class="primary" type="submit" id="studio-generate-submit" disabled>生成视频 →</button>
     </div>
-    <p id="production-status" class="production-status" role="status" aria-live="polite">选择三类素材后即可生成</p>
+    <div id="source-clip-controls" class="source-clip-controls" hidden><label for="source-clip-start">片段起点（秒）<input id="source-clip-start" type="number" min="0" max="86400" step="0.1" value="0"></label><button type="button" id="source-clip-preview" class="secondary">预览片段</button><span id="source-clip-note" role="status" aria-live="polite"></span></div>
+    <dialog id="source-clip-dialog" class="run-player-dialog"><div class="run-player-heading"><h3>动作视频片段预览</h3><button type="button" id="source-clip-close" aria-label="关闭片段预览">×</button></div><video id="source-clip-video" controls playsinline preload="metadata"></video><p>预览所选原片片段；生成时将对该片段打码并替换人物与服装。</p></dialog>
+    <p id="production-status" class="production-status" role="status" aria-live="polite"></p>
     <div id="save-notice" class="save-notice" hidden>
       <span id="draft-save-status" role="status" aria-live="polite">正在恢复内容…</span>
       <button type="button" class="secondary" id="draft-save-retry" hidden>重试保存</button>
       <button type="button" class="secondary" id="draft-recover" hidden>保留当前修改</button>
     </div>
-    <div id="generation-result" class="compact-result" hidden><div class="creation-status"><h4 id="generation-message">等待生成</h4><strong id="generation-percent">0%</strong></div><div class="creation-progress"><i id="generation-bar"></i></div><video id="studio-final-video" controls playsinline hidden></video><a id="studio-download" class="secondary" hidden>下载视频 ↓</a></div>
+    <div id="generation-result" class="compact-result" hidden><div class="creation-status"><h4 id="generation-message">等待生成</h4><strong id="generation-percent">0%</strong></div><div class="creation-progress"><i id="generation-bar"></i></div><video id="studio-final-video" controls playsinline preload="none" hidden></video><a id="studio-download" class="secondary" hidden>下载视频 ↓</a></div>
   </form>
   <section class="production-runs" aria-labelledby="production-runs-heading">
-    <div class="runs-heading"><h3 id="production-runs-heading">生成任务</h3><button type="button" class="secondary" id="runs-refresh">刷新任务</button></div>
+    <div class="runs-heading"><h3 id="production-runs-heading">任务记录</h3><button type="button" class="secondary" id="runs-refresh">刷新任务</button></div>
     <p id="runs-status" role="status">正在读取任务…</p>
-    <div class="run-list-header" aria-hidden="true"><span>任务名称</span><span>创建时间</span><span>状态</span><span>视频时长 / 任务耗时</span><span>操作</span></div>
+    <div class="run-list-header" aria-hidden="true"><span>任务名称</span><span>创建时间</span><span>状态</span><span>使用模型</span><span>视频时长 / 任务耗时</span><span>操作</span></div>
     <div id="production-run-list" aria-label="生成任务列表"></div>
     <nav id="runs-pagination" class="runs-pagination" aria-label="任务列表分页" hidden><span>每页 10 条</span><button type="button" id="runs-previous" disabled>上一页</button><span id="runs-page">1 / 1</span><button type="button" id="runs-next" disabled>下一页</button></nav>
   </section>
-  <dialog id="run-player-dialog" class="run-player-dialog" aria-labelledby="run-player-title"><div class="run-player-heading"><h3 id="run-player-title">视频播放</h3><button type="button" id="run-player-close" aria-label="关闭视频播放">×</button></div><video id="run-player-video" controls playsinline preload="metadata"></video><div class="run-player-tools"><div role="group" aria-label="播放画质"><button type="button" data-play-quality="smooth">流畅</button><button type="button" data-play-quality="original">原画</button></div><a id="run-player-download" class="secondary" download>下载原片</a></div><p id="run-player-status" role="status"></p></dialog>
+  <dialog id="run-player-dialog" class="run-player-dialog" aria-labelledby="run-player-title"><div class="run-player-heading"><h3 id="run-player-title">视频播放</h3><button type="button" id="run-player-close" aria-label="关闭视频播放">×</button></div><video id="run-player-video" controls playsinline preload="none"></video><div class="run-player-tools"><div role="group" aria-label="播放画质"><button type="button" data-play-quality="smooth">流畅</button><button type="button" data-play-quality="original">原画</button></div><a id="run-player-download" class="secondary" download>下载原片</a></div><p id="run-player-status" role="status"></p></dialog>
 </section>

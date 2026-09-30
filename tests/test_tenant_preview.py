@@ -121,6 +121,23 @@ def test_guard_tenant_ids_private_file_and_explicit_settings(preview):
     assert result.content == b'video-redacted'
     assert result.headers['cache-control'] == 'private, no-store'
     assert calls[0][2] == tenants['1']
+
+
+def test_clip_preview_uses_segment_and_separate_cache(preview,monkeypatch):
+    from app import source_clip
+    client,tenants,_,_,calls,*_=preview
+    asset(tenants['1'])
+    monkeypatch.setattr(source_clip,'validate_source',lambda *args,**kwargs:{'duration':4})
+    def cut(source,target,clip,**kwargs):
+        target.write_bytes(str(clip['start']).encode());return target
+    monkeypatch.setattr(source_clip,'clip_video',cut)
+    for start in (0,2,2):
+        response=post(client,source_clip={'start':start,'duration':4})
+        assert response.status_code==200,response.text
+        job=terminal(client,response.json()['id'])
+        assert job['status']=='defaced'
+        assert client.get(job['defaced_url'],headers=headers()).content==str(start).encode()+b'-redacted'
+    assert len(calls)==2
     with ProductionStore(tenants['1'].storage_dir).connection() as db:
         row = db.execute('SELECT * FROM production_previews WHERE id=?', (job['id'],)).fetchone()
     assert row['status'] == 'defaced' and row['source_asset_id'] == 'source'

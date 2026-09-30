@@ -364,3 +364,33 @@ class Accounts:
         with self._connect() as conn:
             rows = conn.execute('SELECT * FROM audit ORDER BY id DESC LIMIT ?', (limit,)).fetchall()
             return [{**dict(row), 'details': json.loads(row['details'])} for row in rows]
+
+    def audit_page(self, page=1, page_size=10, scope='important', user_id='') -> dict:
+        # Keep the complete trail. Only the default presentation hides routine
+        # reads, autosaves, uploads and duplicate HTTP entries for semantic events.
+        where = '' if scope == 'all' else """WHERE
+            action LIKE 'user.%' OR action IN ('auth.login_failed','portrait.access')
+            OR action LIKE 'DELETE %'
+            OR action LIKE 'POST /api/production/runs%'
+            OR action LIKE 'PUT /api/admin/settings%'
+            OR action LIKE 'PATCH /api/admin/settings%'
+            OR action IN ('PUT /api/model-settings','PUT /api/model-catalog',
+                'PUT /api/redaction-settings','PUT /api/storage-settings','PUT /api/portrait/config')
+            OR action LIKE 'PUT /api/link-settings%'
+            OR action LIKE 'PUT /api/portrait/settings%'
+            OR action LIKE 'POST /api/portrait/people'
+            OR action LIKE 'PUT /api/portrait/people/%'
+            OR action LIKE 'POST /api/portrait/people/%/restore'"""
+        params = ()
+        if user_id:
+            important = where.removeprefix('WHERE').strip()
+            where = ('WHERE (' + important + ') AND ' if important else 'WHERE ') + "(actor_id=? OR target=? OR substr(target,1,length(?)+1)=?||':')"
+            params = (user_id, user_id, user_id, user_id)
+        with self._connect() as conn:
+            total = conn.execute('SELECT COUNT(*) FROM audit ' + where, params).fetchone()[0]
+            pages = max(1, (total + page_size - 1) // page_size)
+            page = min(page, pages)
+            rows = conn.execute('SELECT * FROM audit ' + where + ' ORDER BY id DESC LIMIT ? OFFSET ?',
+                                params + (page_size, (page - 1) * page_size)).fetchall()
+        return {'items': [{**dict(row), 'details': json.loads(row['details'])} for row in rows],
+                'total': total, 'page': page, 'pages': pages, 'page_size': page_size}

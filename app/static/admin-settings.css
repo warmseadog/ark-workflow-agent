@@ -1,4 +1,7 @@
 @charset "UTF-8";
+.content.has-embedded-section{max-width:none;padding:20px 24px}
+.admin-content-frame{display:block;width:100%;height:calc(100dvh - 120px);min-height:560px;border:0;background:#f6f8f6;border-radius:8px}
+@media(max-width:720px){.content.has-embedded-section{padding:12px}.admin-content-frame{height:calc(100dvh - 160px);min-height:480px}}
 :root{--ink:#202b2c;--muted:#6b7474;--hair:#dfe5e3;--accent:#247464;--cream:#f6f8f6;--paper:#f6f8f6;font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--paper);font-size:14px}
 *{box-sizing:border-box}body{margin:0}a{color:inherit;text-decoration:none}button,input,select,textarea{font:inherit}button,a,input,select,textarea{touch-action:manipulation}button{cursor:pointer}button:disabled{cursor:wait;opacity:.5}[hidden]{display:none!important}
 .sidebar{position:fixed;inset:0 auto 0 0;width:240px;background:#fff;border-right:1px solid var(--hair);padding:32px 20px;display:flex;flex-direction:column}

@@ -4,36 +4,25 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>方舟 · 后台配置</title>
   <link rel="stylesheet" href="/static/model-settings.css?v=20260928-model-selection-1">
-  <link rel="stylesheet" href="/static/admin-settings.css?v=20260927">
+  <link rel="stylesheet" href="/static/admin-settings.css?v=20260929-admin-pages-1">
   <link rel="stylesheet" href="/static/portrait.css?v=20260928-backend-1">
-  <link rel="stylesheet" href="/static/virtual-library.css?v=20260928-backend-1">
-  <link rel="stylesheet" href="/static/account.css?v=20260929-account-2">
-  <script src="/static/account.js?v=20260929-account-2"></script>
+  <link rel="stylesheet" href="/static/virtual-library.css?v=20260929-navigation-people-1">
+  <link rel="stylesheet" href="/static/account.css?v=20260929-navigation-people-1">
+  <script src="/static/account.js?v=20260929-navigation-people-1"></script>
+  {% include "workspace_head.html" %}
 </head>
-<body>
-  <aside class="sidebar">
-    <a class="brand" href="/"><span class="brand-mark">方</span><span>方舟 <small>创作工作台</small></span></a>
-    <p class="nav-label">工作台管理</p>
-    <nav aria-label="配置分类">
-      <a href="/admin/users" data-admin-only data-auth-only hidden><span>♙</span> 用户与任务</a>
-      <a href="/people"><span>♙</span> 我的人物</a>
-      <a href="#overview" data-section="overview"><span>◫</span> 配置概览</a>
-      <a href="#model" data-section="model"><span>◇</span> 视频模型</a>
-      <a href="#tikhub" data-section="tikhub"><span>↗</span> 链接解析 <small>TikHub</small></a>
-      <a href="#people" data-section="people"><span>♙</span> 人物库</a>
-      <a href="#storage" data-section="storage"><span>▱</span> 对象存储 <small>TOS</small></a>
-      <a href="#prompts" data-section="prompts"><span>≡</span> 提示词模板</a>
-      <a href="#redaction" data-section="redaction"><span>▦</span> 打码参数</a>
-      <a href="#system" data-section="system"><span>⚙</span> 系统信息</a>
-    </nav>
-    <div class="sidebar-bottom"><span class="dot"></span> 本机配置中心<p>服务密钥保存在本机后端</p><a href="/">← 返回视频制作</a></div>
-  </aside>
+<body class="workspace-shell">
+  {% set workspace_settings = true %}
+  {% include "workspace_sidebar.html" %}
   <main>
-    <header class="topbar"><span>工作台 / <strong>后台配置</strong></span><nav class="account-chrome" aria-label="账号导航"><span class="account-name" data-account-name data-auth-only hidden></span><a href="/account/password" data-auth-only hidden>修改密码</a><button type="button" data-account-logout data-auth-only hidden>退出登录</button><a href="/" class="button">返回制作台 ↗</a></nav></header>
+    <header class="topbar"><span>工作台 / <strong id="admin-section-name">后台配置</strong></span></header>
     <p class="account-banner" data-account-error role="alert" hidden></p>
     <div class="content">
-      <p class="eyebrow">WORKSPACE SETTINGS</p><h1>后台配置</h1>
+      <div id="admin-intro"><p class="eyebrow">WORKSPACE SETTINGS</p><h1>后台配置</h1>
       <p class="lead">管理员统一管理共享服务密钥与生成默认值。个人素材与任务在各自账号内管理。</p>
+      </div>
+      <section id="section-users" class="section embedded-section" hidden><iframe class="admin-content-frame" data-admin-frame data-src="/admin/users?embedded=1" title="用户与任务"></iframe></section>
+      <section id="section-my-people" class="section embedded-section" hidden><iframe class="admin-content-frame" data-admin-frame data-src="/people?embedded=1" title="我的人物"></iframe></section>
       <p id="page-error" class="notice error" role="alert" hidden></p>
       <section id="section-overview" class="section">
         <div class="section-title"><div><h2>配置概览</h2><p>当前已保存的配置状态。连接是否可用，请在对应分区测试。</p></div><button id="refresh-overview" class="secondary">刷新状态</button></div>
@@ -124,10 +113,10 @@
     </div>
   </main>
   {% include "portrait_panel.html" %}
-  <script src="/static/model-settings.js?v=20260928-model-selection-1"></script>
-  <script src="/static/model-catalog.js?v=20260928-model-selection-1"></script>
-  <script src="/static/admin-settings.js?v=20260928-inline-settings-1"></script>
-  <script src="/static/virtual-library.js?v=20260928-account-1"></script>
+  <script src="/static/model-settings.js?v=20260929-navigation-people-1"></script>
+  <script src="/static/model-catalog.js?v=20260929-navigation-people-1"></script>
+  <script src="/static/admin-settings.js?v=20260929-admin-pages-1"></script>
+  <script src="/static/virtual-library.js?v=20260929-real-video-1"></script>
   <script src="/static/portrait.js?v=20260928-account-1"></script>
 </body>
 </html>

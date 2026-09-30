@@ -4,11 +4,12 @@
   const tos = byId('tos-form'), tik = byId('tikhub-form'), prompts = byId('prompt-form');
   const redaction = byId('redaction-form');
   let overview = null, templates = [], promptBaseline = '', templateId = '';
+  const sectionLoads = new Map();
   function note(id, text, error = false) {
     const node = byId(id); node.textContent = text; node.dataset.error = String(error); node.hidden = !text;
   }
   async function request(url, method = 'GET', body) {
-    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 90000);
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), method === 'GET' ? 8000 : 90000);
     try {
       const response = await fetch(url, {method, cache:'no-store', signal:controller.signal,
         headers:body ? {'Content-Type':'application/json'} : {}, body:body ? JSON.stringify(body) : undefined});
@@ -30,8 +31,35 @@
       if (node.dataset.section === section) node.setAttribute('aria-current', 'page'); else node.removeAttribute('aria-current');
     });
     if (section === 'model') byId('model-settings').open = true;
+    const embedded = section === 'users' || section === 'my-people';
+    byId('admin-intro').hidden = embedded;
+    byId('admin-section-name').textContent = section === 'users' ? '用户与任务' : section === 'my-people' ? '我的人物' : '后台配置';
+    document.querySelector('.content').classList.toggle('has-embedded-section', embedded);
+    document.querySelectorAll('[data-admin-frame]').forEach(frame => {
+      const visible = frame.closest('.section').id === 'section-' + section;
+      const syncVisibility = () => {
+        try {
+          frame.contentWindow.adminEmbedVisible = visible;
+          frame.contentWindow.dispatchEvent(new Event('admin-embed-visibility'));
+        } catch (_) { /* Login redirects can leave the embedded document. */ }
+      };
+      if (visible && !frame.hasAttribute('src')) {
+        frame.addEventListener('load', () => {
+          try {
+            if (frame.contentWindow.location.pathname === '/login') {
+              window.location.assign(frame.contentWindow.location.href); return;
+            }
+            frame.contentWindow.adminEmbedVisible = !frame.closest('.section').hidden;
+            frame.contentWindow.dispatchEvent(new Event('admin-embed-visibility'));
+          } catch (_) { /* Keep the shell usable if a frame cannot be inspected. */ }
+        });
+        frame.src = frame.dataset.src;
+      } else if (frame.hasAttribute('src')) syncVisibility();
+    });
+    void ensureSection(section);
+    window.dispatchEvent(new CustomEvent('admin-section-visible', {detail:{section}}));
   }
-  window.addEventListener('hashchange', selectSection); selectSection();
+  window.addEventListener('hashchange', selectSection);
   function info(id, rows) {
     const node = byId(id); node.replaceChildren();
     for (const [label, value] of rows) {
@@ -80,7 +108,8 @@
       info('system-info', [['访问范围',system.access],['存储目录',system.storage_dir],['上传大小上限',system.max_upload_mb + ' MB'],['模型轮询间隔',system.seedance_poll_seconds + ' 秒'],['通用下载 Cookie',system.cookie_configured ? '已配置' : '未配置'],['配置生效','服务配置保存后用于新任务']]);
       info('redaction-defaults', [['打码样式',redaction.blur_style],['马赛克颗粒',redaction.mosaic_size],['遮罩扩大倍数',redaction.mask_scale]]);
       note('page-error','');
-    } catch (error) { note('page-error',error.message,true); }
+      return true;
+    } catch (error) { note('page-error',error.message,true); return false; }
   }
   byId('refresh-overview').addEventListener('click',refreshOverview);
   window.addEventListener('model-settings-saved',refreshOverview);
@@ -187,9 +216,32 @@
     if (!templateId || !confirm('确认删除此提示词模板？')) return;
     operate(prompts,'prompt-status','正在删除…',async () => { await request('/api/prompt-templates/' + encodeURIComponent(templateId),'DELETE'); await loadTemplates(); note('prompt-status','模板已删除。'); });
   });
-  request('/api/redaction-settings').then(data => { fillRedaction(data.config); redaction.querySelector('fieldset').disabled=false; }).catch(error=>note('redaction-status',error.message,true));
-  request('/api/storage-settings').then(data => { fillTos(data.config); tos.querySelector('fieldset').disabled=false; }).catch(error=>note('tos-status',error.message,true));
-  request('/api/link-settings').then(data => { fillTik(data); tik.querySelector('fieldset').disabled=false; }).catch(error=>note('tikhub-status',error.message,true));
-  loadTemplates().then(()=>prompts.querySelector('fieldset').disabled=false).catch(error=>note('prompt-status',error.message,true));
-  refreshOverview();
+  const sectionRequests = {
+    overview: ['page-error', refreshOverview],
+    system: ['page-error', async () => overview ? true : refreshOverview()],
+    redaction: ['redaction-status', async () => {
+      const data = await request('/api/redaction-settings'); fillRedaction(data.config);
+      info('redaction-defaults', [['打码样式',data.config.blur_style],['马赛克颗粒',data.config.mosaic_size],['遮罩扩大倍数',data.config.mask_scale]]);
+      redaction.querySelector('fieldset').disabled = false;
+    }],
+    storage: ['tos-status', async () => { fillTos((await request('/api/storage-settings')).config); tos.querySelector('fieldset').disabled = false; }],
+    tikhub: ['tikhub-status', async () => { fillTik(await request('/api/link-settings')); tik.querySelector('fieldset').disabled = false; }],
+    prompts: ['prompt-status', async () => { await loadTemplates(); prompts.querySelector('fieldset').disabled = false; }],
+  };
+  async function ensureSection(section) {
+    if (!sectionRequests[section] || sectionLoads.has(section)) return;
+    const [statusId, load] = sectionRequests[section];
+    sectionLoads.set(section, true);
+    note(statusId, '正在读取…');
+    try {
+      if (await load() === false) throw new Error(byId(statusId).textContent || '配置暂时无法读取。');
+      note(statusId, '');
+    } catch (error) {
+      sectionLoads.delete(section); note(statusId, error.message, true);
+      const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = '重试加载';
+      retry.addEventListener('click', () => void ensureSection(section));
+      byId(statusId).append(document.createTextNode(' '), retry);
+    }
+  }
+  selectSection();
 })();

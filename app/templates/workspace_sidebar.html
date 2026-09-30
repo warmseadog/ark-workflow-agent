@@ -1,0 +1,43 @@
+<button class="workspace-toggle" type="button" aria-label="展开导航" aria-controls="workspace-sidebar" aria-expanded="false">☰</button>
+<button class="workspace-backdrop" type="button" aria-label="关闭导航" hidden></button>
+<aside id="workspace-sidebar" class="workspace-sidebar" aria-label="工作台侧边栏">
+  <a class="workspace-brand" href="/"><span aria-hidden="true">方</span><strong>方舟<small>视频创作工作台</small></strong></a>
+  <div class="workspace-navigation">
+    <p class="workspace-label">工作空间</p>
+    <nav class="workspace-nav" aria-label="主要导航">
+      <a href="/" data-workspace-page="create"><span aria-hidden="true">＋</span>制作流程</a>
+      <a href="/videos" data-workspace-page="videos"><span aria-hidden="true">▤</span>视频库</a>
+      <a href="/#tasks" data-workspace-page="tasks"><span aria-hidden="true">◷</span>任务记录</a>
+      <a href="/people" data-workspace-page="people"><span aria-hidden="true">♙</span>我的人物</a>
+    </nav>
+    <div data-admin-only hidden>
+      <p class="workspace-label">管理</p>
+      <nav class="workspace-nav" aria-label="管理导航">
+        <a href="/admin/settings" data-workspace-page="settings"><span aria-hidden="true">⚙</span>后台配置</a>
+        <a href="/admin/users" data-workspace-page="users" data-auth-only hidden><span aria-hidden="true">♧</span>用户管理</a>
+      </nav>
+      {% if workspace_settings|default(false) %}
+      <nav class="workspace-settings" aria-label="配置分类">
+        <a href="#overview" data-section="overview">配置概览</a>
+        <a href="#model" data-section="model">视频模型</a>
+        <a href="#tikhub" data-section="tikhub">链接解析</a>
+        <a href="#people" data-section="people">人物库管理</a>
+        <a href="#storage" data-section="storage">对象存储</a>
+        <a href="#prompts" data-section="prompts">提示词模板</a>
+        <a href="#redaction" data-section="redaction">打码参数</a>
+        <a href="#system" data-section="system">系统信息</a>
+      </nav>
+      {% endif %}
+    </div>
+  </div>
+  <div class="workspace-footer">
+    <details class="workspace-account" data-auth-only hidden>
+      <summary><span class="workspace-avatar" aria-hidden="true">♙</span><span class="workspace-identity"><strong data-account-name>账户</strong><small>账户与安全</small></span><span aria-hidden="true">⌃</span></summary>
+      <div class="workspace-account-menu" aria-label="账户操作">
+        <a href="/account/password">修改密码</a>
+        <button type="button" data-account-logout>退出登录</button>
+      </div>
+    </details>
+    <span class="workspace-local">方舟 · 创作空间</span>
+  </div>
+</aside>

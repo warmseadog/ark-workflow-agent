@@ -8,6 +8,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import RLock
+from .audio_policy import decorate_audio_failure
+from .model_catalog import capabilities
 
 _connection_setup_lock = RLock()
 
@@ -167,15 +169,15 @@ class ProductionStore:
                    (started, finished, state, stamp, queue, execution, paused,
                     int(interrupted or row['interrupted']), ident))
 
-    def create_draft(self, values):
-        ident, stamp = uuid.uuid4().hex, now()
-        data = {'name': default_name(), 'source_asset_id': None, 'face_asset_ids': [],
+    def create_draft(self, values, *, ident=None):
+        ident, stamp = ident or uuid.uuid4().hex, now()
+        data = {'name': default_name(), 'source_clip': None, 'source_asset_id': None, 'face_asset_ids': [],
                 'person_reference_mode':'image','person_video_asset_id':None,
                 'clothing_asset_ids': [], 'hairstyle_asset_ids': [], 'scene_asset_ids': [],
-                **{kind+suffix: ([] if suffix=='_asset_ids' else False) for kind in ('bag','hat','watch','shoes','necklace','glasses') for suffix in ('_asset_ids','_enabled')},
+                **{kind+suffix: ([] if suffix=='_asset_ids' else False) for kind in ('bag','hat','watch','shoes','necklace','glasses','earrings') for suffix in ('_asset_ids','_enabled')},
                 'hairstyle_mask': {'mask_scale':1.0,'threshold':0.2}, 'hairstyle_enabled': False, 'scene_enabled': False, 'scene_description': '', 'prompt': '', 'mask': {}, 'model': {}, **values}
         with self.connection() as db:
-            db.execute('INSERT INTO production_drafts VALUES (?,?,?,?,?)',
+            db.execute('INSERT OR IGNORE INTO production_drafts VALUES (?,?,?,?,?)',
                        (ident, 1, json.dumps(data, ensure_ascii=False), stamp, stamp))
         return self.get_draft(ident)
 
@@ -215,6 +217,7 @@ class ProductionStore:
         if not private:
             value.pop('path')
         value['url'] = '/api/production/assets/' + ident + '/file'
+        value['thumbnail_url'] = '/api/production/assets/' + ident + '/thumbnail'
         portrait = self.portrait_binding(ident)
         if portrait:
             value['portrait'] = {k:v for k,v in portrait.items() if k not in {'asset_id','fingerprint'}}
@@ -257,6 +260,9 @@ class ProductionStore:
             raise LookupError('找不到生成任务。')
         value = dict(row)
         value['snapshot'] = json.loads(value['snapshot'])
+        generation = json.loads(value['private']).get('generation', {})
+        audio = value['snapshot'].get('model', {}).get('generate_audio', generation.get('generate_audio', True))
+        decorate_audio_failure(value, enabled=audio, supported=capabilities(generation.get('model') or '', generation.get('protocol') or 'ark')['audio_control'])
         value['name'] = self.run_name(value['id'],value['snapshot'].get('name', '未命名视频'))
         has_remote = bool(value['provider_task_id'] or value['result_url'])
         value['can_resume'] = value['status'] == 'needs_attention' and has_remote
@@ -314,7 +320,7 @@ class ProductionStore:
                     'input_digest': intent['input_digest'], 'person_id': None,
                     'group_request_id': None, 'uploads': {}, 'started_at': None,
                     'deadline_at': None, 'retryable': False, 'attempts': 0,
-                    'message': '等待准备虚拟人物', 'updated_at': stamp}
+                    'message': '等待执行名额，随后检查人物素材', 'updated_at': stamp}
                 db.execute('INSERT INTO production_person_preparations VALUES (?,?,0)',
                     (ident, json.dumps(data, ensure_ascii=False)))
         return self.get_run(ident)
@@ -383,29 +389,40 @@ class ProductionStore:
             db.execute('INSERT OR REPLACE INTO production_run_names VALUES (?,?,?)',(ident,name.strip(),now()))
         return {'id':ident,'name':name.strip()}
 
-    def page_runs(self, page, page_size, legacy):
+    def page_runs(self, page, page_size, legacy, status_filter=None):
         # Summaries are selected by SQLite before any snapshot/media decoration.
-        fields=['id','name','status','stage','message','progress','created_at','updated_at','error_kind','duration','download_url','has_remote','legacy']
+        fields=['id','name','status','stage','message','progress','created_at','updated_at','error_kind','duration','model','source_clip','download_url','has_remote','legacy','generate_audio','protocol']
         with self.connection() as db:
             db.execute('CREATE TEMP TABLE legacy_page (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
             db.executemany('INSERT INTO legacy_page VALUES (?,?)',[(x['id'],json.dumps({k:x.get(k) for k in fields})) for x in legacy])
             legacy_sql=','.join("json_extract(l.data,'$."+k+"') AS "+k for k in fields)
             sql="""WITH combined AS (
-                SELECT id,json_extract(snapshot,'$.name') AS name,status,stage,message,progress,created_at,updated_at,error_kind,
-                json_extract(snapshot,'$.model.duration') AS duration,NULL AS download_url,
-                (provider_task_id IS NOT NULL OR result_url IS NOT NULL) AS has_remote,0 AS legacy
+                SELECT id,json_extract(snapshot,'$.name') AS name,status,stage,message,progress,created_at,updated_at,
+                CASE WHEN instr(COALESCE(error,''),'OutputAudioSensitiveContentDetected.PolicyViolation')>0 THEN 'audio_copyright' ELSE error_kind END AS error_kind,
+                json_extract(snapshot,'$.model.duration') AS duration,json_extract(snapshot,'$.model.model') AS model,json_extract(snapshot,'$.source_clip') AS source_clip,NULL AS download_url,
+                (provider_task_id IS NOT NULL OR result_url IS NOT NULL) AS has_remote,0 AS legacy,
+                COALESCE(json_extract(snapshot,'$.model.generate_audio'),json_extract(private,'$.generation.generate_audio'),1) AS generate_audio,
+                COALESCE(json_extract(private,'$.generation.protocol'),'ark') AS protocol
                 FROM production_runs
                 UNION ALL SELECT """+legacy_sql+""" FROM legacy_page l
             ), visible AS (SELECT c.*,COALESCE(n.name,c.name) AS display_name FROM combined c
                 LEFT JOIN production_run_names n ON c.id=n.id
                 WHERE c.id NOT IN (SELECT id FROM production_deleted_runs)) """
-            count=db.execute(sql+"SELECT count(*) AS total,COALESCE(sum(status IN ('running','queued')),0) AS active FROM visible").fetchone()
+            where = ' WHERE status=?' if status_filter else ''
+            parameters = (status_filter,) if status_filter else ()
+            count=db.execute(sql+"SELECT count(*) AS total,COALESCE(sum(status IN ('running','queued')),0) AS active FROM visible"+where, parameters).fetchone()
             pages=max(1,(count['total']+page_size-1)//page_size);page=min(page,pages)
-            rows=db.execute(sql+'SELECT * FROM visible ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?',(page_size,(page-1)*page_size)).fetchall()
+            rows=db.execute(sql+'SELECT * FROM visible'+where+' ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?',parameters+(page_size,(page-1)*page_size)).fetchall()
         result=[]
         timings = self.run_timings(row['id'] for row in rows)
         for row in rows:
             item=dict(row);item['name']=item.pop('display_name');item['legacy']=bool(item['legacy']);remote=item.pop('has_remote')
+            item['generate_audio'] = bool(item['generate_audio'])
+            decorate_audio_failure(item, enabled=item['generate_audio'], supported=not item['legacy'] and capabilities(item.get('model') or '', item.pop('protocol') or 'ark')['audio_control'])
+            item['source_clip'] = json.loads(item['source_clip']) if item.get('source_clip') else None
+            if item['name']:
+                import re
+                item['name']=re.sub(r'\s*(?:[（(]副本[）)]|副本)$','',item['name']).rstrip()
             item['can_resume']=not item['legacy'] and item['status']=='needs_attention' and bool(remote)
             item['can_cancel']=not item['legacy'] and item['status']=='queued' and not remote
             item['can_delete']=item['status']!='running' and (item['status']!='queued' or (not item['legacy'] and not remote))

@@ -7,10 +7,14 @@
   let activeFilter = {user_id:'', status:''};
   let taskTimer = null;
   let taskAccountId = null;
+  let auditItems = [];
+  let auditPage = 1, auditVersion = 0, auditPages = 1;
+  const pageSize = 10;
+  const reads = new Set();
   function stopTaskTimer() { clearTimeout(taskTimer); taskTimer = null; }
   function canRefreshTasks() {
     const account = window.currentAccount;
-    return !document.hidden && taskAccountId !== null && account?.id === taskAccountId && (account.is_admin || account.role === 'admin');
+    return !document.hidden && window.adminEmbedVisible !== false && taskAccountId !== null && account?.id === taskAccountId && (account.is_admin || account.role === 'admin');
   }
   const statusLabels = {queued:'排队中', running:'生成中', succeeded:'已完成', failed:'失败', needs_attention:'需要处理', cancelled:'已取消'};
   function element(tag, value, className) {
@@ -29,10 +33,18 @@
   }
   async function request(path, method = 'GET', payload) {
     const options = {method, cache:'no-store'};
+    const controller = method === 'GET' ? new AbortController() : null;
+    let timer;
+    if (controller) { reads.add(controller); options.signal = controller.signal; timer = setTimeout(() => controller.abort(), 8000); }
     if (payload !== undefined) { options.headers = {'Content-Type':'application/json'}; options.body = JSON.stringify(payload); }
+    try {
     const response = await fetch(path, options);
     try { return await window.accountUI.readJSON(response); }
     catch (error) { error.status = response.status; throw error; }
+    } catch (error) {
+      if (error.name === 'AbortError') throw new Error('读取超时，请检查网络后重试。');
+      throw error;
+    } finally { clearTimeout(timer); if (controller) reads.delete(controller); }
   }
   function quota(value, name, username) {
     const input = document.createElement('input');
@@ -92,10 +104,15 @@
       });
       body.append(row);
     }
-    const select = $('task-user'); const previous = select.value;
-    select.replaceChildren(new Option('全部用户', ''));
-    users.forEach(user => select.add(new Option(user.username, user.id)));
-    if (users.some(user => String(user.id) === previous)) select.value = previous;
+    for (const id of ['task-user', 'audit-user']) {
+      const select = $(id); const previous = select.value;
+      select.replaceChildren(new Option('全部用户', ''));
+      users.forEach(user => select.add(new Option(user.username, user.id)));
+      if (users.some(user => String(user.id) === previous)) select.value = previous;
+    }
+    window.adminUsers = users;
+    window.dispatchEvent(new CustomEvent('admin-users-loaded', {detail:{users}}));
+    renderAudit();
   }
   async function loadUsers() {
     $('users-refresh').disabled = true;
@@ -144,18 +161,18 @@
       submit.disabled = true;
       $('tasks-previous').disabled = true; $('tasks-next').disabled = true;
       $('tasks-duration-note').hidden = true;
-      empty($('admin-tasks-list'), 7, '正在读取任务…');
+      empty($('admin-tasks-list'), 6, '正在读取任务…');
       document.querySelectorAll('[data-stat]').forEach(node => { node.textContent = '—'; });
     }
     message('tasks-status', '');
     try {
-      const query = new URLSearchParams({...activeFilter, page:String(taskPage), page_size:'50'});
+      const query = new URLSearchParams({...activeFilter, page:String(taskPage), page_size:String(pageSize)});
       const data = await request(`/api/admin/tasks?${query}`);
       if (version !== taskVersion) return;
       const body = $('admin-tasks-list'); body.replaceChildren();
       const items = data.items || [];
       needsRefresh = items.some(task => task.status === 'queued' || task.status === 'running');
-      if (!items.length) empty(body, 7, '没有符合条件的任务。');
+      if (!items.length) empty(body, 6, '没有符合条件的任务。');
       for (const task of items) {
         const row = element('tr');
         cell(row, task.name || task.snapshot?.name || '未命名任务');
@@ -165,7 +182,7 @@
         const duration = task.generated_seconds ?? task.duration ?? task.snapshot?.model?.duration;
         cell(row, Number(duration) > 0 ? `${number(duration)} 秒` : '—');
         cell(row, taskTiming(task.timing));
-        cell(row, task.model || task.snapshot?.model?.model || '—'); body.append(row);
+        body.append(row);
       }
       document.querySelectorAll('[data-stat]').forEach(node => {
         const key = node.dataset.stat; node.textContent = key === 'storage_bytes' ? bytes(data.stats?.[key]) : number(data.stats?.[key]);
@@ -174,8 +191,9 @@
       $('tasks-duration-note').textContent = `${number(unknown)} 条已完成任务的实际时长暂未统计。`;
       $('tasks-duration-note').hidden = unknown === 0;
       const total = Number(data.total ?? items.length);
-      const pages = Math.max(1, Math.ceil(total / Number(data.page_size || 50)));
-      $('tasks-pagination').hidden = pages <= 1;
+      const pages = Math.max(1, Math.ceil(total / Number(data.page_size || pageSize)));
+      if (data.pages) taskPage = data.page;
+      $('tasks-pagination').hidden = false;
       $('tasks-page').textContent = `第 ${taskPage} / ${pages} 页 · 共 ${total} 条`;
       $('tasks-previous').disabled = taskPage <= 1; $('tasks-next').disabled = taskPage >= pages;
     } catch (error) {
@@ -184,7 +202,7 @@
         taskAccountId = null; stopTaskTimer();
       }
       if (version !== taskVersion) return;
-      empty($('admin-tasks-list'), 7, '任务未能加载，请重试。'); message('tasks-status', error.message);
+      empty($('admin-tasks-list'), 6, '任务未能加载，请重试。'); message('tasks-status', error.message);
       document.querySelectorAll('[data-stat]').forEach(node => { node.textContent = '—'; });
       $('tasks-duration-note').hidden = true;
       $('tasks-pagination').hidden = true;
@@ -198,21 +216,50 @@
     }
   }
   async function loadAudit() {
+    const version = ++auditVersion;
     $('audit-refresh').disabled = true; message('audit-status', '');
+    $('audit-previous').disabled = true; $('audit-next').disabled = true;
     try {
-      const data = await request('/api/admin/audit'); const body = $('audit-list'); body.replaceChildren();
-      if (!data.items?.length) empty(body, 4, '暂无操作记录。');
-      for (const item of data.items || []) {
+      const query = new URLSearchParams({page:String(auditPage), page_size:String(pageSize), scope:$('audit-scope').value, user_id:$('audit-user').value});
+      const data = await request('/api/admin/audit?' + query);
+      if (version !== auditVersion) return;
+      auditItems = data.items || []; renderAudit();
+      const total = Number(data.total ?? auditItems.length);
+      auditPages = Math.max(1, Math.ceil(total / Number(data.page_size || pageSize)));
+      auditPage = Number(data.page || auditPage);
+      $('audit-page').textContent = `第 ${auditPage} / ${auditPages} 页 · 共 ${total} 条`;
+      $('audit-previous').disabled = auditPage <= 1; $('audit-next').disabled = auditPage >= auditPages;
+    } catch (error) {
+      if (version !== auditVersion) return;
+      auditItems = []; message('audit-status', error.message); empty($('audit-list'), 4, '审计记录未能加载，请重试。');
+      $('audit-page').textContent = '加载失败，请刷新重试';
+    } finally { if (version === auditVersion) $('audit-refresh').disabled = false; }
+  }
+  function auditAction(action) {
+    const labels = {'user.init_admin':'初始化管理员', 'user.create':'创建账号', 'user.update':'修改账号设置', 'user.reset_password':'重置密码', 'user.change_password':'修改密码', 'auth.login':'登录', 'auth.login_failed':'登录失败', 'auth.logout':'退出登录', 'portrait.access':'调整真人权限', view_user_tasks:'查看用户任务', view_user_task:'查看任务详情'};
+    if (labels[action]) return labels[action];
+    const [method, path = ''] = String(action || '').split(' ');
+    if (path.includes('settings') || path === '/api/model-catalog' || path === '/api/portrait/config') return method === 'GET' ? '查看配置' : '修改配置';
+    if (path.startsWith('/api/prompt-templates')) return method === 'DELETE' ? '删除提示词模板' : '修改提示词模板';
+    if (path.startsWith('/api/production/runs')) return method === 'DELETE' ? '删除任务' : path.endsWith('/cancel') ? '取消任务' : path.endsWith('/resume') ? '恢复任务' : path.endsWith('/retry') ? '重试任务' : method === 'POST' ? '提交任务' : '修改任务';
+    if (path.includes('/portrait/photos')) return method === 'DELETE' ? '移除人物素材' : '更新人物素材';
+    if (path.includes('/portrait/people')) return method === 'DELETE' ? '移除人物' : '更新人物';
+    if (path.includes('/drafts')) return '保存草稿';
+    if (path.includes('/assets')) return method === 'DELETE' ? '删除素材' : '上传素材';
+    if (path.includes('/admin/users')) return '账号管理';
+    return action || '其他操作';
+  }
+  function renderAudit() {
+      const body = $('audit-list'); body.replaceChildren();
+      if (!auditItems.length) empty(body, 4, '暂无操作记录。');
+      for (const item of auditItems) {
         const row = element('tr'); cell(row, date(item.created_at));
         cell(row, item.actor_username || item.username || (item.actor_id ? username(item.actor_id) : item.details?.username || '未登录用户'));
         const targetName = username(item.target_user_id || String(item.target || '').split(':')[0]);
-        const actionLabels = {'user.init_admin':'初始化管理员', 'user.create':'创建账号', 'user.update':'修改账号设置', 'user.reset_password':'重置密码', 'user.change_password':'修改密码', 'auth.login':'登录', 'auth.login_failed':'登录失败', 'auth.logout':'退出登录', view_user_tasks:'查看用户任务', view_user_task:'查看任务详情'};
-        cell(row, actionLabels[item.action] || item.action);
+        cell(row, auditAction(item.action));
         cell(row, item.target_username || (targetName !== '—' ? targetName : item.target === 'all' ? '全部用户' : item.target_type || '—'));
         body.append(row);
       }
-    } catch (error) { message('audit-status', error.message); empty($('audit-list'), 4, '审计记录未能加载，请重试。'); }
-    finally { $('audit-refresh').disabled = false; }
   }
   $('create-user-form').addEventListener('submit', async event => {
     event.preventDefault(); const form = event.currentTarget; const fields = $('create-user-fields');
@@ -226,25 +273,36 @@
     finally { fields.disabled = false; }
   });
   $('users-refresh').addEventListener('click', () => { message('users-status', ''); void loadUsers(); });
-  $('audit-refresh').addEventListener('click', () => { void loadAudit(); });
+  $('audit-refresh').addEventListener('click', () => { auditPage = 1; void loadAudit(); });
+  $('audit-scope').addEventListener('change', () => { auditPage = 1; void loadAudit(); });
+  $('audit-user').addEventListener('change', () => { auditPage = 1; void loadAudit(); });
+  $('audit-previous').addEventListener('click', () => { if (auditPage > 1) { auditPage--; void loadAudit(); } });
+  $('audit-next').addEventListener('click', () => { if (auditPage < auditPages) { auditPage++; void loadAudit(); } });
   $('task-filter').addEventListener('submit', event => {
     event.preventDefault(); taskPage = 1;
     activeFilter = {user_id:$('task-user').value, status:$('task-status').value};
     void loadTasks();
   });
+  for (const id of ['task-user', 'task-status']) {
+    $(id).addEventListener('change', () => $('task-filter').requestSubmit());
+  }
   $('tasks-previous').addEventListener('click', () => { if (taskPage > 1) { taskPage--; void loadTasks(); } });
   $('tasks-next').addEventListener('click', () => { taskPage++; void loadTasks(); });
   document.addEventListener('visibilitychange', () => {
     stopTaskTimer();
     if (canRefreshTasks()) void loadTasks(true);
   });
-  window.addEventListener('pagehide', () => { taskAccountId = null; stopTaskTimer(); });
+  window.addEventListener('admin-embed-visibility', () => {
+    stopTaskTimer();
+    if (canRefreshTasks()) void loadTasks(true);
+  });
+  window.addEventListener('pagehide', () => { taskAccountId = null; stopTaskTimer(); reads.forEach(controller => controller.abort()); reads.clear(); });
   window.accountReady.then(async account => {
     if (!account.auth_enabled || !(account.user?.is_admin || account.user?.role === 'admin')) {
       message('users-access-error', '此页面仅供已登录的管理员使用。'); return;
     }
     $('users-workspace').hidden = false;
-    await loadUsers(); taskAccountId = account.user.id;
-    await Promise.all([loadTasks(), loadAudit()]);
+    taskAccountId = account.user.id;
+    await Promise.all([loadUsers(), loadTasks(), loadAudit()]);
   }).catch(error => { message('users-access-error', error.message); });
 })();

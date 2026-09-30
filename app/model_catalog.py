@@ -17,16 +17,20 @@ MODELS = {
     'doubao-seedance-2-0-fast-260128': 'Seedance 2.0 Fast',
     'doubao-seedance-2-0-mini-260615': 'Seedance 2.0 Mini',
 }
-TASK_FIELDS = {'model', 'duration', 'resolution'}
+TASK_FIELDS = {'model', 'duration', 'resolution', 'ratio', 'generate_audio'}
 LEGACY_FIELDS = {'provider', 'protocol', 'mode', 'base_url', 'fps', 'public_base_url'}
 
 
 def capabilities(model: str, protocol: str = 'ark') -> dict:
+    from .video_framing import RATIOS
     editing = protocol == 'ark' and model == SD25
     fast = protocol != 'adapter' and ('seedance-2-fast' in model or 'seedance-2-mini' in model
                                      or 'seedance-2-0-fast' in model or 'seedance-2-0-mini' in model)
     return {'resolutions': ['480p', '720p'] if fast else ['480p', '720p', '1080p'] if editing else ['480p', '720p', '1080p', '4k'],
+            'audio_control': protocol == 'ark' and model.startswith(('doubao-seedance-2-', 'doubao-seedance-2.', 'doubao-seedance-1-5-pro')),
             'max_duration': 30 if editing else 15, 'follow_source': editing,
+            'auto_duration': protocol == 'ark' and model in MODELS,
+            'ratios': list(RATIOS) if protocol == 'ark' and model in MODELS else ['adaptive'],
             'max_images': None if protocol == 'adapter' else 30 if editing else 9,
             'max_video_seconds': 30 if editing else 15,
             'person_video': protocol == 'ark' and (model in MODELS or model.startswith(('doubao-seedance-2-0', 'doubao-seedance-2.0')))}
@@ -123,6 +127,7 @@ def editor_options(settings) -> dict:
     defaults = task_values(config)
     if items and defaults['model'] not in {row['id'] for row in items}:
         defaults = task_values(replace(config, model=items[0]['id'], duration=8, resolution='720p'))
+    defaults['generate_audio'] = not capabilities(defaults['model'], config.protocol)['audio_control']
     return {'items': items, 'defaults': defaults, 'status': config.public()['status']}
 
 
@@ -130,7 +135,7 @@ def resolve_task_config(settings, payload: dict, *, require_enabled: bool = Fals
     from .generation_settings import load_config, resolve_config
     current = load_config(settings)
     if not isinstance(payload, dict) or set(payload) - TASK_FIELDS - LEGACY_FIELDS:
-        raise ValueError('任务只接受模型、时长和清晰度设置。')
+        raise ValueError('任务只接受模型、时长、清晰度、画面比例和声音设置。')
     for name in LEGACY_FIELDS & payload.keys():
         if payload[name] != getattr(current, name):
             raise ValueError('任务中的旧连接配置与后台不一致，请重新选择模型；连接配置请在后台修改。')
@@ -144,7 +149,7 @@ def resolve_task_config(settings, payload: dict, *, require_enabled: bool = Fals
     limits = capabilities(model, current.protocol)
     if 'duration' in values:
         duration = values['duration']
-        if type(duration) is not int or not (4 <= duration <= limits['max_duration'] or (limits['follow_source'] and duration == -1)):
+        if type(duration) is not int or not (4 <= duration <= limits['max_duration'] or (limits['auto_duration'] and duration == -1)):
             raise ValueError(f"当前模型时长应为 4–{limits['max_duration']} 秒，视频编辑可跟随原视频。")
     if limits['follow_source']:
         values['duration'] = -1

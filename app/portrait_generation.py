@@ -20,6 +20,28 @@ OFFICIAL_BASE='https://ark.cn-beijing.volces.com/api/v3'
 
 
 def prepare(settings, store, draft, generation):
+    from .shared_portraits import SharedPortraitCatalog, authorize_asset
+    sources={ident:authorize_asset(settings,ident) for ident in person_ids(draft)}
+    if draft.get('person_id'):
+        catalog=SharedPortraitCatalog(settings)
+        catalog.person(draft['person_id'])
+        # Selected shared material uses the existing official binding. Never
+        # enqueue it as a new upload into the recipient's private library.
+        if sources and all(value and value[1]['status']=='active' for value in sources.values()):
+            if generation.protocol!='ark' or generation.base_url.rstrip('/')!=OFFICIAL_BASE:
+                raise ValueError('官方人物素材仅支持火山官方模型接口。')
+            bindings={}
+            for ident,(source,photo) in sources.items():
+                if photo['person_id']!=draft['person_id']: raise ValueError('素材与所选人物不匹配。')
+                if photo['status']!='active' or not photo['remote_id']: raise ValueError('人物素材尚未通过官方检查。')
+                person=source.person(photo['person_id'],private=True)
+                bindings[ident]={'remote_asset_id':photo['remote_id'],'group_id':person['group_id'],
+                    'project':source.config.project_name,'person_type':person['person_type']}
+            snapshot={'config':asdict(catalog.local.config),'bindings':bindings,'access_user_id':getattr(settings,'user_id','')}
+            verify(snapshot,store,settings=settings)
+            return snapshot
+        # Adding new material to a shared real person is admin-only.
+        catalog.require_manage(draft['person_id'])
     if draft.get('person_id'):
         from .portrait_library import PortraitLibrary
         lib=PortraitLibrary(settings)
@@ -58,6 +80,11 @@ def verify(snapshot, store, *, wait_deadline=None, settings=None):
     current=portrait_service.load_config(settings)
     if portrait_service.fingerprint(config)!=portrait_service.fingerprint(current):
         raise ValueError('人物素材账号或项目已变更，请重新选择人物和照片。')
+    from .shared_portraits import authorize_asset, SharedPortraitCatalog
+    for ident in set(snapshot.get('bindings',{})) | set(snapshot.get('uploads',{})):
+        authorize_asset(settings,ident)
+    if snapshot.get('person_id'):
+        SharedPortraitCatalog(settings).person(snapshot['person_id'])
     def client(person_type='LivenessFace', asset_type='Image'):
         if asset_type=='Video':return portrait_service.ArkPortraitClient(config,person_type=person_type,asset_type=asset_type)
         return (portrait_service.ArkPortraitClient(config) if person_type=='LivenessFace'
@@ -103,6 +130,8 @@ def verify(snapshot, store, *, wait_deadline=None, settings=None):
             image_uris[str(path)]='asset://'+photo['remote_id']
     for ident,binding in snapshot['bindings'].items():
         asset=store.get_asset(ident,private=True)
+        from .portrait_library import validate_photo
+        validate_photo(settings,asset,require_upload_dimensions=False)
         remote=client(binding.get('person_type','LivenessFace'),'Video' if asset['kind']=='person_video' else 'Image').get_asset(binding['remote_asset_id'])
         if any(remote[k]!=binding[k] for k in ('remote_asset_id','group_id','project')):
             raise ValueError('真人素材授权信息发生变化，请重新同步。')

@@ -60,6 +60,10 @@
     if (invalidated) throw authError('账号状态已变化，请重新登录。');
     const method = String(init?.method || request?.method || 'GET').toUpperCase();
     let options = init;
+    // Redirected media reads use the existing host-only session cookie on the
+    // dedicated HTTPS port. Ordinary API credentials keep their caller policy.
+    const mediaRead = /^\/api\/(?:production\/assets\/[a-f0-9]{32}\/file|production\/runs\/(?:legacy-)?[a-f0-9]{32}\/(?:download|defaced|playback\/(?:original|smooth))|previews\/[a-f0-9]{32}\/file|portrait\/photos\/[a-f0-9]{32}\/file)$/.test(url.pathname);
+    if (mediaRead && ['GET','HEAD'].includes(method)) options = {...init, credentials:'include'};
     if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && account.auth_enabled && account.csrf_token) {
       const headers = new Headers(init?.headers === undefined ? request?.headers : init.headers);
       headers.set('X-CSRF-Token', account.csrf_token);
@@ -76,7 +80,10 @@
   };
 
   window.accountReady = (async () => {
-    const response = await originalFetch('/api/auth/me', {cache:'no-store', credentials:'same-origin'});
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+    const response = await originalFetch('/api/auth/me', {cache:'no-store', credentials:'same-origin', signal:controller.signal});
     if (response.status === 401 && loginPage) {
       identity = {auth_enabled:true, user:null, csrf_token:''};
     } else {
@@ -90,6 +97,11 @@
       throw authError('请先登录工作台。');
     }
     return identity;
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error('网络较慢，暂时无法确认登录状态，请点击重试。');
+      if (error instanceof TypeError) throw new Error('无法连接工作台，请检查网络后重试。');
+      throw error;
+    } finally { clearTimeout(timeout); }
   })();
   // Handle bootstrap rejection even on pages whose application scripts do not await it.
   window.accountReady.catch(() => {});
@@ -124,10 +136,21 @@
   // A restored back/forward-cache page must not retain the previous account's UI.
   window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });
 
-  function showError(message) {
+  function showError(message, retry = false) {
+    if (!document.querySelector('[data-account-error]')) {
+      const node = document.createElement('p');
+      node.dataset.accountError = ''; node.className = 'account-banner'; node.setAttribute('role','alert');
+      document.body.prepend(node);
+    }
     document.querySelectorAll('[data-account-error]').forEach(node => {
       node.textContent = message;
       node.hidden = false;
+      if (retry) {
+        const button = document.createElement('button');
+        button.type = 'button'; button.dataset.accountRetry = ''; button.textContent = '重试连接';
+        button.addEventListener('click', () => window.location.reload());
+        node.append(document.createTextNode(' '), button);
+      }
     });
   }
   async function mount() {
@@ -154,7 +177,7 @@
           } catch (error) { showError(error.message); button.disabled = false; }
         });
       });
-    } catch (error) { if (!invalidated) showError(error.message); }
+    } catch (error) { if (!invalidated) showError(error.message, true); }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, {once:true});
   else mount();

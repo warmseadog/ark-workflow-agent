@@ -15,6 +15,8 @@ from .reference_media import publish_video
 from .media import BlurOptions, run_deface
 from .hairstyle_mask import process_hairstyle
 from .video_provider import VideoProvider, ProviderError
+from .source_clip import clip_video, fingerprint as clip_fingerprint
+from .video_framing import reframe_video
 from .reference_roles import ACCESSORY_LABELS, snapshot_content_roles
 
 _preprocess_lock = threading.Lock()
@@ -29,6 +31,29 @@ def mask_options(values):
     for key in ('detection_size',):
         if values.get(key) == '': values[key] = None
     return BlurOptions(**values)
+
+
+def authorize_run_inputs(settings, store, snapshot):
+    """Check only inputs sent by this snapshot, and identify the rejected material."""
+    from .person_video import person_ids
+    from .shared_portraits import authorize_asset
+    inputs = [('动作参考视频', [snapshot['source_asset_id']]),
+              ('人物参考素材', person_ids(snapshot)),
+              ('服装参考图', snapshot.get('clothing_asset_ids', []))]
+    for kind, label in {'hairstyle':'发型', 'scene':'场景', **ACCESSORY_LABELS}.items():
+        if snapshot.get(kind+'_enabled', False):
+            inputs.append((label+'参考图', snapshot.get(kind+'_asset_ids', [])))
+    checked = set()
+    for label, identifiers in inputs:
+        for asset_id in identifiers:
+            if asset_id in checked: continue
+            checked.add(asset_id)
+            name = '未找到的素材'
+            try:
+                name = store.get_asset(asset_id)['name']
+                authorize_asset(settings, asset_id)
+            except (LookupError, ValueError, PermissionError) as error:
+                raise ValueError(f'{label}「{name}」不可用：{error} 请更换或移除该素材；可选参考也可以关闭后重新提交。') from None
 
 
 def execute_run(settings, store, run):
@@ -49,6 +74,7 @@ def execute_run(settings, store, run):
         image_asset_uris = {}
         extra_references = {'reference_roles':snapshot_content_roles(snapshot)} if provider_id or result_url else {}
         if not provider_id and not result_url:
+            authorize_run_inputs(settings, store, snapshot)
             if private.get('portrait') or private.get('person_preparation'):
                 from .portrait_generation import verify, PortraitPending
                 store.update_run(ident,stage='authorizing',message='正在核实人物素材',progress=2)
@@ -66,10 +92,18 @@ def execute_run(settings, store, run):
             source = store.get_asset(snapshot['source_asset_id'], private=True)
             from .person_video import is_video, validate_pair
             from .model_catalog import capabilities
+            source_path = Path(source['path'])
+            if snapshot.get('source_clip'):
+                if not capabilities(config.model,config.protocol)['follow_source']:
+                    raise ValueError('当前模型不支持指定视频片段。')
+                clip_message = '正在放慢动作视频以匹配时长' if snapshot['source_clip'].get('retime') == 'slow' else '正在截取动作视频片段'
+                store.update_run(ident,stage='preprocess',message=clip_message,progress=3)
+                with _preprocess_lock:
+                    source_path = clip_video(source_path,work/'source-clip.mp4',snapshot['source_clip'],max_seconds=capabilities(config.model,config.protocol)['max_video_seconds'])
             faces = [] if is_video(snapshot) else [Path(store.get_asset(x, private=True)['path']) for x in snapshot['face_asset_ids']]
             if is_video(snapshot):
                 person_path=Path(store.get_asset(snapshot['person_video_asset_id'],private=True)['path'])
-                validate_pair(Path(source['path']),person_path,max_seconds=capabilities(config.model,config.protocol)['max_video_seconds'])
+                validate_pair(source_path,person_path,max_seconds=capabilities(config.model,config.protocol)['max_video_seconds'])
                 person_uri=image_asset_uris.pop(str(person_path),None)
                 if not person_uri:raise ValueError('人物视频尚未通过官方检查，请重新选择。')
                 extra_references.update(person_video=person_path,person_video_uri=person_uri)
@@ -87,7 +121,7 @@ def execute_run(settings, store, run):
             if snapshot.get('scene_enabled',False):
                 extra_references['scene_description'] = snapshot.get('scene_description','')
             options = mask_options(snapshot['mask'])
-            key = hashlib.sha256((source['sha256'] + json.dumps(options.model_dump(mode='json'), sort_keys=True) + settings.deface_bin + ':v1').encode()).hexdigest()
+            key = hashlib.sha256((source['sha256'] + json.dumps(options.model_dump(mode='json'), sort_keys=True) + settings.deface_bin + ':v1' + clip_fingerprint(snapshot.get('source_clip'))).encode()).hexdigest()
             cache = settings.storage_dir / 'cache' / 'redacted' / (key + '.mp4')
             store.update_run(ident, stage='preprocess', message='等待本地视频预处理', progress=5)
             with _preprocess_lock:
@@ -97,18 +131,26 @@ def execute_run(settings, store, run):
                     else:
                         store.update_run(ident, message='正在处理视频打码', progress=15)
                         temporary = work / 'defaced.tmp.mp4'
-                        run_deface(Path(source['path']), temporary, settings, options)
+                        run_deface(source_path, temporary, settings, options)
                         temporary.replace(defaced)
                         cache.parent.mkdir(parents=True, exist_ok=True)
                         cache_tmp = cache.with_suffix('.tmp.mp4')
                         shutil.copyfile(defaced, cache_tmp)
                         cache_tmp.replace(cache)
+                if capabilities(config.model, config.protocol)['follow_source'] and config.ratio != 'adaptive':
+                    store.update_run(ident, message='正在调整参考视频画面比例', progress=45)
+                    framed = reframe_video(defaced, work/'framed.mp4', config.ratio)
+                    if framed != defaced:
+                        framed.replace(defaced)
             if config.mode == 'http' and config.protocol == 'ark':
                 store.update_run(ident, stage='upload', message='正在上传打码视频', progress=55)
                 if storage.enabled:
                     video_url = upload_redacted_video(defaced, settings, storage)
                 else:
                     video_url = publish_video(defaced, settings.storage_dir, config.public_base_url)
+            # Check after preprocessing/upload and immediately before a NEW
+            # provider submission. Existing task polling keeps its frozen data.
+            authorize_run_inputs(settings, store, snapshot)
             store.update_run(ident, stage='submitting', message='正在提交模型任务', progress=65)
         def progress(message, percent):
             store.update_run(ident, message=message, progress=percent)
@@ -144,6 +186,10 @@ class QueueManager:
     def __init__(self, settings):
         from .tenancy import root_settings
         self.settings = root_settings(settings)
+        try:
+            self.worker_count = max(1, min(32, int(os.getenv('APP_VIDEO_WORKERS', '10'))))
+        except ValueError:
+            self.worker_count = 10
         # Keep the legacy root store available to existing callers.
         self.store = ProductionStore(self.settings.storage_dir)
         self.stop = threading.Event()
@@ -198,11 +244,11 @@ class QueueManager:
     def next_job(self):
         """Claim (tenant_settings, store, run), or None; pair with release().
 
-        Selection, durable claim and slot reservation are serialized across both
+        Selection, durable claim and slot reservation are serialized across all
         video workers. The cursor advances only on a successful video claim.
         """
         with self._dispatch_lock:
-            if sum(self._active.values()) >= 2:
+            if sum(self._active.values()) >= self.worker_count:
                 return None
             for key, user, settings, store in self._rotated(self._ready_tenants(), 'video'):
                 try:
@@ -270,7 +316,7 @@ class QueueManager:
         playback_thread.start();self.threads.append(playback_thread)
         thread = threading.Thread(target=self.portrait_loop, daemon=True, name="portrait-worker")
         thread.start(); self.threads.append(thread)
-        for _ in range(2):
+        for _ in range(self.worker_count):
             thread = threading.Thread(target=self.loop, daemon=True, name='production-worker')
             thread.start(); self.threads.append(thread)
         return True

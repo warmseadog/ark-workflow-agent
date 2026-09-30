@@ -4,14 +4,23 @@
       <legend class="sr-only">本次视频生成设置</legend>
       <label class="generation-model-field">视频模型<select name="model" required aria-describedby="generation-model-note"></select></label>
       <label>清晰度<select name="resolution" required></select></label>
+      <label>画面比例<select name="ratio" required aria-describedby="generation-ratio-note"></select></label>
       <div class="generation-duration-control">
-        <label id="generation-duration-field">秒数<input name="duration" type="number" min="4" max="15" step="1" required></label>
-        <div id="generation-follow-source" hidden><span>秒数</span><output id="generation-duration-note">跟随动作视频</output></div>
+        <label for="generation-duration-slider" class="generation-duration-heading"><span>时长（秒）</span><output id="generation-duration-note">待选择视频</output></label>
+        <input id="generation-duration-slider" type="range" min="0" max="29" step="1" value="0" list="generation-duration-ticks" aria-describedby="generation-duration-help generation-source-duration">
+        <datalist id="generation-duration-ticks"></datalist>
+        <span id="generation-source-duration">读取参考视频后默认使用原片时长</span>
       </div>
+      <p id="generation-duration-help" class="generation-duration-help sr-only" aria-live="polite"></p>
     </fieldset>
+    <div class="generation-submit-row">
+      <label class="generation-audio-field"><input name="generate_audio" type="checkbox" aria-label="生成声音" aria-describedby="generation-audio-note"><span>生成声音</span><output id="generation-audio-state">关闭</output></label>
+      <button class="primary" type="submit" id="studio-generate-submit" disabled>生成视频 →</button>
+    </div>
+    <small id="generation-audio-note" class="sr-only">关闭后生成无声视频，可在后期添加配音或音乐。</small>
   </div>
   <p id="generation-model-note" class="sr-only"></p>
-  <span id="generation-ratio-note" class="sr-only">跟随动作视频</span>
+  <span id="generation-ratio-note" class="generation-ratio-help">跟随动作视频</span>
   <p id="model-settings-status" class="generation-options-note" role="status" aria-live="polite" hidden></p>
   <p id="model-settings-error" role="alert" hidden></p>
 </div>

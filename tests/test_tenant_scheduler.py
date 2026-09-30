@@ -24,6 +24,7 @@ class TenantSettings(Settings):
 
 @pytest.fixture
 def tenants(tmp_path, monkeypatch):
+    monkeypatch.setenv('APP_VIDEO_WORKERS', '2')  # Exercise fairness under a constrained global pool.
     # The account implementation is developed separately. Keep this contract
     # test runnable both before and after that module lands.
     try:

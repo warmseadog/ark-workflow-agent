@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import base64
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
+import logging
 import mimetypes
 from pathlib import Path
 import re
 import shutil
 import time
+import threading
 from typing import Callable
 from urllib.parse import quote, urlsplit
 
@@ -15,6 +17,27 @@ import requests
 
 from .generation_settings import GenerationConfig
 from .reference_roles import ACCESSORY_LABELS, ACCESSORY_RULES
+from .audio_policy import AUDIO_COPYRIGHT_CODE
+
+
+# The service runs one process with multiple production workers. Serialize only
+# upload requests, not provider generation/polling or result downloads.
+_upload_lock = threading.Lock()
+_logger = logging.getLogger(__name__)
+
+
+def _transport_errors(error):
+    """Unwrap requests/urllib3 exceptions without logging their private text."""
+    pending, seen, errors = [error], set(), []
+    while pending:
+        current = pending.pop()
+        if not isinstance(current, BaseException) or id(current) in seen:
+            continue
+        seen.add(id(current))
+        errors.append(current)
+        pending.extend(current.args)
+        pending.extend([current.__cause__, current.__context__])
+    return errors
 
 
 class ProviderError(RuntimeError):
@@ -58,6 +81,8 @@ class VideoProvider:
                         retryable=False, submission_uncertain=False) -> ProviderError:
         safe_detail = self._safe(detail) if detail is not None else ''
         material = str(detail).lower() if detail is not None else ''
+        if AUDIO_COPYRIGHT_CODE.lower() in material:
+            return ProviderError(message + safe_detail, error_kind='audio_copyright', request_id=self._last_request_id)
         if 'real person' in material or 'real_person' in material:
             error_kind, retryable, submission_uncertain = 'material_rejected', False, False
             indices = list(dict.fromkeys(int(x) for x in re.findall(r'content\s*\[\s*(\d+)\s*\]', material)))
@@ -73,12 +98,32 @@ class VideoProvider:
         self._last_request_id = None
         submitting = method == 'POST' and path != '/uploads/videos'
         kind = 'query_unavailable' if method == 'GET' else ('submission_uncertain' if submitting else 'processing_failed')
+        timeout = (60, 120) if method == 'POST' else (15, 30)
+        started = None
         try:
-            response = requests.request(method, f'{self.config.base_url.rstrip("/")}{path}',
-                headers={'Authorization': f'Bearer {self.config.api_key}'},
-                timeout=(15, 120 if method == 'POST' else 30), allow_redirects=False, **kwargs)
+            with _upload_lock if method == 'POST' else nullcontext():
+                # requests uses the connection timeout while writing the body.
+                # The old 15 seconds was insufficient for inline reference images.
+                started = time.monotonic()
+                response = requests.request(method, f'{self.config.base_url.rstrip("/")}{path}',
+                    headers={'Authorization': f'Bearer {self.config.api_key}'},
+                    timeout=timeout, allow_redirects=False, **kwargs)
         except requests.RequestException as exc:
-            reason = '模型接口请求超时。' if isinstance(exc, requests.Timeout) else '无法连接模型接口，请检查地址、端口和网络。'
+            errors = _transport_errors(exc)
+            if any(isinstance(error, requests.ConnectTimeout) for error in errors):
+                phase, reason = 'connect', '连接模型接口超时，请稍后重试。'
+            elif any(isinstance(error, TimeoutError) and 'write' in str(error).lower() for error in errors):
+                phase, reason = 'write', '参考素材上传超时，请压缩参考图或稍后重试。'
+            elif any(isinstance(error, requests.ReadTimeout) for error in errors):
+                phase, reason = 'read', '等待模型接口响应超时。'
+            elif any(isinstance(error, (requests.Timeout, TimeoutError)) for error in errors):
+                phase, reason = 'timeout', '模型接口请求超时。'
+            else:
+                phase, reason = 'connection', '无法连接模型接口，请检查地址、端口和网络。'
+            # No exception text, URL, headers, prompt or body enters the log.
+            _logger.warning('provider_transport_error method=%s phase=%s elapsed_seconds=%.3f timeout=%s exception_types=%s',
+                            method, phase, time.monotonic() - started if started is not None else 0,
+                            timeout, ','.join(type(error).__name__ for error in errors))
             if submitting:
                 reason += '提交结果不确定，请先在服务商控制台核对，避免重复提交。'
             raise self._provider_error(reason, error_kind=kind, retryable=method == 'GET', submission_uncertain=submitting) from None
@@ -229,7 +274,8 @@ class VideoProvider:
                 content.append({'type':'video_url','video_url':{'url':person_video_uri},'role':'reference_video'})
             endpoint = '/contents/generations/tasks'
             submitted = self._request('POST', endpoint, json={'model': self.config.model, 'content': content,
-                'duration': -1 if limits['follow_source'] else self.config.duration, 'resolution': self.config.resolution, 'ratio': 'adaptive'})
+                'duration': -1 if limits['follow_source'] else self.config.duration, 'resolution': self.config.resolution, 'ratio': 'adaptive' if limits['follow_source'] else self.config.ratio,
+                **({'generate_audio': self.config.generate_audio} if limits['audio_control'] else {})})
         else:
             endpoint = '/tasks'
             with ExitStack() as stack:

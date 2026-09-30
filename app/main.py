@@ -67,12 +67,16 @@ from .production_router import get_router as get_production_router
 app.include_router(get_production_router(lambda: tenancy.current_settings(settings), _local_config_request))
 from .portrait_router import get_router as get_portrait_router
 app.include_router(get_portrait_router(lambda: tenancy.current_settings(settings), _local_config_request))
+from .portrait_router import get_admin_router as get_portrait_admin_router
+app.include_router(get_portrait_admin_router(lambda: tenancy.current_settings(settings), _local_config_request))
 from .portrait_sessions import routers as get_portrait_session_routers
 for portrait_session_router in get_portrait_session_routers(lambda: tenancy.current_settings(settings), _local_config_request):
     app.include_router(portrait_session_router)
 
 from .access_control import install as install_access_control
 install_access_control(app,lambda:settings)
+from .request_timing import install as install_request_timing
+install_request_timing(app)
 from .authentication import get_router as get_auth_router
 app.include_router(get_auth_router(lambda:settings,templates))
 from .user_admin import get_router as get_user_admin_router
@@ -352,6 +356,11 @@ async def studio(request: Request):
         name="production.html",
         context={"seedance_mode": settings.seedance_mode, "max_upload_mb": settings.max_upload_mb},
     )
+
+
+@app.get('/videos', response_class=HTMLResponse)
+async def videos(request: Request):
+    return templates.TemplateResponse(request=request, name='videos.html', context={})
 
 
 @app.get("/v1", response_class=HTMLResponse)

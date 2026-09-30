@@ -207,8 +207,14 @@ def get_router(settings_getter, templates) -> APIRouter:
         return {'user': accounts().reset_password(user_id, payload.password.get_secret_value(), actor['id'])}
 
     @router.get('/api/admin/audit')
-    def list_audit(request: Request, limit: int = Query(default=100, ge=1, le=1000)):
+    def list_audit(request: Request, limit: int | None = Query(default=None, ge=1, le=1000),
+                   page: int = Query(default=1, ge=1), page_size: int = Query(default=10, ge=1, le=200),
+                   scope: str = Query(default='important', pattern='^(important|all)$'), user_id: str = ''):
         current_user(request, admin=True)
-        return {'items': accounts().list_audit(limit)}
+        if user_id:
+            accounts().get_user(user_id)
+        if limit is not None and not user_id:  # Preserve unfiltered legacy callers.
+            return {'items': accounts().list_audit(limit)}
+        return accounts().audit_page(page, page_size, scope, user_id)
 
     return router

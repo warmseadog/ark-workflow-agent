@@ -39,3 +39,28 @@
 @media(max-width:540px){.virtual-library-dialog{padding:18px}.virtual-create{grid-template-columns:1fr}.virtual-person{padding:12px}.virtual-person-actions{gap:6px}.virtual-person-actions button{min-width:0;flex:1;padding:10px 6px!important}.virtual-person-actions [data-action=remove]{margin-left:0}.virtual-toolbar button{flex:1}}
 
 .virtual-library-dialog [data-import]{grid-template-columns:1fr}.virtual-library-dialog [data-import] button{justify-self:start}.virtual-library-dialog [data-close]{padding:6px 12px}#section-people details>summary{cursor:pointer;padding:12px 0}#section-people [data-config]{max-width:600px}#section-people [data-config] input[type=checkbox]{width:auto}
+
+.virtual-person[role=button]{cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.virtual-person[role=button]:hover{border-color:#927b65;box-shadow:0 2px 9px #493e2910}
+.virtual-person[role=button]:focus-visible{outline:2px solid #4c78dc;outline-offset:3px}
+.library-type-badge{display:inline-block;padding:3px 7px;border-radius:5px;background:#f0ece5;color:#655f56;font-size:11px;line-height:1.5;margin-top:6px}
+.library-detail-heading{display:flex;gap:14px;justify-content:space-between;align-items:center;margin:20px 0 14px}
+.library-detail-heading h3{margin:0;overflow-wrap:anywhere}.library-detail-heading>div:first-child{min-width:0}
+.library-detail-heading [data-detail-actions]{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
+.library-use-link{display:inline-block;text-decoration:none;padding:9px 12px;font-size:13px;border:1px solid var(--hair,#ded8cd);border-radius:6px;white-space:nowrap}
+.library-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:16px 0}
+.library-photo-card{min-width:0;display:flex;flex-direction:column;gap:9px;padding:12px;border:1px solid var(--hair,#ded8cd);border-radius:9px;background:#fffdf9}
+.library-photo-card>img,.library-photo-placeholder{width:100%;height:160px;object-fit:contain;background:#f0ece5;border-radius:6px;box-sizing:border-box}
+.library-photo-placeholder{display:grid;place-items:center;color:#756b61;font-size:13px}
+.library-photo-card>strong{overflow-wrap:anywhere;font-size:14px}.library-photo-state{font-size:12px;color:#6a5f4f;align-self:flex-start;padding:3px 7px;border-radius:5px;background:#f0ece5}
+.library-photo-state[data-state=active]{background:#eaf3ec;color:#286340}.library-photo-state[data-state=failed]{background:#fff0eb;color:#a8342a}
+.library-photo-state:is([data-state=queued],[data-state=processing],[data-state=uncertain],[data-state=uploading],[data-state=submitting]){background:#fff4df;color:#825c1f}
+.library-photo-message{margin:0!important;color:#756b61;font-size:12px;line-height:1.6;overflow-wrap:anywhere}.library-photo-message:empty{display:none}
+.library-photo-card .virtual-form-actions{margin-top:auto}.library-photo-card button{font-size:12px;padding:8px 10px}
+.library-photo-card [data-action=remove-photo],.library-detail-heading [data-action=remove-person]{color:#a8342a}
+.library-delete-confirmation{padding:15px;margin:16px 0;border:1px solid #d7aba2;border-radius:9px;background:#fff5f2;overflow-wrap:anywhere}
+.library-delete-confirmation p{line-height:1.7;margin:0 0 12px}.library-delete-confirmation [data-delete-error]{color:#a8342a}.library-delete-confirmation [data-delete-error]:empty{display:none}
+[data-detail-status]{font-size:13px;color:#655f56;line-height:1.7;overflow-wrap:anywhere}[data-detail-status][data-error=true]{color:#a8342a}[data-detail-status] button{margin-left:8px}
+.library-photo-preview{max-width:900px;width:calc(100vw - 32px);box-sizing:border-box;max-height:calc(100vh - 32px)}
+.library-photo-preview h2{overflow-wrap:anywhere;min-width:0}.library-photo-preview [data-preview-media]{display:flex;justify-content:center}.library-photo-preview :is(img,video){display:block;max-width:100%;max-height:70vh;object-fit:contain}
+@media(max-width:540px){.library-detail-heading{align-items:flex-start;flex-direction:column}.library-detail-heading [data-detail-actions]{justify-content:flex-start}.library-photo-grid{grid-template-columns:1fr}.library-photo-card>img,.library-photo-placeholder{height:180px}.library-photo-preview{padding:16px}.library-photo-card .virtual-form-actions button{flex:1}.library-delete-confirmation button{flex:1}}

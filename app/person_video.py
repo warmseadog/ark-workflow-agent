@@ -54,8 +54,9 @@ def validate_asset(settings, asset):
     return path
 
 
-def validate_pair(source, person, *, max_seconds=15):
-    total=validate_file(source,person=False,max_seconds=max_seconds)['duration']+validate_file(person,max_seconds=max_seconds)['duration']
+def validate_pair(source, person, *, max_seconds=15, source_clip=None):
+    from .source_clip import validate_source
+    total=validate_source(source,source_clip,max_seconds=max_seconds)['duration']+validate_file(person,max_seconds=max_seconds)['duration']
     if total>max_seconds:
         raise ValueError(f'动作视频和人物视频合计 {total:.1f} 秒，超过 {max_seconds} 秒；请缩短其中一段再提交。')
     return total

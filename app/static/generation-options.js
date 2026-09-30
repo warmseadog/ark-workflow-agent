@@ -1,85 +1,159 @@
 (() => {
-  const form = document.getElementById('model-settings-form');
-  const fieldset = document.getElementById('model-settings-fields');
-  const error = document.getElementById('model-settings-error');
-  const status = document.getElementById('model-settings-status');
+  const byId = id => document.getElementById(id);
+  const form = byId('model-settings-form'), fieldset = byId('model-settings-fields');
   const control = name => form.querySelector(`[name="${name}"]`);
-  let items = [], applied = null, loaded = false, locked = true;
+  const slider = byId('generation-duration-slider');
   const fallback = {resolutions:['720p'], max_images:9, max_video_seconds:15, max_duration:15};
+  let items = [], applied = null, loaded = false, locked = true;
+  let selected = null, ticks = [], sourceKey = null, restoringSelection = false;
   const find = id => items.find(item => item.id === id);
-  function showError(message) { error.textContent = message; error.hidden = !message; }
+  const limits = () => find(control('model').value) || fallback;
+  const sourceInfo = () => window.productionSource?.() || {};
+  const rawSeconds = () => Number.isFinite(sourceInfo().duration) && sourceInfo().duration > 0 ? sourceInfo().duration : null;
+  const seconds = () => selected ?? rawSeconds();
+  const display = value => Number(value.toFixed(1)).toString();
+  function sourceClip() {
+    if (!limits().follow_source || selected === null || rawSeconds() === null) return null;
+    const start = Number(byId('source-clip-start').value), duration = selected;
+    if (start === 0 && Math.abs(duration - rawSeconds()) < 0.001) return null;
+    return {start, duration, ...(duration > rawSeconds() - start + 0.02 ? {retime:'slow'} : {})};
+  }
+  function problem() {
+    const value = seconds(), item = limits();
+    if (rawSeconds() === null) return '请先选择参考视频，读取原片时长。';
+    const minimum = item.follow_source ? 2 : 4;
+    if (value < minimum || value > item.max_duration) return `当前模型支持 ${minimum}–${item.max_duration} 秒，请调整滑条。`;
+    if (!item.follow_source && !Number.isInteger(value) && !item.auto_duration) return '当前模型仅支持整数秒，请选择整数刻度。';
+    const clip = sourceClip();
+    if (clip && (!Number.isFinite(clip.start) || clip.start < 0 || rawSeconds() - clip.start < 2)) return '片段起点之后需至少保留 2 秒原视频。';
+    return '';
+  }
+  function getForm() {
+    const value = seconds();
+    return {model:control('model').value, resolution:control('resolution').value,
+      ratio:control('ratio').value || 'adaptive',
+      duration:limits().follow_source || (value !== null && !Number.isInteger(value) && limits().auto_duration) ? -1 : value ?? 8,
+      generate_audio:control('generate_audio').checked};
+  }
+  function showError(message) { byId('model-settings-error').textContent = message; byId('model-settings-error').hidden = !message; }
   function refreshSource() {
-    const video = document.querySelector('#video-reference-preview video');
-    const duration = Number.isFinite(video?.duration) ? ` · ${video.duration.toFixed(1)} 秒` : '';
-    document.getElementById('generation-duration-note').textContent = '跟随动作视频' + duration;
-    const ratio = video?.videoWidth && video?.videoHeight ? ` · ${video.videoWidth} × ${video.videoHeight}` : '';
-    document.getElementById('generation-ratio-note').textContent = '跟随动作视频' + ratio;
-  }
-  function render(values, adjust = false) {
-    const item = find(values.model);
-    control('model').replaceChildren(...items.map(row => new Option(row.label, row.id)));
-    if (!item) {
-      const option = new Option('原模型暂不可用，请重新选择', values.model);
-      option.disabled = true; control('model').add(option);
+    const info = sourceInfo(), key = info.id || info.url || null;
+    if (key && key !== sourceKey) {
+      if (sourceKey && !restoringSelection) { selected = null; byId('source-clip-start').value = 0; }
+      sourceKey = key; restoringSelection = false;
     }
+    if (!key) { sourceKey = null; selected = null; }
+    restoringSelection = false;
+    const raw = rawSeconds(), value = seconds(), item = limits();
+    ticks = Array.from({length:item.max_duration}, (_, index) => index + 1);
+    if (raw !== null && raw >= 1 && raw <= item.max_duration && !ticks.includes(raw)) ticks.push(raw);
+    ticks.sort((a,b) => a-b);
+    slider.max = ticks.length - 1;
+    slider.value = value === null ? 0 : ticks.reduce((best, tick, index) => Math.abs(tick-value) < Math.abs(ticks[best]-value) ? index : best, 0);
+    slider.disabled = locked || !loaded || raw === null;
+    slider.setAttribute('aria-valuetext', value === null ? '待选择视频' : `${display(value)} 秒`);
+    byId('generation-duration-note').textContent = value === null ? '待选择视频' : `${display(value)} 秒`;
+    byId('generation-source-duration').textContent = raw === null ? '读取参考视频后默认使用原片时长' : `原片 ${display(raw)} 秒`;
+    const labels = byId('generation-duration-ticks');
+    const signature = ticks.join(',');
+    if (labels.dataset.signature !== signature) {
+      labels.dataset.signature = signature;
+      labels.replaceChildren(...ticks.map((tick,index) => {
+        const option = document.createElement('option'); option.value = index; option.label = display(tick); return option;
+      }));
+    }
+    const clip = sourceClip(), issue = problem();
+    byId('source-clip-controls').hidden = !clip;
+    byId('source-clip-start').disabled = locked || !clip;
+    byId('source-clip-preview').disabled = locked || !clip || Boolean(issue) || !info.url;
+    const explanation = clip?.retime === 'slow' ? `放慢原片动作至 ${display(clip.duration)} 秒，保留原视频。`
+      : clip ? `从第 ${clip.start} 秒截取 ${display(clip.duration)} 秒，保留原视频。`
+      : item.follow_source ? '默认跟随原片；缩短截取片段，延长放慢动作。'
+      : value !== null && !Number.isInteger(value) ? '当前模型不支持小数秒输出，此刻度使用模型自动时长；选择整数可指定生成时长。'
+      : '当前模型按所选整数秒生成；原片内容作为动作参考。';
+    byId('generation-duration-help').textContent = issue || explanation;
+    byId('generation-duration-help').dataset.error = String(Boolean(issue && raw !== null));
+    byId('generation-duration-help').classList.toggle('sr-only', !issue || raw === null);
+    slider.title = issue || explanation;
+    byId('generation-ratio-note').textContent = item.follow_source
+      ? (control('ratio').value !== 'adaptive' ? '按所选比例补边，保留完整画面；时长缩短截取，延长放慢。' : '时长默认跟随原片；缩短截取，延长放慢。')
+      : '按所选时长与比例生成；小数时长由模型自动决定。';
+    byId('source-clip-note').textContent = issue || explanation;
+    byId('source-clip-note').dataset.error = String(Boolean(issue));
+    if (loaded && (!issue || raw === null) && find(control('model').value)) { applied = getForm(); window.productionDraftModel = {...applied}; }
+  }
+  function renderAudio() {
+    const supported = Boolean(limits().audio_control);
+    control('generate_audio').disabled = locked || !supported;
+    byId('generation-audio-state').textContent = supported ? (control('generate_audio').checked ? '开启' : '关闭') : '不可设置';
+    byId('generation-audio-note').textContent = !supported ? '当前模型不支持声音开关。' : control('generate_audio').checked ? '包含人声、音效和音乐，可能触发音频版权检查。' : '关闭后生成无声视频，可在后期添加配音或音乐。';
+    control('generate_audio').closest('label').title = byId('generation-audio-note').textContent;
+  }
+  function render(values) {
+    control('model').replaceChildren(...items.map(row => new Option(row.label, row.id)));
+    if (!find(values.model)) { const option = new Option('原模型暂不可用，请重新选择', values.model); option.disabled = true; control('model').add(option); }
     control('model').value = values.model;
-    const limits = item || fallback;
-    control('resolution').replaceChildren(...limits.resolutions.map(value => new Option(value === '4k' ? '4K' : value, value)));
-    let resolution = values.resolution;
-    if (!limits.resolutions.includes(resolution)) resolution = '720p';
-    control('resolution').value = resolution;
-    control('duration').value = limits.follow_source ? -1 : (Number(values.duration) >= 4 && Number(values.duration) <= limits.max_duration ? values.duration : 8);
-    control('duration').disabled = Boolean(limits.follow_source);
-    control('duration').max = limits.max_duration;
-    document.getElementById('generation-duration-field').hidden = Boolean(limits.follow_source);
-    document.getElementById('generation-follow-source').hidden = !limits.follow_source;
-    document.getElementById('generation-model-note').textContent = limits.follow_source ? '视频编辑 · 保留动作与镜头，替换人物和服装' : '参考生成 · 根据素材与提示词生成视频';
-    showError(item ? '' : '原模型未启用，请选择可用模型，或联系管理员在后台启用。');
-    status.textContent = adjust && resolution !== values.resolution ? `当前模型清晰度已调整为 ${resolution}。` : '';
-    status.hidden = !status.textContent;
-    refreshSource();
+    const item = limits();
+    control('resolution').replaceChildren(...item.resolutions.map(value => new Option(value === '4k' ? '4K' : value,value)));
+    control('resolution').value = item.resolutions.includes(values.resolution) ? values.resolution : '720p';
+    const ratios = item.ratios || ['adaptive'];
+    control('ratio').replaceChildren(...ratios.map(value => new Option(value === 'adaptive' ? '跟随原片' : value, value)));
+    control('ratio').value = ratios.includes(values.ratio) ? values.ratio : 'adaptive';
+    control('generate_audio').checked = item.audio_control ? values.generate_audio !== false : true;
+    renderAudio(); refreshSource();
+    byId('generation-model-note').textContent = item.follow_source ? '视频编辑 · 保留动作与镜头，替换人物和服装' : '参考生成 · 根据素材与提示词生成视频';
+    showError(find(values.model) ? '' : '原模型未启用，请选择可用模型。');
   }
-  function getForm() { return {model:control('model').value, resolution:control('resolution').value, duration:Number(control('duration').value)}; }
-  function valid() {
-    const item = find(control('model').value);
-    const seconds = Number(control('duration').value);
-    return Boolean(item && item.resolutions.includes(control('resolution').value) &&
-      (item.follow_source || (Number.isInteger(seconds) && seconds >= 4 && seconds <= item.max_duration)));
-  }
-  function setLocked(value) {
-    locked = value;
-    fieldset.disabled = locked || !loaded;
-    control('duration').disabled = Boolean(find(control('model').value)?.follow_source);
-  }
+  const valid = () => Boolean(find(control('model').value) && limits().resolutions.includes(control('resolution').value) && !problem());
+  function setLocked(value) { locked = value; fieldset.disabled = locked || !loaded; renderAudio(); refreshSource(); }
   function apply() {
     if (locked || !loaded) return;
-    if (valid()) {
-      applied = getForm();
-      window.productionDraftModel = {...applied};
-      showError('');
-    } else showError('请选择可用模型，并填写范围内的整数秒数。');
+    refreshSource(); showError(valid() ? '' : problem());
     window.dispatchEvent(new Event('model-settings-saved'));
   }
   window.generationOptions = {
-    get: () => applied ? {...applied} : null,
-    limits: () => find(applied?.model) || fallback,
-    available: () => loaded && valid(),
-    refreshSource,
-    setLocked,
-    restore(values) {
-      applied = {model:values.model, duration:values.duration, resolution:values.resolution};
-      if (find(applied.model)?.follow_source) applied.duration = -1;
-      render(applied);
+    label: id => find(id)?.label || id || '未记录', get: () => applied ? {...applied} : null,
+    limits: () => limits(), available: () => loaded && valid(),
+    sourceClip: () => { if (sourceClip() && problem()) throw new Error(problem()); return sourceClip(); },
+    effectiveDuration: original => limits().follow_source ? seconds() ?? original : original,
+    refreshSource, setLocked,
+    restore(values,clip = null) {
+      restoringSelection = true;
+      selected = clip?.duration ?? (values.duration > 0 && !find(values.model)?.follow_source ? values.duration : null);
+      byId('source-clip-start').value = clip?.start || 0;
+      applied = {...values, generate_audio:values.generate_audio !== false}; render(applied);
     },
   };
-  control('model').addEventListener('change', () => { render(getForm(), true); apply(); });
+  control('model').addEventListener('change', () => { selected = null; byId('source-clip-start').value = 0; render(getForm()); apply(); });
+  slider.addEventListener('input', () => { selected = ticks[Number(slider.value)]; apply(); });
+  byId('source-clip-start').addEventListener('input', apply);
   control('resolution').addEventListener('change', apply);
-  control('duration').addEventListener('input', apply);
-  control('duration').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); apply(); } });
+  control('ratio').addEventListener('change', apply);
+  control('generate_audio').addEventListener('change', () => { renderAudio(); apply(); });
+  const dialog = byId('source-clip-dialog'), player = byId('source-clip-video');
+  let previewRange = null;
+  byId('source-clip-preview').addEventListener('click', () => {
+    if (locked || problem() || !sourceInfo().url) return;
+    previewRange = sourceClip(); player.src = sourceInfo().url; dialog.showModal();
+  });
+  player.addEventListener('loadedmetadata', () => {
+    if (!previewRange) return;
+    player.playbackRate = previewRange.retime === 'slow' ? (rawSeconds()-previewRange.start)/previewRange.duration : 1;
+    player.currentTime = previewRange.start; void player.play().catch(() => {});
+  });
+  const end = () => previewRange.retime === 'slow' ? rawSeconds() : previewRange.start + previewRange.duration;
+  player.addEventListener('play', () => { if (previewRange && (player.currentTime < previewRange.start || player.currentTime >= end())) player.currentTime = previewRange.start; });
+  player.addEventListener('timeupdate', () => { if (previewRange && player.currentTime >= end()) player.pause(); });
+  player.addEventListener('seeked', () => {
+    if (!previewRange) return;
+    const bounded = Math.max(previewRange.start,Math.min(end(),player.currentTime));
+    if (Math.abs(player.currentTime-bounded) > .01) player.currentTime = bounded;
+  });
+  byId('source-clip-close').addEventListener('click', () => dialog.close());
+  dialog.addEventListener('close', () => { player.pause(); player.removeAttribute('src'); player.load(); previewRange = null; });
   (async () => {
     try {
-      const response = await fetch('/api/production/model-options', {cache:'no-store'});
-      const data = await response.json();
+      const response = await fetch('/api/production/model-options', {cache:'no-store'}), data = await response.json();
       if (!response.ok) throw new Error(data.detail || '无法读取模型列表');
       items = data.items; loaded = true; applied = data.defaults;
       render(applied); setLocked(locked);

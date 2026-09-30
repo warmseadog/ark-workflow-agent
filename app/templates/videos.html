@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>视频库 · 方舟</title>
+  <link rel="stylesheet" href="/static/account.css?v=20260929-navigation-people-1">
+  <script src="/static/account.js?v=20260929-navigation-people-1"></script>
+  <link rel="stylesheet" href="/static/video-library.css?v=20260929-library-1">
+  {% include "workspace_head.html" %}
+</head>
+<body class="account-page workspace-shell video-library-page">
+  {% include "workspace_sidebar.html" %}
+  <p class="account-banner" data-account-error role="alert" hidden></p>
+  <main class="video-library-main">
+    <header class="library-heading"><div><p class="library-eyebrow">我的创作</p><h1>视频库 <span id="library-count"></span></h1><p>每一次灵感，都留在这里。</p></div><a href="/" class="library-create">＋ 制作视频</a></header>
+    <div class="library-toolbar"><span class="library-tab">全部作品</span><span>最近生成优先 · 点击封面播放</span></div>
+    <p id="library-status" role="status" aria-live="polite">正在读取视频…</p>
+    <div id="video-library-grid" class="video-library-grid" aria-label="视频作品"></div>
+    <div id="library-empty" class="library-empty" hidden><span aria-hidden="true">▤</span><h2>还没有视频作品</h2><p>完成生成后，视频会自动收录到这里。</p><a href="/" class="library-create">开始制作第一个视频</a></div>
+    <div class="library-pagination"><button id="library-more" type="button" hidden>加载更多</button><p id="library-end" hidden>已经看完全部作品</p></div>
+  </main>
+  <dialog id="library-player" class="library-player" aria-labelledby="library-player-title">
+    <div class="library-player-bar"><h2 id="library-player-title">视频播放</h2><button id="library-close" type="button" aria-label="关闭视频">×</button></div>
+    <div class="library-player-stage"><video id="library-video" controls playsinline preload="none"></video><div class="library-player-navigation"><button id="library-prev" type="button" aria-label="上一个视频">↑</button><button id="library-next" type="button" aria-label="下一个视频">↓</button></div></div>
+    <div class="library-player-footer"><p id="library-player-status" role="status"></p><a id="library-download" download>下载原片</a></div>
+    <p class="library-swipe-hint">上下滑动、滚动或使用方向键，切换视频</p>
+  </dialog>
+  <script src="/static/video-library.js?v=20260929-library-1"></script>
+</body>
+</html>

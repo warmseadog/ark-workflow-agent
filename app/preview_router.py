@@ -155,7 +155,11 @@ def _update(store, ident, status, error=None):
 def _work(settings, store, ident, source_id, mask):
     try:
         from . import production_worker
-        options = production_worker.mask_options(json.loads(mask))
+        from .source_clip import clip_video, fingerprint as clip_fingerprint
+        values = json.loads(mask)
+        clip = values.pop('source_clip', None)
+        ratio = values.pop('ratio', 'adaptive')
+        options = production_worker.mask_options(values)
         # Serialize with paid production preprocessing as well as other previews.
         with production_worker._preprocess_lock:
             _update(store, ident, 'running')
@@ -164,13 +168,14 @@ def _work(settings, store, ident, source_id, mask):
             # Match production's cache fingerprint, but only within THIS tenant.
             key = hashlib.sha256((asset['sha256'] +
                 json.dumps(options.model_dump(mode='json'), sort_keys=True) +
-                settings.deface_bin + ':v1').encode()).hexdigest()
+                settings.deface_bin + ':v1' + clip_fingerprint(clip)).encode()).hexdigest()
             cache = _inside(store.storage, 'cache', 'redacted', key + '.mp4')
             output.parent.mkdir(parents=True, exist_ok=True)
             temporary = output.with_name('defaced.tmp.mp4')
             if cache.is_file():
                 shutil.copyfile(cache, temporary)
             else:
+                source = clip_video(source,output.parent/'source-clip.mp4',clip)
                 production_worker.run_deface(source, temporary, settings, options)
             if not temporary.is_file() or temporary.stat().st_size == 0:
                 raise ValueError('No preview output')
@@ -180,6 +185,10 @@ def _work(settings, store, ident, source_id, mask):
                 cache_tmp = _inside(store.storage, 'cache', 'redacted', key + '.tmp.mp4')
                 shutil.copyfile(output, cache_tmp)
                 cache_tmp.replace(cache)
+            from .video_framing import reframe_video
+            framed = reframe_video(output, output.with_name('framed.mp4'), ratio)
+            if framed != output:
+                framed.replace(output)
         # Finish and release admission atomically: polling a terminal state must
         # not race with a stale pending count on the next POST.
         with _admission_lock:
@@ -243,13 +252,29 @@ def get_router(settings_getter, local_guard):
     @router.post('')
     def create_preview(payload: dict, response: Response):
         response.headers.update(_PRIVATE)
-        if (set(payload) - {'source_asset_id', 'mask'} or
+        if (set(payload) - {'source_asset_id', 'mask', 'source_clip', 'ratio'} or
                 not isinstance(payload.get('source_asset_id'), str) or
                 not 1 <= len(payload['source_asset_id']) <= 100):
             raise HTTPException(422, '请提供有效的视频素材标识和打码设置。')
         settings, store = context()
         _source(store, payload['source_asset_id'])
         mask = _mask(settings, store, payload)
+        from .video_framing import validate_ratio
+        try:
+            ratio = validate_ratio(payload.get('ratio', 'adaptive'))
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
+        if payload.get('source_clip') is not None:
+            from .source_clip import normalize_clip, validate_source
+            try:
+                clip = normalize_clip(payload['source_clip'])
+                _, source = _source(store, payload['source_asset_id'])
+                validate_source(source, clip)
+            except ValueError as error:
+                raise HTTPException(422, str(error)) from None
+            mask = json.dumps({**json.loads(mask), 'source_clip': clip}, sort_keys=True)
+        if ratio != 'adaptive':
+            mask = json.dumps({**json.loads(mask), 'ratio': ratio}, sort_keys=True)
         return _submit(settings, store, payload['source_asset_id'], mask)
 
     @router.get('/{ident}')
@@ -258,7 +283,7 @@ def get_router(settings_getter, local_guard):
         _, store = context()
         return _public(store, _row(store, ident))
 
-    @router.get('/{ident}/file')
+    @router.api_route('/{ident}/file', methods=['GET','HEAD'])
     def preview_file(ident: str):
         _, store = context()
         row = _row(store, ident)
@@ -270,6 +295,7 @@ def get_router(settings_getter, local_guard):
                 raise ValueError('Missing preview')
         except (ValueError, OSError):
             raise HTTPException(404, '预览文件不存在，请重新生成。') from None
-        return FileResponse(output, media_type='video/mp4', headers=_PRIVATE)
+        from .media_transport import media_file_response
+        return media_file_response(settings_getter(), output, media_type='video/mp4')
 
     return router
