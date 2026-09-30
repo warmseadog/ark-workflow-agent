@@ -20,6 +20,7 @@
 .virtual-person-actions button{min-width:65px}
 .virtual-person-actions [data-action=remove]{margin-left:auto;color:#a8342a}
 .virtual-library-dialog button{cursor:pointer}
+.virtual-library-dialog button,.library-photo-preview button{min-height:44px}
 .virtual-library-dialog button:disabled{cursor:not-allowed;opacity:.5}
 .virtual-row-editor{margin-top:14px;padding-top:12px;border-top:1px solid var(--hair,#ded8cd);display:flex;flex-wrap:wrap;gap:8px;align-items:end}
 .virtual-row-editor label,.virtual-row-editor p{flex-basis:100%;margin:0!important}
@@ -64,3 +65,17 @@
 .library-photo-preview{max-width:900px;width:calc(100vw - 32px);box-sizing:border-box;max-height:calc(100vh - 32px)}
 .library-photo-preview h2{overflow-wrap:anywhere;min-width:0}.library-photo-preview [data-preview-media]{display:flex;justify-content:center}.library-photo-preview :is(img,video){display:block;max-width:100%;max-height:70vh;object-fit:contain}
 @media(max-width:540px){.library-detail-heading{align-items:flex-start;flex-direction:column}.library-detail-heading [data-detail-actions]{justify-content:flex-start}.library-photo-grid{grid-template-columns:1fr}.library-photo-card>img,.library-photo-placeholder{height:180px}.library-photo-preview{padding:16px}.library-photo-card .virtual-form-actions button{flex:1}.library-delete-confirmation button{flex:1}}
+
+@media(max-width:540px){
+  .virtual-library-dialog{width:calc(100% - 16px);max-width:calc(100% - 16px);max-height:calc(100dvh - 16px);padding:16px;border-radius:12px}
+  .virtual-library-dialog .portrait-heading{align-items:flex-start}
+  .virtual-library-dialog .portrait-heading h2{min-width:0;font-size:20px}
+  .virtual-library-dialog [data-close],.library-photo-preview [data-preview-close]{min-width:44px;flex-shrink:0}
+  .virtual-person-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .virtual-person-main>img{flex-shrink:0}
+  .library-detail-heading [data-detail-actions]{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .library-detail-heading .library-use-link{grid-column:1/-1;text-align:center;white-space:normal;min-height:44px}
+  .virtual-library-dialog input:not([type=checkbox]){font-size:16px}
+  #section-people .actions{align-items:stretch}
+  #section-people .actions button{flex:1 1 140px;min-height:44px}
+}

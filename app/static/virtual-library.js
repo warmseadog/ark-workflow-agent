@@ -76,6 +76,7 @@
   dialog.setAttribute('aria-labelledby','virtual-library-title');
   dialog.innerHTML = `<div class="portrait-heading"><h2 id="virtual-library-title">人物素材库</h2><button type="button" data-close aria-label="关闭人物素材库">×</button></div>
     <p class="virtual-intro">添加照片或视频后，回制作页按名字选择。真人视频需添加到已授权的人物。</p>
+    <p class="portrait-small">照片支持批量添加：电脑按住 Ctrl 或 Shift 多选，手机可在相册中选择多张。上传后需等待检查通过。</p>
     <p class="portrait-small library-video-requirements">人物视频：MP4 / MOV，2–30 秒，最大 50 MB，24–60 fps，建议 720p 或 1080p。上传后需等待检查通过。</p>
     <div class="person-library-tabs" role="group" aria-label="管理人物类型"><button type="button" data-library-type="AIGC" aria-pressed="true">虚拟人物</button><button type="button" data-library-type="LivenessFace" aria-pressed="false">真人</button></div>
     <div class="virtual-toolbar"><button type="button" class="primary" data-new aria-expanded="false" aria-controls="virtual-create-panel">＋ 新增虚拟人物</button><button type="button" class="secondary" data-show-import>从云端导入</button></div>
@@ -133,21 +134,39 @@
     const video = kind === 'person_video', label = video ? '视频' : '照片';
     const input = document.createElement('input'); input.type = 'file'; input.hidden = true;
     input.accept = video ? '.mp4,.mov' : '.png,.jpg,.jpeg,.webp';
+    input.multiple = !video;
     input.setAttribute('aria-label','给'+person.name+'添加'+label);
     input.dataset[video ? 'videoUpload' : 'photoUpload'] = '';
     input.addEventListener('change',() => {
-      const file = input.files[0]; input.value = ''; if (!file) return;
+      const files = Array.from(input.files || []); input.value = ''; if (!files.length) return;
       run(async () => {
         if (!canManage(person)) throw new Error('你没有管理此人物素材的权限。');
+        watchedPhoto = null;
+        if (!video && files.length > 1) {
+          let added = 0, active = 0;
+          const failures = [];
+          for (const [index,file] of files.entries()) {
+            status.textContent = `正在为“${person.name}”上传照片 ${index + 1}/${files.length}：${file.name}`;
+            try {
+              const job = await uploadFile(person,kind,file,label);
+              if (job.status === 'failed') throw new Error(job.message || '照片检查失败，请重试。');
+              added++; if (job.status === 'active') active++;
+            } catch (error) { failures.push(`${file.name}：${error.message || '上传失败，请重试。'}`); }
+          }
+          let refreshError = '';
+          try { await refresh(); } catch (_) { refreshError = '\n人物列表刷新失败，请重新打开管理查看已提交的照片。'; }
+          status.dataset.error = String(failures.length > 0);
+          status.textContent = `批量上传完成：已添加 ${added} 张，失败 ${failures.length} 张。`
+            + (added ? `其中 ${active} 张已可用，${added - active} 张等待检查。` : '')
+            + (failures.length ? '\n以下照片未完成，请根据原因重新添加或在人物详情中重试检查：\n' + failures.join('\n') : '')
+            + refreshError;
+          return;
+        }
+        const file = files[0];
         if (video && !/\.(mp4|mov)$/i.test(file.name)) throw new Error('人物视频请使用 MP4 或 MOV 格式。');
         if (video && (!file.size || file.size > 50*1024*1024)) throw new Error('人物视频需大于 0、小于等于 50 MB。');
         status.textContent = '正在为“'+person.name+'”上传'+label+'…';
-        const body = new FormData(); body.append('file',file); body.append('kind',kind);
-        const response = await fetch('/api/production/assets',{method:'POST',body});
-        const asset = await response.json();
-        if (!response.ok) throw new Error(typeof asset.detail === 'string' ? asset.detail : label+'上传失败，请重试。');
-        let job = await request('photos','POST',{person_id:person.id,asset_id:asset.id});
-        if (job.status === 'failed') job = await request('photos/'+job.id+'/retry','POST',{});
+        const job = await uploadFile(person,kind,file,label);
         watchedPhoto = ['active','failed'].includes(job.status) ? null : {id:job.id,name:person.name,label};
         await refresh();
         if (job.status === 'failed') throw new Error(job.message || label+'检查失败，请重试。');
@@ -155,6 +174,15 @@
       });
     });
     return {input,button:action('添加'+label,video ? 'upload-video' : 'upload',() => input.click())};
+  }
+  async function uploadFile(person,kind,file,label) {
+    const body = new FormData(); body.append('file',file); body.append('kind',kind);
+    const response = await fetch('/api/production/assets',{method:'POST',body});
+    const asset = await response.json();
+    if (!response.ok) throw new Error(typeof asset.detail === 'string' ? asset.detail : label+'上传失败，请重试。');
+    let job = await request('photos','POST',{person_id:person.id,asset_id:asset.id});
+    if (job.status === 'failed') job = await request('photos/'+job.id+'/retry','POST',{});
+    return job;
   }
   function renderPeople() {
     const list = dialog.querySelector('[data-people]'); list.replaceChildren(); hasPending = false;
