@@ -127,11 +127,36 @@ def test_own_active_reference_returns_local_person_and_persists_binding(portrait
 
 
 @pytest.mark.parametrize('kind', ['face', 'person_video'])
-def test_foreign_reference_is_404_without_remote_lookup(portraits, kind):
+def test_ungranted_real_and_foreign_virtual_reference_are_404_without_remote_lookup(portraits, kind):
     alice, bob = portraits.owners.values()
+    policy = portraits.admin.put('/api/admin/portrait-access/' + alice.person['id'],
+                                json={'mode': 'selected', 'user_ids': [alice.user['id']]})
+    assert policy.status_code == 200, policy.text
     for owner, foreign in [(alice, bob), (bob, alice)]:
         response = owner.client.post('/api/portrait/photos/' + foreign.photos[kind]['id'] + '/use', json={})
         assert response.status_code == 404, response.text
+    assert portraits.provider['calls'] == []
+
+
+@pytest.mark.parametrize('kind', ['face', 'person_video'])
+def test_shared_real_reference_can_be_selected_but_revocation_blocks_reuse(portraits, kind):
+    alice, bob = portraits.owners.values()
+    endpoint = '/api/portrait/photos/' + alice.photos[kind]['id'] + '/use'
+    gallery = bob.client.get('/api/portrait/people/' + alice.person['id'] + '/photos')
+    assert gallery.status_code == 200, gallery.text
+    assert all(photo['can_manage'] is False for photo in gallery.json()['items'])
+    selected = bob.client.post(endpoint, json={})
+    assert selected.status_code == 200, selected.text
+    asset = selected.json()
+    assert asset['person_id'] == alice.person['id']
+    assert asset['id'] != alice.assets[kind]['id']
+    assert bob.client.get(asset['url']).status_code == 200
+    policy = portraits.admin.put('/api/admin/portrait-access/' + alice.person['id'],
+                                json={'mode': 'selected', 'user_ids': [alice.user['id']]})
+    assert policy.status_code == 200, policy.text
+    portraits.provider['calls'].clear()
+    assert bob.client.post(endpoint, json={}).status_code == 404
+    assert bob.client.get(asset['url']).status_code == 404
     assert portraits.provider['calls'] == []
 
 

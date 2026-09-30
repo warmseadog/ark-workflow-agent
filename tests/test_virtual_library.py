@@ -231,13 +231,19 @@ def test_remove_virtual_person_is_durable_reversible_and_preserves_photos(settin
     assert client.get('/api/portrait/virtual/status').json()['people_count'] == 0
     assert client.post('/api/portrait/people/sync', json={'person_type':person_type}).json()['items'] == []
     assert PortraitLibrary(settings).people() == []
-    assert path.is_file() and lib.get_photo(job['id'])['status'] == 'active'
+    assert path.is_file()
+    with lib.store.connection() as db:
+        assert db.execute('SELECT status FROM portrait_photos WHERE id=?', (job['id'],)).fetchone()[0] == 'active'
+    with pytest.raises(LookupError):
+        lib.get_photo(job['id'])
+    assert client.get(url + '/reference').status_code == 404
     removed = client.get('/api/portrait/people?removed=true').json()['items']
     assert [p['id'] for p in removed] == [person['id']]
     assert client.post(url + '/restore', json={}).status_code == 200
     restored = client.get('/api/portrait/people').json()['items']
     assert len(restored) == 1 and restored[0]['name'] == 'Keep my name'
     assert restored[0]['photo_count'] == 1
+    assert lib.get_photo(job['id'])['status'] == 'active'
 
 
 def test_virtual_management_rejects_other_accounts_real_people_and_pending_reference(settings, monkeypatch):
@@ -287,7 +293,9 @@ def test_person_photo_gallery_is_local_scoped_and_includes_processing(settings, 
     assert {p['status'] for p in items} == {'active','processing','failed'}
     for photo in items:
         assert photo['url'].startswith('/api/production/assets/')
-        assert set(photo) == {'id','asset_id','name','kind','url','status','message','remote_asset_id'}
+        assert set(photo) == {'id','asset_id','name','kind','url','status','message','remote_asset_id','can_manage','thumbnail_url'}
+        assert photo['can_manage'] is True
+        assert photo['thumbnail_url'].endswith('/thumbnail')
         assert photo['remote_asset_id'] == ('asset-gallery0' if photo['status']=='active' else None)
     service.save_config(settings, {'access_key':'different', 'secret_key':'different'})
     assert client.get(url).status_code == 404
