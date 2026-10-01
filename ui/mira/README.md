@@ -1,9 +1,12 @@
-# mira UI — 2026-09-30
+# mira UI — 2026-10-01
 
 独立 UI 预览源码。延续 mira 白色、少量脏紫与统一字标；生产工作台结构保留。
 
 ## 本轮更新
 
+- 素材完整按原比例展示；桌面同排卡片等高，文件名、替换／移除及添加入口对齐，手机单列取消对齐留白。
+- 本地选择图片和视频，支持混合比例多图、逐张替换／移除、图片放大与键盘返回；仅在浏览器内存中预览，不上传，刷新不保留。
+- 时长保留滑杆交互，改为无刻度的细滑轨、小滑块与实时秒数；原片时长来自本地视频元数据。1–30 秒仅为预览范围，不代表接入模型能力。
 - 首页五条 MV，左右轮播、全屏菜单、中英文切换及语言记忆。`film-04-original.mp4`（`result (4).mp4`，1280×720、约 8 秒）放第一张；最新 `film-05-original.mp4`（`result (5).mp4`，1280×720、约 20 秒）放第五张。顺序：朱红、街头、暮色、日光、窗景。
 - 新增 `film-03-original.mp4`：用户提供的 `result (3).mp4`，1280×720、约 8 秒；前两条原片保留。
 - 默认系统鼠标，仅悬停 NEXT 时显示 mira 的 m；按钮提供局部柔光，没有全屏流光。
@@ -32,6 +35,8 @@ python -m http.server 4173 --directory ui/mira
 - `assets/mira-system.css`：共享样式、局部按钮反馈和跨端规则。
 - `assets/mira-original-layout.css`、`assets/mira-workspace-skin.css`：工作台布局与品牌样式。
 - `assets/mira-workspace-preview.js`：预览事件拦截，不接生产服务。
+- `assets/mira-materials.css`、`assets/mira-materials.js`：素材比例、卡片对齐与时长滑杆样式；尺寸观察不调用业务 API。
+- `docs/mira-material-ratios.md`：素材展示与时长控件的集成边界。
 - `assets/mira-icons.js`、`assets/vendor/lucide-LICENSE`：图标及许可。
 - `assets/brand/`、`assets/cover/`：字标、用户提供的五条原始 MV 和街头、暮色两条的定帧。
 
@@ -54,3 +59,5 @@ python -m http.server 4173 --directory ui/mira
 Chromium 浏览器模拟检查 320–1440px、手机横屏、平板；检查视频实际播放、五条轮播及首尾切换、菜单入口、语言记忆、默认/Next 光标、按钮反馈、网页全屏进入退出、全屏中登录弹窗及不支持全屏时的提示。无脚本报错。另在用户内置浏览器确认修复缓存后显示 05 / 05 并播放第五条。
 
 未完成 iPhone/安卓真机、Safari 或微信内置浏览器验收；不是生产认证或模型接口验收。
+
+素材页另验证 320、390、768、1024、1440px 无横向溢出，原比例展示、桌面文字基线、混合多图、替换／移除、键盘放大和返回；时长滑杆方向键、实时数字及紫色进度更新通过。

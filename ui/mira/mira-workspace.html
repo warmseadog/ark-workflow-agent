@@ -290,21 +290,20 @@
       </div>
       <div id="model-settings" class="inline-generation-options">
   <div id="model-settings-form">
-    <fieldset id="model-settings-fields" disabled="">
+    <fieldset id="model-settings-fields">
       <legend class="sr-only">本次视频生成设置</legend>
       <label class="generation-model-field">视频模型<select name="model" required="" aria-describedby="generation-model-note"></select></label>
       <label>清晰度<select name="resolution" required=""></select></label>
       <label>画面比例<select name="ratio" required="" aria-describedby="generation-ratio-note"></select></label>
       <div class="generation-duration-control">
-        <label for="generation-duration-slider" class="generation-duration-heading"><span>时长（秒）</span><output id="generation-duration-note">待选择视频</output></label>
-        <input id="generation-duration-slider" type="range" min="0" max="29" step="1" list="generation-duration-ticks" aria-describedby="generation-duration-help generation-source-duration">
-        <datalist id="generation-duration-ticks"></datalist>
+        <label for="generation-duration-slider" class="generation-duration-heading"><span>时长</span><output id="generation-duration-note">待选择视频</output></label>
+        <input id="generation-duration-slider" class="mira-duration-slider" type="range" min="1" max="30" step="1" value="1" disabled aria-label="视频时长" aria-describedby="generation-duration-help generation-source-duration">
         <span id="generation-source-duration">读取参考视频后默认使用原片时长</span>
       </div>
       <p id="generation-duration-help" class="generation-duration-help sr-only" aria-live="polite"></p>
     </fieldset>
     <div class="generation-submit-row">
-      <label class="generation-audio-field"><input name="generate_audio" type="checkbox" aria-label="生成声音" aria-describedby="generation-audio-note"><span>生成声音</span><output id="generation-audio-state">关闭</output></label>
+      <label class="generation-audio-field"><input name="generate_audio" type="checkbox" disabled aria-label="生成声音" aria-describedby="generation-audio-note"><span>生成声音</span><output id="generation-audio-state">关闭</output></label>
       <div class="generation-dock">
         <button type="button" class="generation-dock-summary" id="generation-dock-summary">正在读取生成设置…</button>
         <div class="generation-dock-feedback"><span id="generation-readiness" role="status" aria-live="polite">正在恢复素材…</span><button type="button" id="generation-fix" hidden="">去添加</button><a href="#" id="generation-view-task" hidden="">查看任务</a></div>
@@ -349,4 +348,7 @@
   
   
 
-<dialog class="system-dialog" id="mira-preview-info" aria-labelledby="mira-preview-title"><h2 id="mira-preview-title">本地视觉预览</h2><p id="mira-preview-detail">这项生产功能尚未接入。当前保留原工作台结构，展示统一后的 mira 视觉，不执行上传、生成或账号修改。</p><button class="mira-action" id="mira-preview-close">返回工作台</button><a class="mira-subtle" href="mira-login.html">查看登录页</a></dialog><script src="assets/mira-icons.js"></script><script src="assets/mira-workspace-preview.js"></script></body></html>
+<dialog class="system-dialog" id="mira-preview-info" aria-labelledby="mira-preview-title"><h2 id="mira-preview-title">本地视觉预览</h2><p id="mira-preview-detail">这项生产功能尚未接入。当前保留原工作台结构，展示统一后的 mira 视觉，不执行上传、生成或账号修改。</p><button class="mira-action" id="mira-preview-close">返回工作台</button><a class="mira-subtle" href="mira-login.html">查看登录页</a></dialog>
+<link rel="stylesheet" href="assets/mira-materials.css?v=20260930-fine-slider">
+<dialog class="material-viewer" id="material-viewer" aria-labelledby="material-viewer-title"><header><h2 id="material-viewer-title">图片预览</h2><button type="button" id="material-viewer-close">关闭</button></header><img alt="参考图完整预览"></dialog>
+<script src="assets/mira-icons.js"></script><script src="assets/mira-materials.js?v=20260930-aligned"></script><script src="assets/mira-workspace-preview.js?v=20260930-fine-slider"></script></body></html>
