@@ -75,7 +75,7 @@ def test_admin_operations_page_edits_prompts_but_cannot_change_system_config(bro
     page=context.new_page();errors,_=route_client(page,operator)
     try:
         page.goto('https://testserver/admin/settings')
-        expect(page.locator('#operations-template-name')).to_have_value('默认提示词')
+        expect(page.locator('#operations-template-name')).to_have_value('yoyo提示词')
         assert page.locator('#tos-form').count()==0
         page.locator('#operations-template-content').fill('运营管理员维护的默认提示词')
         page.locator('#operations-template-form button[type=submit]').click()

@@ -18,12 +18,13 @@ def test_shared_migration_preserves_old_body_and_does_not_resurrect_deleted(tmp_
                          "INSERT INTO preferences VALUES ('prompts_material_roles_v1','1');")
         db.execute('INSERT INTO prompt_templates VALUES (?,?,?)', ('default-0', '动作保留', '我的旧正文'))
     items = local_preferences.list_templates(cfg)
-    assert [x['name'] for x in items] == ['默认提示词', '默认提示词2']
-    new, old = items
-    assert new['rule_version'] == 'exclusive-v2' and new['is_default']
+    assert [x['name'] for x in items] == ['yoyo提示词', '默认提示词', '默认提示词2']
+    yoyo, new, old = items
+    assert new['rule_version'] == 'exclusive-v2' and not new['is_default']
+    assert yoyo['rule_version'] == 'yoyo-v3' and yoyo['is_default']
     assert old['content'] == '我的旧正文' and old['rule_version'] == 'legacy-v1'
     local_preferences.delete_template(cfg, new['id'])
-    assert [x['id'] for x in local_preferences.list_templates(cfg)] == ['default-0']
+    assert [x['id'] for x in local_preferences.list_templates(cfg)] == [yoyo['id'], 'default-0']
 
 
 def test_concurrent_first_reads_migrate_once(tmp_path,monkeypatch):
@@ -44,7 +45,7 @@ def test_concurrent_first_reads_migrate_once(tmp_path,monkeypatch):
         return local_preferences.list_templates(cfg)
     with ThreadPoolExecutor(max_workers=16) as pool:
         results=list(pool.map(read,range(16)))
-    assert all([x['name'] for x in rows]==['默认提示词','默认提示词2'] for rows in results)
+    assert all([x['name'] for x in rows]==['yoyo提示词','默认提示词','默认提示词2'] for rows in results)
 
 
 def test_new_drafts_use_saved_default_and_copies_keep_version(client):
@@ -54,7 +55,7 @@ def test_new_drafts_use_saved_default_and_copies_keep_version(client):
     draft = client.post('/api/production/drafts', json={}).json()
     assert draft['prompt'] == '自定义新版正文'
     assert draft['prompt_template_id'] == new['id']
-    assert draft['prompt_rule_version'] == 'exclusive-v2'
+    assert draft['prompt_rule_version'] == 'yoyo-v3'
     saved = client.put('/api/production/drafts/'+draft['id'], json={'revision':draft['revision'],
         'prompt':'旧稿', 'prompt_template_id':'default-0', 'prompt_rule_version':'legacy-v1'}).json()
     copied = client.post('/api/production/drafts', json={'copy_from':draft['id']}).json()
@@ -119,7 +120,8 @@ def test_deleted_default_is_not_silently_applied_to_new_tasks(client):
 
 
 @pytest.mark.parametrize('protocol', ['ark','toapis','adapter'])
-def test_provider_uses_exact_preview_composer(protocol, media, tmp_path, monkeypatch):
+@pytest.mark.parametrize('rule_version', ['exclusive-v2','yoyo-v3'])
+def test_provider_uses_exact_preview_composer(protocol, rule_version, media, tmp_path, monkeypatch):
     from app.video_provider import VideoProvider
     from app.generation_settings import GenerationConfig
     config = GenerationConfig(provider=protocol if protocol!='adapter' else 'custom', protocol=protocol,
@@ -141,12 +143,13 @@ def test_provider_uses_exact_preview_composer(protocol, media, tmp_path, monkeyp
     body = '保留动作、镜头和场景。\n【素材联动】旧编号 @Image8【联动结束】'
     VideoProvider(config,0).generate(media[0],[media[1]],[media[3]],body,tmp_path/'out.mp4',
         video_url='https://studio.example/video.mp4',scenes=[media[2]],accessories={'bag':[media[2]],'shoes':[media[2]]},
-        scene_description='暖光',prompt_rule_version='exclusive-v2')
-    expected = reference_prompt.compose_exclusive_prompt(body,['人物','衣服','场景','包包','鞋子'],scene_description='暖光')
+        scene_description='暖光',prompt_rule_version=rule_version)
+    expected = reference_prompt.compose_exclusive_prompt(body,['人物','衣服','场景','包包','鞋子'],scene_description='暖光',rule_version=rule_version)
     assert posted == [expected]
 
 
-def test_editing_model_preview_and_submission_match(client,media,tmp_path,monkeypatch):
+@pytest.mark.parametrize('rule_version', ['exclusive-v2','yoyo-v3'])
+def test_editing_model_preview_and_submission_match(client,media,tmp_path,monkeypatch,rule_version):
     from app import main
     from app.generation_settings import GenerationConfig, save_config
     from app.model_catalog import SD25
@@ -164,9 +167,9 @@ def test_editing_model_preview_and_submission_match(client,media,tmp_path,monkey
     monkeypatch.setattr('app.video_provider.requests.request',request)
     monkeypatch.setattr(VideoProvider,'_download',lambda self,url,path:path.write_bytes(b'final'))
     preview=client.post('/api/production/prompt-preview',json={'prompt':'保持自然','roles':['人物','衣服'],
-        'model':{'model':SD25,'duration':-1},'rule_version':'exclusive-v2'})
+        'model':{'model':SD25,'duration':-1},'rule_version':rule_version})
     assert preview.status_code==200,preview.text
     VideoProvider(config,0).generate(media[0],[media[1]],[media[3]],'保持自然',tmp_path/'out.mp4',
-        video_url='https://studio.example/video.mp4',prompt_rule_version='exclusive-v2')
+        video_url='https://studio.example/video.mp4',prompt_rule_version=rule_version)
     assert posted==[preview.json()['prompt']]
     assert '唯一编辑目标为 @Video1' in posted[0]

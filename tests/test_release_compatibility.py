@@ -78,3 +78,12 @@ def test_old_reader_rejects_new_admin_workflow_state(tmp_path, ddl, capability):
     data=tmp_path/'data';data.mkdir();target=tmp_path/'old';target.mkdir()
     with sqlite3.connect(data/'state.db') as db: db.execute(ddl)
     with pytest.raises(ValueError,match=capability): api().assert_rollback_compatible(target,data)
+
+
+@pytest.mark.parametrize('table,field', [('prompt_templates','rule_version'),('production_drafts','data'),('production_runs','snapshot')])
+def test_old_reader_rejects_yoyo_rules_even_without_template(tmp_path, table, field):
+    data=tmp_path/'data';data.mkdir();target=tmp_path/'old';target.mkdir()
+    with sqlite3.connect(data/'state.db') as db:
+        db.execute('CREATE TABLE '+table+'('+field+' TEXT)')
+        db.execute('INSERT INTO '+table+' VALUES (?)', ('yoyo-v3' if field=='rule_version' else '{"prompt_rule_version":"yoyo-v3"}',))
+    with pytest.raises(ValueError,match='yoyo-prompts-v3'): api().assert_rollback_compatible(target,data)

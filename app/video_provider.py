@@ -273,14 +273,14 @@ class VideoProvider:
         structured += '\n' + strict_reference_rules(references, person_video is not None)
         if limits['follow_source']:
             structured = '视频编辑任务：编辑 @Video1，按参考素材替换人物、服装及指定元素。唯一编辑目标为 @Video1，保持原视频时长、画面比例、动作与镜头节奏；其他视频仅作人物身份参考，不进行延长或新增镜头。\n' + structured
-        from .prompt_templates import EXCLUSIVE_RULE_VERSION, RULE_VERSIONS
+        from .prompt_templates import EXCLUSIVE_RULE_VERSION, YOYO_RULE_VERSION, RULE_VERSIONS
         if prompt_rule_version not in RULE_VERSIONS:
             raise ProviderError('提示词规则版本不正确。', error_kind='configuration')
-        if prompt_rule_version == EXCLUSIVE_RULE_VERSION:
+        if prompt_rule_version in (EXCLUSIVE_RULE_VERSION, YOYO_RULE_VERSION):
             from .reference_prompt import compose_exclusive_prompt
             structured = compose_exclusive_prompt(original_prompt, [role for _,role in references],
                 person_video=person_video is not None, scene_description=scene_description,
-                follow_source=limits['follow_source'])
+                follow_source=limits['follow_source'], rule_version=prompt_rule_version)
         self.progress('正在上传参考素材', 65)
         if self.config.protocol == 'toapis':
             with video.open('rb') as source:

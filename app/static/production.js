@@ -566,12 +566,12 @@
   function syncReferencePrompt() {
     if (!promptEditable) return;
     const input = promptInput;
-    const exclusive = generationForm.dataset.promptRuleVersion === 'exclusive-v2';
+    const exclusive = ['exclusive-v2','yoyo-v3'].includes(generationForm.dataset.promptRuleVersion);
     document.getElementById('exclusive-prompt-preview').hidden = !exclusive;
     if (exclusive) {
       const base = stripReferenceRules(input.value);
       if (base !== input.value) input.value = base;
-      document.getElementById('prompt-reference-status').textContent = '独立参考优先';
+      document.getElementById('prompt-reference-status').textContent = generationForm.dataset.promptRuleVersion === 'yoyo-v3' ? '独立参考优先，其余搭配跟随穿搭图' : '独立参考优先';
       schedulePromptPreview();
       return;
     }
@@ -593,7 +593,7 @@
   function schedulePromptPreview() {
     if (!promptEditable) return;
     clearTimeout(promptPreviewTimer);
-    if (generationForm.dataset.promptRuleVersion !== 'exclusive-v2') return;
+    if (!['exclusive-v2','yoyo-v3'].includes(generationForm.dataset.promptRuleVersion)) return;
     const hint = document.getElementById('exclusive-prompt-status');
     hint.textContent = '正在更新本次完整提示词…'; hint.dataset.error = 'false';
     document.getElementById('final-generation-prompt').value = '';
@@ -601,7 +601,7 @@
   }
   async function ensurePromptPreview() {
     if (!promptEditable) return null;
-    if (generationForm.dataset.promptRuleVersion !== 'exclusive-v2') return null;
+    if (!['exclusive-v2','yoyo-v3'].includes(generationForm.dataset.promptRuleVersion)) return null;
     const payload = exclusivePreviewPayload(), key = JSON.stringify(payload);
     const hint = document.getElementById('exclusive-prompt-status');
     if (key !== promptPreviewKey || !promptPreviewPromise) {
@@ -610,7 +610,7 @@
     }
     try {
       const text = await promptPreviewPromise;
-      if (pageInactive || generationForm.dataset.promptRuleVersion !== 'exclusive-v2') return null;
+      if (pageInactive || !['exclusive-v2','yoyo-v3'].includes(generationForm.dataset.promptRuleVersion)) return null;
       if (key !== JSON.stringify(exclusivePreviewPayload())) return ensurePromptPreview();
       promptPreviewResult = text;
       document.getElementById('final-generation-prompt').value = text;

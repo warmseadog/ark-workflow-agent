@@ -268,9 +268,9 @@ def get_router(settings_getter, local_guard):
         prompt_visibility.require_editor(settings_getter())
         def operation():
             from .reference_prompt import compose_exclusive_prompt
-            from .prompt_templates import EXCLUSIVE_RULE_VERSION
+            from .prompt_templates import EXCLUSIVE_RULE_VERSION, YOYO_RULE_VERSION
             from .model_catalog import capabilities
-            if payload.get('rule_version') != EXCLUSIVE_RULE_VERSION:
+            if payload.get('rule_version') not in (EXCLUSIVE_RULE_VERSION, YOYO_RULE_VERSION):
                 raise ValueError('提示词规则版本不正确。')
             model = payload.get('model', {})
             if not isinstance(model,dict) or set(model)-TASK_FIELDS:
@@ -278,7 +278,7 @@ def get_router(settings_getter, local_guard):
             config = resolve_task_config(settings_getter(), model)
             return {'prompt':compose_exclusive_prompt(payload.get('prompt',''), payload.get('roles',[]),
                 person_video=payload.get('person_video',False), scene_description=payload.get('scene_description',''),
-                follow_source=capabilities(config.model,config.protocol)['follow_source'])}
+                follow_source=capabilities(config.model,config.protocol)['follow_source'], rule_version=payload['rule_version'])}
         return guarded(operation)
 
     @router.post('/drafts')

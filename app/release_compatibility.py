@@ -46,6 +46,12 @@ def assert_rollback_compatible(target_release,storage_root,*,database_paths=(),e
                     columns={row[1] for row in db.execute('PRAGMA table_info('+quote+')')}
                     if table=='prompt_templates' and 'rule_version' in columns:
                         required.add('exclusive-prompts-v2')
+                        if db.execute("SELECT 1 FROM prompt_templates WHERE rule_version='yoyo-v3' LIMIT 1").fetchone():
+                            required.add('yoyo-prompts-v3')
+                    if table in ('production_drafts','production_runs'):
+                        field = 'data' if table == 'production_drafts' else 'snapshot'
+                        if field in columns and db.execute('SELECT 1 FROM '+quote+" WHERE json_extract("+field+",'$.prompt_rule_version')='yoyo-v3' LIMIT 1").fetchone():
+                            required.add('yoyo-prompts-v3')
                     if table=='users' and 'deleted_at' in columns:
                         required.add('three-tier-accounts-v1')
                     if table=='production_run_phases':

@@ -3,7 +3,8 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from uuid import uuid4
-from .prompt_templates import DEFAULT_TEMPLATE_ID, EXCLUSIVE_PROMPT, EXCLUSIVE_RULE_VERSION, LEGACY_RULE_VERSION, RULE_VERSIONS
+from .prompt_templates import (DEFAULT_TEMPLATE_ID, EXCLUSIVE_TEMPLATE_ID, EXCLUSIVE_PROMPT,
+    EXCLUSIVE_RULE_VERSION, YOYO_RULE_VERSION, LEGACY_RULE_VERSION, RULE_VERSIONS, yoyo_prompt)
 
 PREVIOUS_PROMPTS = [
     ('动作保留', '保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图中的脸、五官与身份；应用@Image2衣服参考图中的服装款式、颜色和材质。'),
@@ -53,8 +54,13 @@ def connection(settings):
             from .tenancy import config_root
             if migration.rowcount and settings.storage_dir == config_root(settings):
                 db.execute('INSERT OR IGNORE INTO prompt_templates (id,name,content,rule_version) VALUES (?,?,?,?)',
-                           (DEFAULT_TEMPLATE_ID, '默认提示词', EXCLUSIVE_PROMPT, EXCLUSIVE_RULE_VERSION))
+                           (EXCLUSIVE_TEMPLATE_ID, '默认提示词', EXCLUSIVE_PROMPT, EXCLUSIVE_RULE_VERSION))
                 db.execute("UPDATE prompt_templates SET name='默认提示词2' WHERE id='default-0' AND name='动作保留'")
+            yoyo_migration = db.execute("INSERT OR IGNORE INTO preferences VALUES ('prompts_yoyo_v3','1')")
+            if yoyo_migration.rowcount and settings.storage_dir == config_root(settings):
+                previous = db.execute('SELECT content FROM prompt_templates WHERE id=?', (EXCLUSIVE_TEMPLATE_ID,)).fetchone()
+                db.execute('INSERT OR IGNORE INTO prompt_templates (id,name,content,rule_version) VALUES (?,?,?,?)',
+                           (DEFAULT_TEMPLATE_ID, 'yoyo提示词', yoyo_prompt(previous['content'] if previous else EXCLUSIVE_PROMPT), YOYO_RULE_VERSION))
             yield db
     finally:
         db.close()
@@ -95,7 +101,7 @@ def list_templates(settings):
     settings = _personal_settings(settings)
     with connection(settings) as db:
         personal = [{**dict(row), 'is_default':row['id'] == DEFAULT_TEMPLATE_ID} for row in db.execute(
-            'SELECT * FROM prompt_templates ORDER BY (id=?) DESC,rowid', (DEFAULT_TEMPLATE_ID,))]
+            'SELECT * FROM prompt_templates ORDER BY (id=?) DESC,(id=?) DESC,rowid', (DEFAULT_TEMPLATE_ID, EXCLUSIVE_TEMPLATE_ID))]
     from .tenancy import root_settings, config_root
     if settings.storage_dir != config_root(settings):
         shared=[{**item,'id':'system:'+item['id'],'scope':'shared','read_only':True} for item in list_templates(root_settings(settings))]
