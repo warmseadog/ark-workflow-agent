@@ -1,5 +1,9 @@
 <section id="create-view" class="view compact-production"{% if not standalone_production|default(false) %} hidden{% endif %}>
+  {% if standalone_production|default(false) %}
+  <div class="production-intro"><p class="eyebrow">MIRA / CREATIVE STUDIO</p><h2>让衣服，拥有自己的故事。</h2><p>从一段喜欢的影像开始，创作属于你的氛围。</p></div>
+  {% else %}
   <div class="production-intro"><p class="eyebrow">VIDEO STUDIO</p><h2>准备素材，开始创作。</h2><p>参考视频的动作与场景，搭配你选择的衣服和人物。</p></div>
+  {% endif %}
   <form id="studio-job-form" hidden></form>
   <form id="studio-generate-form" class="creation-workspace">
     <div class="asset-grid">
