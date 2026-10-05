@@ -1,0 +1,75 @@
+/* Approved direction A, 2026-10-05. Scoped to the local workspace only.
+   Existing form controls, material ratios and production layout remain intact. */
+body.mira-local-workspace{--workspace-width:192px;--mira-ink:#302c35;--mira-muted:#786e80;--mira-purple:#7d668d;--mira-line:#e8e3ec;background:#fff;color:var(--mira-ink);font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC","Microsoft YaHei",sans-serif}
+.mira-local-workspace .workspace-sidebar{background:#fcfbfd;border-right:1px solid #e8e3ec}
+.mira-local-workspace .workspace-brand{padding:28px 28px 24px}
+.mira-local-workspace .workspace-brand strong{width:94px;height:38px}
+.mira-local-workspace .workspace-navigation{padding:14px 16px 20px}
+.mira-local-workspace .workspace-label{margin:14px 10px 16px;font-size:11px;color:#786e80}
+.mira-local-workspace .workspace-nav{gap:8px}
+.mira-local-workspace .workspace-nav a{min-height:46px;padding:10px 12px;border-radius:10px;font-size:13px;font-weight:400;color:#756c7b}
+.mira-local-workspace .workspace-nav a[aria-current=page]{background:#eee8f3;color:#6e537e;box-shadow:none;font-weight:500}
+.mira-local-workspace .workspace-nav a:hover{background:#f0ecf5}
+.mira-local-workspace .workspace-footer{border:0;padding:20px 0}
+.mira-local-workspace .production-header{background:#fff;border-bottom:1px solid #e8e3ec;backdrop-filter:none;padding:22px 36px;min-height:96px;gap:20px}
+.mira-local-workspace .mira-editorial-signature{display:flex;align-items:center;gap:24px;min-width:0}
+.mira-local-workspace .mira-editorial-signature p{margin:0;font-size:16px;font-weight:400;letter-spacing:3px;line-height:1.7;color:#534759}
+.mira-local-workspace .mira-editorial-signature .workspace-section-name{display:inline-block;border-left:1px solid #e8e3ec;padding-left:24px;font-size:11px;white-space:nowrap;color:#786e80}
+.mira-local-workspace .production-tasks-shortcut{font-size:12px;color:#786e80;text-decoration:none;white-space:nowrap}
+.mira-local-workspace .production-main{padding:34px 36px 48px;max-width:1600px}
+.mira-local-workspace .production-intro{margin:0 0 34px}
+.mira-local-workspace .production-intro .eyebrow{display:block;font-size:10px;font-weight:500;letter-spacing:2px;color:#93809f;margin:0 0 12px}
+.mira-local-workspace .production-intro h1{font-size:30px;line-height:1.35;letter-spacing:-.6px;font-weight:450;margin:0 0 12px;padding:0;border:0;color:#302c35}
+.mira-local-workspace .production-intro>p:not(.eyebrow){font-size:13px;line-height:1.8;color:#786e80;margin:0}
+.mira-local-workspace .workspace-preview-note{display:block;font-size:11px;color:#82748c;line-height:1.7;margin-top:12px}
+.mira-local-workspace .asset-grid{gap:24px}
+.mira-local-workspace .asset-grid>.asset-entry{padding:18px 0 0;border:0;border-top:1px solid #e8e3ec;border-radius:0;background:#fff;box-shadow:none}
+.mira-local-workspace .asset-heading{gap:9px;margin-bottom:18px}
+.mira-local-workspace .asset-heading h3{font-size:15px;font-weight:550;letter-spacing:0}
+.mira-local-workspace .asset-heading>span{font-size:11px;color:#9a84a8}
+.mira-local-workspace .asset-heading small{font-size:11px;color:#786e80}
+.mira-local-workspace :is(#video-picker,#clothing-picker,#face-picker,.asset-picker){background:#fcfbfd;border:1px dashed #d9cde2;border-radius:14px;box-shadow:none}
+.mira-local-workspace .asset-grid :is(#video-picker,#clothing-picker,#face-picker):not(.has-media),.mira-local-workspace #person-reference-card #face-picker:not(.has-media){height:220px;min-height:220px}
+.mira-local-workspace .asset-picker:not(.has-media):hover{background:#f6f0fb;border-color:#a28bb0;box-shadow:none}
+.mira-local-workspace .asset-empty>b{width:48px;height:48px;border-radius:15px;background:#f0eaf5;box-shadow:none;color:#8b709d}
+.mira-local-workspace .asset-empty>b svg{width:23px;height:23px}
+.mira-local-workspace .asset-empty strong{font-size:13px;font-weight:450;color:#51465c}
+.mira-local-workspace .asset-empty small{font-size:12px;color:#786e80}
+.mira-local-workspace .asset-footer{padding-top:14px;font-size:12px}
+.mira-local-workspace .optional-reference-group{margin-top:28px;gap:24px}
+.mira-local-workspace .optional-reference-group>details{padding:16px;border:1px solid #e8e3ec;border-radius:12px;background:#fff;box-shadow:none}
+.mira-local-workspace :is(.compact-prompt,.scene-settings,.accessory-panel){background:#fff;border-color:#e8e3ec;border-radius:12px;box-shadow:none}
+.mira-local-workspace :is(select,input:not([type=range]):not([type=checkbox]),textarea),.mira-local-workspace #model-settings.inline-generation-options select{background:#fcfbfd;border:1px solid #e8e3ec;border-radius:10px;color:#51475b;box-shadow:none}
+.mira-local-workspace :is(textarea,input,select):disabled{background:#f5f2f7;color:#81738c}
+.mira-local-workspace .production-main button.secondary{background:white;border:1px solid #e8e3ec;border-radius:10px;color:#685477;box-shadow:none}
+.mira-local-workspace .production-main button.secondary:hover{background:#f7f2fa;border-color:#af96be}
+.mira-local-workspace .accessory-buttons button{background:white;border:1px solid #e8e3ec;border-radius:10px;box-shadow:none}
+.mira-local-workspace .accessory-buttons button[aria-pressed=true]{background:#eee8f3;border-color:#bba7c8}
+.mira-local-workspace .generation-action{background:white;border-top:1px solid #e8e3ec;border-radius:0;box-shadow:none;padding-top:22px}
+.mira-local-workspace .generation-settings-heading{font-size:18px;font-weight:450;margin-top:32px}
+.mira-local-workspace .generation-dock{background:#fff;border-color:#e8e3ec;box-shadow:none;backdrop-filter:none}
+.mira-local-workspace #studio-generate-submit,.mira-local-workspace .mira-action{background:#7a6288;color:#fff;border:1px solid #7a6288;border-radius:12px;box-shadow:none}
+.mira-local-workspace #studio-generate-submit:disabled{background:#ece5f1;color:#84718f;border-color:#ece5f1;box-shadow:none}
+.mira-local-workspace :is(dialog,.person-menu,.config-panel,.run-menu-items){background:white;border:1px solid #e6ddeb;border-radius:18px;box-shadow:0 16px 50px #34213d14;backdrop-filter:none}
+.mira-local-workspace dialog::backdrop{background:#24182f4f;backdrop-filter:blur(3px)}
+.mira-local-workspace :is(a,button,input,select,textarea,summary):focus-visible{outline:2px solid #8c6ca4;outline-offset:3px}
+@media(max-width:1100px){.mira-local-workspace .mira-editorial-signature .workspace-section-name{display:none}.mira-local-workspace .mira-editorial-signature p{font-size:14px;letter-spacing:2px}}
+@media(max-width:800px),(orientation:landscape) and (max-width:1100px){
+ .mira-local-workspace .workspace-brand{padding-top:66px}
+ .mira-local-workspace.standalone-production .production-header{min-height:64px;padding:12px 18px 12px 68px;background:#fff}
+ .mira-local-workspace .mira-editorial-signature p{font-size:12px;letter-spacing:1px}
+ .mira-local-workspace .production-main{padding:28px 24px 120px}
+ .mira-local-workspace .workspace-toggle{background:#fff;border:1px solid #e8e3ec;box-shadow:none}
+}
+@media(max-width:600px){
+ .mira-local-workspace .asset-grid,.mira-local-workspace .optional-reference-group{grid-template-columns:minmax(0,1fr);gap:24px}
+ .mira-local-workspace .asset-grid #person-reference-card{grid-column:auto}
+ .mira-local-workspace .production-intro{margin:0 0 28px}
+ .mira-local-workspace .production-intro h1{font-size:25px;letter-spacing:-.4px}
+ .mira-local-workspace .production-main{padding:24px 20px 120px}
+ .mira-local-workspace .production-tasks-shortcut{font-size:11px}
+ .mira-local-workspace .mira-editorial-signature p{font-size:11px;letter-spacing:.6px}
+ .mira-local-workspace .optional-reference-group{gap:12px}
+ .mira-local-workspace .asset-grid :is(#video-picker,#clothing-picker,#face-picker):not(.has-media),.mira-local-workspace #person-reference-card #face-picker:not(.has-media){height:200px;min-height:200px}
+}
+@media(max-width:360px){.mira-local-workspace.standalone-production .production-header{gap:8px;padding-left:60px;padding-right:10px}.mira-local-workspace .mira-editorial-signature p{font-size:10px;letter-spacing:0}.mira-local-workspace .production-tasks-shortcut{font-size:10px}}

@@ -84,8 +84,8 @@
   e.preventDefault();explain(el.textContent.trim()||el.getAttribute('aria-label')||'选择素材');
  },true);
  dialog.addEventListener('close',()=>restore?.focus());
- const header=document.querySelector('.production-header');
- if(header){const label=document.createElement('a');label.href='mira-login.html';label.className='local-label';label.textContent='mira 本地视觉预览 · 返回登录页';header.replaceChildren(label);}
+ // Keep the approved A-style brand header. Preview status lives in the intro,
+ // not in a replacement header that erases the product identity.
  const previewStates={'draft-task-name':'未命名作品','generation-dock-summary':'生成设置 · 预览模式','generation-readiness':'尚未接入生成服务','draft-save-status':'本地视觉预览 · 不会保存任务','prompt-template-status':'模板服务尚未接入','runs-status':'任务服务尚未接入'};
  for(const[id,text]of Object.entries(previewStates)){const el=document.getElementById(id);if(el)el.textContent=text;}
  document.querySelectorAll('select:empty').forEach(el=>{const option=document.createElement('option');option.value='';option.textContent='尚未接入';el.append(option);el.disabled=true;});
