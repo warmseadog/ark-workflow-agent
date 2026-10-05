@@ -632,7 +632,9 @@ def test_generation_controls_fit_desktop_and_mobile(studio, width):
             box = control.bounding_box()
             assert box['width'] > 0 and 0 <= box['x'] < box['x'] + box['width'] <= width
     if width > 720:
-        assert all(32 <= sizes[key]['height'] <= 40 for key in controls)
+        assert all(32 <= sizes[key]['height'] <= 40 for key in controls if key != 'duration')
+        # Mira's duration control has a 44px interaction area on desktop too.
+        assert sizes['duration']['height'] == 44
         assert all(sizes[key]['font'] == '12px' for key in ('model', 'resolution', 'ratio', 'generate'))
     else:
         assert all(44 <= sizes[key]['height'] <= 60 for key in controls)

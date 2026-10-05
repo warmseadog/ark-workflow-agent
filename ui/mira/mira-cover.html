@@ -23,11 +23,12 @@ body:has(dialog[open]){overflow:hidden}
 </style>
 <link rel="stylesheet" href="assets/mira-system.css">
 <link rel="stylesheet" href="assets/mira-cover-shell.css">
+<link rel="stylesheet" href="assets/mira-cases.css?v=20261004-profile">
 </head>
 <body class="mira-cover-page">
 <main class="cover" aria-label="mira 作品展示封面">
  <img id="poster" class="media" alt="" hidden>
- <video id="film" class="media" muted playsinline loop preload="auto" hidden></video><div class="shade"></div>
+ <video id="film" class="media" autoplay muted playsinline preload="auto" hidden></video><div class="shade"></div>
  <header class="topbar">
   <a class="cover-brand" href="mira-cover.html" aria-label="mira"><span class="brand-crop"><img src="assets/brand/mira-wordmark-transparent-v1.png" alt="mira"></span><span class="brand-descriptor">YOUR AI<br>FASHION DIRECTOR</span></a>
   <div class="top-right">
@@ -41,7 +42,6 @@ body:has(dialog[open]){overflow:hidden}
  <button class="next" id="next" data-i18n-label="nextLabel" disabled><span data-i18n="next">下一个</span><span aria-hidden="true">›</span></button>
  <div class="bottom"><div class="caption" hidden><p id="kind">MIRA / FASHION FILM</p><h1 id="title">街头，自有态度。</h1></div><div class="controls"><div class="play-controls"><button id="play" hidden>播放</button><button id="sound" hidden>开启声音</button><button id="fullscreen" type="button" data-i18n-label="fullscreen" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg><span class="fullscreen-label" data-i18n="fullscreen">全屏</span></button></div><span class="preview-note" id="preview-note"></span></div></div>
  <footer class="cover-footer">
-  <button class="cover-notice" data-action="info:updates"><span class="notice-label" data-i18n="noticeLabel">最新动态</span><span class="notice-copy" data-i18n="notice">首页交互更新 · 中英文与品牌光标</span></button>
   <nav class="footer-links" aria-label="mira"><button data-action="info:privacy" data-i18n="privacy">隐私说明</button><button data-action="info:contact" data-i18n="contact">联系</button><button data-action="menu" data-i18n="more">更多</button><span class="copyright" data-i18n="copyright">© 2026 mira</span></nav>
  </footer>
  <p class="sr-only" role="status" id="announcement"></p>
@@ -70,13 +70,24 @@ body:has(dialog[open]){overflow:hidden}
   <div class="menu-columns">
    <section class="menu-group"><h3 data-i18n="menuMira">MIRA</h3><button data-action="info:about" data-i18n="about"></button><button data-action="info:idea" data-i18n="idea"></button><button data-action="info:updates" data-i18n="updates"></button><button data-action="info:contact" data-i18n="contact"></button></section>
    <section class="menu-group"><h3 data-i18n="menuStudio">创作</h3><button data-action="login" data-i18n="create"></button><button data-action="info:guide" data-i18n="guide"></button><button data-action="info:models" data-i18n="models"></button></section>
-   <section class="menu-group"><h3 data-i18n="menuFilms">作品</h3><button data-action="palace" data-i18n="palaceFilm"></button><button data-action="city" data-i18n="cityFilm"></button><button data-action="dusk" data-i18n="duskFilm"></button><button data-action="daylight" data-i18n="daylightFilm"></button><button data-action="windowlight" data-i18n="windowFilm"></button><button data-action="films" data-i18n="allFilms"></button><button data-action="settings" data-i18n="settings"></button></section>
-   <section class="menu-group"><h3 data-i18n="menuSupport">支持</h3><button data-action="info:privacy" data-i18n="privacy"></button><button data-action="info:credits" data-i18n="credits"></button><button data-action="info:contact" data-i18n="contact"></button></section>
+   <section class="menu-group"><h3 data-i18n="menuCases">案例</h3><button data-case="yoyo">Yoyo</button><button data-case="zheng-yunshu">郑允书</button><button data-case="yu-jia">俞佳</button><button data-case="shi-yun">时允</button><button data-case="pei-zhiyou">裴智幼</button></section>
+   <section class="menu-group"><h3 data-i18n="menuSupport">支持</h3><button data-action="info:privacy" data-i18n="privacy"></button><button data-action="info:credits" data-i18n="credits"></button><button data-action="info:contact" data-i18n="contact"></button><button data-action="settings" data-i18n="settings"></button></section>
   </div>
   <div class="menu-bottom"><button data-action="login" data-i18n="begin">开始创作</button><span aria-hidden="true"></span><button data-action="films" data-i18n="backFilms">返回作品</button></div>
   <p class="menu-note" data-i18n="menuNote">氛围感 AI 时尚总监。</p>
  </div>
 </dialog>
+<dialog id="case-dialog" aria-labelledby="case-name">
+ <header class="case-top"><button class="case-back" data-action="menu" data-i18n="backCases">← 案例</button><img src="assets/brand/mira-wordmark-transparent-v1.png" alt="mira"><button class="close" data-action="close" data-i18n-label="close">×</button></header>
+ <div class="case-layout">
+  <section class="case-main">
+   <p class="case-eyebrow" data-i18n="caseLabel">虚拟人作品集</p><h2 id="case-name"></h2><p class="case-description" data-i18n="caseDescription">影像、图集，以及她的线上空间。</p>
+   <div class="case-filters" role="group" aria-label="作品类型"><button data-case-filter="videos" aria-pressed="true" data-i18n="caseVideos">视频作品</button><button data-case-filter="images" aria-pressed="false" data-i18n="caseImages">图集</button><button data-case-filter="links" aria-pressed="false" data-i18n="caseLinks">相关链接</button></div>
+   <div id="case-content" aria-live="polite"></div>
+  </section>
+ </div>
+</dialog>
 <dialog id="info-dialog" aria-labelledby="info-title"><div class="dialog-top"><h2 id="info-title"></h2><button class="close" data-action="close" data-i18n-label="close">×</button></div><p class="info-copy" id="info-copy"></p><button class="mira-action" data-action="close" data-i18n="ok">知道了</button></dialog>
-<script src="assets/mira-cover.js?v=20260930-five-films"></script>
+<script src="assets/mira-cases-data.js?v=20261004"></script>
+<script src="assets/mira-cover.js?v=20261004-daylight-first"></script>
 </body></html>

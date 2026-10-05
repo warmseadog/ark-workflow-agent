@@ -33,7 +33,7 @@ def test_production_cover_five_films_language_and_menu(mira_browser):
     page, errors, _ = mira_browser
     page.goto('http://testserver/login')
     expect(page.locator('#total')).to_have_text('05')
-    expect(page.locator('#film')).to_have_attribute('src', '/static/mira/cover/film-04-original.mp4')
+    expect(page.locator('#film')).to_have_attribute('src', '/static/mira/cover/film-03-original.mp4')
     page.locator('#previous').click()
     expect(page.locator('#current')).to_have_text('05')
     expect(page.locator('#film')).to_have_attribute('src', '/static/mira/cover/film-05-original.mp4')
@@ -47,6 +47,60 @@ def test_production_cover_five_films_language_and_menu(mira_browser):
     page.locator('#site-menu [data-action=login]').first.click()
     expect(page.locator('#login-username')).to_be_focused()
     expect(page.locator('#login-password')).to_be_enabled()
+    assert not errors
+
+
+@pytest.mark.parametrize('width', [390, 1440])
+def test_production_talent_cases_keep_login_and_support(mira_browser, width):
+    from playwright.sync_api import expect
+    page, errors, _ = mira_browser
+    page.set_viewport_size({'width': width, 'height': 900})
+    page.goto('http://testserver/login')
+    expect(page.locator('.cover-notice')).to_have_count(0)
+    for ident, name in [('yoyo', 'Yoyo'), ('zheng-yunshu', '郑允书'),
+                        ('yu-jia', '俞佳'), ('shi-yun', '时允'), ('pei-zhiyou', '裴智幼')]:
+        page.locator('#menu-trigger').click()
+        page.locator('[data-case="'+ident+'"]').click()
+        expect(page.locator('#case-dialog')).to_be_visible()
+        expect(page.locator('#case-name')).to_have_text(name)
+        for kind in ('videos', 'images', 'links'):
+            page.locator('[data-case-filter="'+kind+'"]').click()
+            expect(page.locator('#case-content')).to_contain_text('作品整理中')
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        page.keyboard.press('Escape')
+        expect(page.locator('#case-dialog')).not_to_be_visible()
+    expect(page.locator('.footer-links a[href="/help#feedback"]')).to_be_visible()
+    page.locator('#open-login').click()
+    expect(page.locator('#login-username')).to_be_focused()
+    page.locator('#login-password').fill('clear-on-close')
+    page.keyboard.press('Escape')
+    expect(page.locator('#login-password')).to_have_value('')
+    assert not errors
+
+
+def test_production_autoplay_advances_and_pauses_for_every_dialog(mira_browser):
+    from playwright.sync_api import expect
+    page, errors, _ = mira_browser
+    page.emulate_media(reduced_motion='no-preference')
+    page.goto('http://testserver/login')
+    page.wait_for_function('!document.querySelector("#film").paused && document.querySelector("#film").currentTime > .05')
+    assert page.locator('#film').evaluate('(v) => v.muted && !v.loop')
+    page.locator('#film').dispatch_event('ended')
+    expect(page.locator('#current')).to_have_text('02')
+    page.wait_for_function('!document.querySelector("#film").paused && document.querySelector("#film").currentTime > .05')
+    for trigger, dialog in [('#open-login', '#login-dialog'), ('#menu-trigger', '#site-menu'),
+                            ('.footer-links [data-action="info:privacy"]', '#info-dialog')]:
+        page.locator(trigger).click()
+        expect(page.locator(dialog)).to_be_visible()
+        assert page.locator('#film').evaluate('(v) => v.paused && !v.autoplay')
+        page.locator('#film').dispatch_event('ended')
+        expect(page.locator('#current')).to_have_text('02')
+        page.keyboard.press('Escape')
+        page.wait_for_function('!document.querySelector("#film").paused')
+    page.locator('#play').click()
+    page.locator('#film').dispatch_event('ended')
+    expect(page.locator('#current')).to_have_text('02')
+    assert page.locator('#film').evaluate('(v) => v.paused')
     assert not errors
 
 
