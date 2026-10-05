@@ -54,6 +54,7 @@
     ticks.sort((a,b) => a-b);
     slider.max = ticks.length - 1;
     slider.value = value === null ? 0 : ticks.reduce((best, tick, index) => Math.abs(tick-value) < Math.abs(ticks[best]-value) ? index : best, 0);
+    slider.style.setProperty('--duration-fill', `${Number(slider.max) ? Number(slider.value) / Number(slider.max) * 100 : 0}%`);
     slider.disabled = locked || !loaded || raw === null;
     slider.setAttribute('aria-valuetext', value === null ? '待选择视频' : `${display(value)} 秒`);
     byId('generation-duration-note').textContent = value === null ? '待选择视频' : `${display(value)} 秒`;

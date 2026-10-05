@@ -28,6 +28,60 @@ def test_cover_has_real_login_without_preview_controls(protected):
     assert redirect.status_code == 303 and redirect.headers['location'] == '/login'
 
 
+def test_production_cover_five_films_language_and_menu(mira_browser):
+    from playwright.sync_api import expect
+    page, errors, _ = mira_browser
+    page.goto('http://testserver/login')
+    expect(page.locator('#total')).to_have_text('05')
+    expect(page.locator('#film')).to_have_attribute('src', '/static/mira/cover/film-04-original.mp4')
+    page.locator('#previous').click()
+    expect(page.locator('#current')).to_have_text('05')
+    expect(page.locator('#film')).to_have_attribute('src', '/static/mira/cover/film-05-original.mp4')
+    page.locator('#language-trigger').click()
+    page.locator('#language-list [data-language=en]').click()
+    expect(page.locator('#open-login')).to_have_text('Log in')
+    page.reload()
+    expect(page.locator('#open-login')).to_have_text('Log in')
+    page.locator('#menu-trigger').click()
+    expect(page.locator('#site-menu')).to_be_visible()
+    page.locator('#site-menu [data-action=login]').first.click()
+    expect(page.locator('#login-username')).to_be_focused()
+    expect(page.locator('#login-password')).to_be_enabled()
+    assert not errors
+
+
+def test_material_layout_ignores_hidden_video_decoder(browser):
+    static = Path(__file__).resolve().parents[1]/'app/static/mira'
+    context = browser.new_context(viewport={'width':1440,'height':900})
+    page = context.new_page()
+    try:
+        page.set_content('''<style>[hidden]{display:none!important}.asset-grid{display:grid;grid-template-columns:300px 300px}</style>
+          <body class="production-view"><div class="creation-workspace"><div class="asset-grid">
+          <div class="asset-entry"><div class="asset-heading">视频</div><div class="asset-picker has-media"><div class="asset-thumbnails">
+          <span class="reference-video"><video hidden></video><button class="video-cover"><img id="cover"><span>查看视频</span></button></span>
+          </div></div></div><div class="asset-entry"><div class="asset-heading">图片</div><div class="asset-picker has-media"><div class="asset-thumbnails">
+          <span class="reference-thumb"><img id="picture"></span></div></div></div></div></div></body>''')
+        for name in ('production.css', 'production-shell.css', 'workspace.css',
+                     'mira/mira-workspace-skin.css', 'mira/mira-system.css',
+                     'mira/mira-production.css', 'mira/mira-materials.css'):
+            page.add_style_tag(content=(static.parent/name).read_text(encoding='utf-8'))
+        # Model the loadedmetadata boundary: the decoder has dimensions but stays hidden.
+        page.evaluate('''() => {
+          const video=document.querySelector('video');
+          Object.defineProperties(video,{videoWidth:{value:1920},videoHeight:{value:1080}});
+          for (const id of ['cover','picture']) document.getElementById(id).src='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300"></svg>');
+        }''')
+        page.wait_for_function('document.getElementById("cover").naturalWidth===200 && document.getElementById("picture").naturalWidth===200')
+        page.add_script_tag(content=(static/'mira-materials.js').read_text(encoding='utf-8'))
+        assert page.locator('.reference-video > video[hidden]').count() == 1
+        assert page.locator('.reference-video > .material-visual').count() == 0
+        assert page.locator('.video-cover > .material-visual').count() == 1
+        assert page.locator('.video-cover > .material-visual').evaluate('(el) => getComputedStyle(el).position') == 'static'
+        page.wait_for_function('parseFloat(getComputedStyle(document.querySelector(".video-cover > .material-visual")).minHeight)>0')
+    finally:
+        context.close()
+
+
 @pytest.mark.parametrize('path', ['/', '/people', '/videos', '/admin/settings', '/admin/users', '/account/password'])
 def test_real_pages_have_mira_skin_and_keep_access_boundaries(accounts_clients, path):
     _, _, (admin, alice, _) = accounts_clients
@@ -88,7 +142,7 @@ def test_mira_modal_real_login_upload_draft_and_logout(mira_browser, tmp_path):
     expect(page.locator('#draft-save-status')).to_contain_text('已保存')
     expect(page.locator('a[href="/admin/settings"]')).not_to_be_visible()
     image = BytesIO()
-    Image.new('RGB', (400,400), 'navy').save(image, format='PNG')
+    Image.new('RGB', (640,320), 'navy').save(image, format='PNG')
     page.locator('#clothing-picker input[type=file]').set_input_files(
         {'name':'mira-shirt.png','mimeType':'image/png','buffer':image.getvalue()})
     expect(page.locator('#clothing-reference-preview img')).to_have_count(1)
@@ -96,6 +150,11 @@ def test_mira_modal_real_login_upload_draft_and_logout(mira_browser, tmp_path):
     assert any(method == 'POST' and path == '/api/production/assets' and code == 200 for method,path,code in calls)
     page.reload()
     expect(page.locator('#clothing-reference-preview img')).to_have_count(1)
+    picture = page.locator('#clothing-reference-preview img')
+    expect(picture).to_be_visible()
+    page.wait_for_function('document.querySelector("#clothing-reference-preview img").naturalWidth > 0')
+    box = picture.bounding_box()
+    assert abs(box['width'] / box['height'] - 2) < 0.02
     page.locator('.workspace-nav a[href="/videos"]').click()
     expect(page).to_have_url('http://testserver/videos')
     expect(page.locator('#library-empty')).to_be_visible()

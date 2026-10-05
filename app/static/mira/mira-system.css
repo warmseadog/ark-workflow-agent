@@ -109,3 +109,37 @@ dialog::backdrop{background:#34243f40;backdrop-filter:blur(7px)}
  .mira-workspace .workspace-toggle svg{width:20px;height:20px}
  .login-shell{padding-top:28px}.login-card{padding:28px 24px}.login-card h1{font-size:26px}
 }
+
+/* Cross-route small-screen safeguards; retain the production order and desktop grid. */
+/* A local lilac light acknowledges a button, never follows the pointer across video. */
+@media(hover:hover){
+ body:is(.mira-cover-page,.mira-login-page,.mira-workspace) :is(button,a.mira-action):not(:disabled):hover{box-shadow:inset 0 0 18px #dcc6ec38,0 0 14px #b394c82e}
+}
+body:is(.mira-cover-page,.mira-login-page,.mira-workspace) :is(button,a.mira-action):not(:disabled):is(:active,:focus-visible){box-shadow:inset 0 0 20px #dcc6ec50,0 0 14px #b394c836}
+@media(prefers-reduced-motion:no-preference){
+ body:is(.mira-cover-page,.mira-login-page,.mira-workspace) button{transition:box-shadow .18s ease,background-color .18s ease,color .18s ease}
+}
+.mira-login-page .login-shell{box-sizing:border-box;padding-top:max(28px,env(safe-area-inset-top));padding-bottom:max(32px,env(safe-area-inset-bottom))}
+.mira-login-page .login-brandbar{gap:16px}.mira-login-page .login-brandbar span{overflow-wrap:anywhere}
+.mira-login-page input{box-sizing:border-box}
+body:is(.mira-login-page,.mira-workspace) dialog{box-sizing:border-box;max-height:calc(100svh - 24px);max-height:calc(100dvh - 24px);overflow:auto;overscroll-behavior:contain;overflow-wrap:anywhere}
+.mira-workspace :is(.asset-entry,.asset-heading,.generation-action,.generation-dock,.optional-reference-group>details){min-width:0}
+@media(max-width:800px),(orientation:landscape) and (max-width:1100px){
+ .mira-workspace .workspace-sidebar{height:100svh;height:100dvh;padding-bottom:env(safe-area-inset-bottom)}
+ .mira-workspace.workspace-shell.standalone-production{padding-top:calc(64px + env(safe-area-inset-top))}
+ .mira-workspace.standalone-production .production-header{padding-top:calc(10px + env(safe-area-inset-top));min-height:calc(64px + env(safe-area-inset-top));padding-right:max(16px,env(safe-area-inset-right));padding-left:calc(70px + env(safe-area-inset-left))}
+ .mira-workspace.standalone-production .workspace-toggle{top:calc(10px + env(safe-area-inset-top));left:calc(14px + env(safe-area-inset-left))}
+ .mira-workspace.standalone-production[data-sidebar-open] .workspace-toggle{left:182px}
+ .mira-workspace .workspace-brand{padding-top:calc(60px + env(safe-area-inset-top))}
+ .mira-workspace .asset-footer button{min-height:44px}
+ .mira-workspace :is(input:not([type=range]):not([type=checkbox]),textarea,select),.mira-login-page input{font-size:16px}
+ .mira-workspace .production-main{overflow-wrap:anywhere}
+}
+@media(max-width:359px){
+ .mira-login-page .login-shell{width:calc(100% - 24px)}.mira-login-page .login-card{padding:24px 18px}.mira-login-page .login-card h1{font-size:23px}
+ .mira-workspace .asset-entry{padding:12px}.mira-workspace .generation-action{padding:12px}
+}
+@media(orientation:landscape) and (max-height:500px){
+ .mira-login-page .login-shell{padding-top:16px}.mira-login-page .login-brandbar{margin-bottom:12px}
+ .mira-workspace .workspace-brand{padding-top:max(12px,env(safe-area-inset-top))}
+}

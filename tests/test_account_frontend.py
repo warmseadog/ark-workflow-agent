@@ -38,7 +38,7 @@ def test_account_scripts_do_not_render_html_or_persist_secrets():
 def test_existing_application_scripts_remain_in_order():
     text = (TEMPLATES / 'production.html').read_text(encoding='utf-8')
     scripts = re.findall(r'<script src="/static/([^?]+)', text)
-    assert scripts == ['account.js', 'production-shell.js', 'portrait-photos.js', 'portrait-people.js', 'production-runs.js', 'production.js', 'generation-options.js', 'link-templates.js']
+    assert scripts == ['account.js', 'mira/mira-materials.js', 'production-shell.js', 'portrait-photos.js', 'portrait-people.js', 'production-runs.js', 'production.js', 'generation-options.js', 'link-templates.js']
 
 
 @pytest.fixture(scope='module')

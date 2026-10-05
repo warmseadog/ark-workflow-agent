@@ -7,7 +7,7 @@
       <label>画面比例<select name="ratio" required aria-describedby="generation-ratio-note"></select></label>
       <div class="generation-duration-control">
         <label for="generation-duration-slider" class="generation-duration-heading"><span>时长（秒）</span><output id="generation-duration-note">待选择视频</output></label>
-        <input id="generation-duration-slider" type="range" min="0" max="29" step="1" value="0" list="generation-duration-ticks" aria-describedby="generation-duration-help generation-source-duration">
+        <input id="generation-duration-slider" class="mira-duration-slider" type="range" min="0" max="29" step="1" value="0" aria-describedby="generation-duration-help generation-source-duration">
         <datalist id="generation-duration-ticks"></datalist>
         <span id="generation-source-duration">读取参考视频后默认使用原片时长</span>
       </div>

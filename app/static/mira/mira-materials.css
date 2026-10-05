@@ -1,0 +1,163 @@
+/* Material previews follow the source ratio. Load after the workspace skins.
+   Shared selectors also support production reference-thumb / video-cover markup. */
+.production-view .asset-grid { align-items: stretch; }
+.production-view .material-visual { display: flex; align-items: center; width: 100%; }
+.production-view .materials-aligned .asset-heading { min-height: var(--material-heading-height, 28px); }
+.production-view .materials-aligned .asset-thumbnails > :first-child > .material-visual,
+.production-view .materials-aligned .asset-thumbnails > :first-child > .video-cover > .material-visual {
+  min-height: var(--material-stage-height, 0px);
+}
+.production-view .materials-aligned .asset-picker.has-media {
+  min-height: var(--material-picker-height, 0px) !important;
+}
+.production-view #person-reference-card .reference-caption { display: block; }
+.production-view .asset-picker.has-media {
+  display: block;
+  width: 100%;
+  height: auto !important;
+  min-height: 0 !important;
+  aspect-ratio: auto !important;
+  overflow: visible;
+  border: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: default;
+}
+.production-view .asset-picker.has-media .asset-thumbnails {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 0;
+  overflow: visible;
+  height: auto;
+}
+.production-view .asset-picker .reference-thumb,
+.production-view .asset-picker .reference-video {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, var(--material-width, 100%));
+  height: auto;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+.production-view .asset-picker .reference-thumb img,
+.production-view .asset-picker .reference-video video,
+.production-view .asset-picker .video-cover img {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  aspect-ratio: auto;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #f8f5fa;
+}
+.production-view .asset-picker .video-cover {
+  width: min(100%, var(--material-width, 100%));
+  height: auto !important;
+  min-height: 0 !important;
+  aspect-ratio: auto !important;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.production-view #video-reference-preview .reference-video video { display: block; }
+.production-view .asset-picker .video-cover > span:not(.material-visual) {
+  position: static;
+  display: block;
+  padding: 12px 0;
+  text-align: left;
+  background: none;
+}
+.production-view .asset-picker .video-cover > .material-visual {
+  position: static;
+  inset: auto;
+  padding: 0;
+  background: none;
+}
+.production-view .reference-index {
+  position: static;
+  order: -1;
+  align-self: flex-start;
+  padding: 0 0 8px;
+  background: transparent;
+  color: #766185;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.production-view .reference-caption {
+  padding: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #726c78;
+}
+.production-view .reference-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  border: 0;
+}
+.production-view .reference-actions button {
+  flex: 0 1 auto;
+  min-height: 44px;
+  padding: 0;
+  font-size: 12px;
+  color: #766185;
+}
+.production-view .asset-footer {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding-top: 12px;
+}
+.production-view .asset-footer > span:not(.asset-edit-actions) {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.production-view .asset-edit-actions { flex-wrap: wrap; gap: 8px 16px; }
+.production-view .asset-footer button { min-height: 44px; }
+.production-view .material-error { margin: 8px 0; color: #8b3c52; font-size: 12px; line-height: 1.6; }
+.production-view .reference-thumb img { cursor: zoom-in; }
+.material-viewer { width: min(1100px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 16px; border: 0; border-radius: 16px; background: #fff; }
+.material-viewer::backdrop { background: #201b28b3; }
+.material-viewer header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.material-viewer h2 { margin: 0; font-size: 16px; font-weight: 500; overflow-wrap: anywhere; }
+.material-viewer button { min-height: 44px; padding: 8px 16px; flex-shrink: 0; }
+.material-viewer img { display: block; width: 100%; height: auto; max-height: calc(100dvh - 132px); object-fit: contain; }
+
+/* A fine progress line, without ruler ticks, bevels or a heavy surrounding box. */
+.production-view .generation-duration-control { height: auto; max-width: 320px; }
+.production-view #model-settings .mira-duration-slider {
+  appearance: none; -webkit-appearance: none;
+  display: block; width: 100%; height: 44px; min-height: 44px;
+  margin: 0; padding: 0; border: 0; border-radius: 8px;
+  background: transparent; box-shadow: none; cursor: pointer;
+}
+.mira-duration-slider::-webkit-slider-runnable-track {
+  height: 3px; border: 0; border-radius: 3px;
+  background: linear-gradient(to right, #7a6589 var(--duration-fill, 0%), #c6bbce var(--duration-fill, 0%));
+}
+.mira-duration-slider::-webkit-slider-thumb {
+  appearance: none; -webkit-appearance: none; margin-top: -4.5px;
+  width: 12px; height: 12px; border: 2px solid #7a6589; border-radius: 50%; background: white;
+}
+.mira-duration-slider::-moz-range-track { height: 3px; border: 0; border-radius: 3px; background: #c6bbce; }
+.mira-duration-slider::-moz-range-progress { height: 3px; border-radius: 3px; background: #7a6589; }
+.mira-duration-slider::-moz-range-thumb { width: 8px; height: 8px; border: 2px solid #7a6589; border-radius: 50%; background: white; }
+.production-view #model-settings .mira-duration-slider:disabled { opacity: .45; cursor: not-allowed; }
+.production-view #generation-duration-note { font-size: 12px; font-weight: 500; color: #65516f; }
+.production-view #generation-source-duration { position: static; display: block; margin-top: 0; white-space: normal; font-size: 11px; line-height: 1.6; }
+@media (min-width: 1101px) {
+  .production-view .generation-duration-control { height: 58px; }
+  .production-view #model-settings.inline-generation-options .mira-duration-slider {
+    height: 44px; min-height: 44px; margin: 2px 0 0;
+  }
+  .production-view #generation-source-duration { position: absolute; top: 62px; }
+}
