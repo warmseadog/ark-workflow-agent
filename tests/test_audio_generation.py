@@ -67,6 +67,13 @@ def test_audio_retry_preserves_inputs_original_and_deduplicates(client):
     url = '/api/production/runs/'+old['id']+'/retry-without-audio'
     with ThreadPoolExecutor(max_workers=2) as pool:
         responses = list(pool.map(lambda _: client.post(url,json={}), range(2)))
+    # A duplicate still being validated is rejected promptly; retrying after
+    # the first commit must return the same task, without another generation.
+    assert any(r.status_code == 200 for r in responses), [r.text for r in responses]
+    for i, response in enumerate(responses):
+        if response.status_code == 429:
+            assert response.headers['retry-after'] == '2'
+            responses[i] = client.post(url,json={})
     assert all(r.status_code == 200 for r in responses), [r.text for r in responses]
     a, b = (r.json() for r in responses)
     assert a['run']['id'] == b['run']['id'] != old['id']
@@ -117,12 +124,12 @@ def test_retry_respects_queue_limit_and_reuses_draft_after_rejection(client, mon
     original = store.get_run(old['id'])
     from app.production_store import Conflict
     check=ProductionStore.check_queue_limit
-    monkeypatch.setattr(ProductionStore,'check_queue_limit',staticmethod(lambda *args: (_ for _ in ()).throw(Conflict('quota'))))
+    monkeypatch.setattr(ProductionStore,'check_queue_limit',lambda *args: (_ for _ in ()).throw(Conflict('quota')))
     url='/api/production/runs/'+old['id']+'/retry-without-audio'
     assert client.post(url,json={}).status_code==409
     assert len(store.list_runs())==1
     drafts=len(store.list_drafts())
-    monkeypatch.setattr(ProductionStore,'check_queue_limit',staticmethod(check))
+    monkeypatch.setattr(ProductionStore,'check_queue_limit',check)
     assert client.post(url,json={}).status_code==200
     assert len(store.list_drafts())==drafts and store.get_run(old['id'])['snapshot']==original['snapshot']
 

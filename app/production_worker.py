@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import threading
+import time
 
 from .production_store import ProductionStore
 from .generation_settings import GenerationConfig
@@ -222,6 +223,7 @@ class QueueManager:
         self._initialized = set()
         self._active = {}
         self._last_tenant = {}
+        self._last_expiry = {}
 
     @staticmethod
     def _tenant_key(settings):
@@ -250,6 +252,9 @@ class QueueManager:
                     with store.connection() as db:
                         db.execute("UPDATE production_playbacks SET status='queued' WHERE status='processing'")
                     self._initialized.add(key)
+                if time.monotonic()-self._last_expiry.get(key,0) >= 3:
+                    self._stores[key].expire_queued()
+                    self._last_expiry[key] = time.monotonic()
                 if user.get('enabled', True):
                     ready.append((key, user, settings, self._stores[key]))
             except Exception:

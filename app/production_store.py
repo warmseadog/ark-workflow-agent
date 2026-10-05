@@ -10,6 +10,7 @@ from pathlib import Path
 from threading import RLock
 from .audio_policy import decorate_audio_failure
 from .model_catalog import capabilities
+from .queue_admission import queued_write, check_capacity, positive_setting
 
 _connection_setup_lock = RLock()
 
@@ -38,8 +39,9 @@ class Conflict(ValueError):
 
 
 class ProductionStore:
-    def __init__(self, storage):
+    def __init__(self, storage, *, queue_root=None):
         self.storage = Path(storage)
+        self.queue_root = Path(queue_root).resolve() if queue_root is not None else None
         self.storage.mkdir(parents=True, exist_ok=True)
         self.path = self.storage / 'production.db'
         with self.connection() as db:
@@ -77,6 +79,7 @@ class ProductionStore:
                 queue_seconds REAL NOT NULL DEFAULT 0, execution_seconds REAL DEFAULT 0,
                 paused_seconds REAL NOT NULL DEFAULT 0, interrupted INTEGER NOT NULL DEFAULT 0);
             CREATE INDEX IF NOT EXISTS production_runs_order ON production_runs(created_at DESC,id DESC);
+            CREATE INDEX IF NOT EXISTS production_runs_status ON production_runs(status);
             """)
 
     @contextmanager
@@ -297,11 +300,12 @@ class ProductionStore:
             row = db.execute('SELECT * FROM production_runs WHERE idempotency_key=?', (key,)).fetchone()
             return self._run(row) if row else None
 
-    @staticmethod
-    def check_queue_limit(db, limit):
+    def check_queue_limit(self, db, limit):
+        check_capacity(self, limit)
         if limit is not None and db.execute("SELECT COUNT(*) FROM production_runs WHERE status='queued'").fetchone()[0] >= limit:
             raise Conflict('当前账户排队任务已达上限，请等待任务开始或撤销排队任务。')
 
+    @queued_write
     def create_run(self, draft_id, revision, key, private, max_queued=None):
         ident, stamp = uuid.uuid4().hex, now()
         with self.connection() as db:
@@ -355,6 +359,7 @@ class ProductionStore:
                 (json.dumps(data, ensure_ascii=False), next_check, ident))
         return True
 
+    @queued_write
     def retry_preparation(self, ident, max_queued=None):
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -509,6 +514,7 @@ class ProductionStore:
         return self.get_run(ident)
 
     def claim_next(self):
+        self.expire_queued()
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute("""SELECT r.* FROM production_runs r
@@ -537,6 +543,7 @@ class ProductionStore:
             db.execute("UPDATE production_runs SET status='cancelled',message='已撤销排队',updated_at=? WHERE id=?",(stamp,ident))
         return self.get_run(ident)
 
+    @queued_write
     def resume_run(self, ident, max_queued=None):
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -561,6 +568,29 @@ class ProductionStore:
             self._transition_timing(db, ident, 'queued', stamp)
             db.execute("UPDATE production_runs SET status='queued',error=NULL,message='等待恢复查询',updated_at=? WHERE id=?",(stamp,ident))
         return self.get_run(ident)
+
+    def expire_queued(self):
+        cutoff = (datetime.fromisoformat(now())-timedelta(
+            seconds=positive_setting('APP_QUEUE_TIMEOUT_SECONDS',600))).isoformat()
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            rows = db.execute("""SELECT r.*,c.data AS continuation_data FROM production_runs r
+                LEFT JOIN production_run_timing t ON t.run_id=r.id
+                LEFT JOIN production_continuations c ON c.run_id=r.id
+                WHERE r.status='queued' AND COALESCE(t.state_since,r.created_at)<?
+                AND COALESCE(r.provider_task_id,'')='' AND COALESCE(r.result_url,'')=''
+                AND r.stage NOT IN ('submitting','continuation_submitting')""",(cutoff,)).fetchall()
+            expired = 0
+            for row in rows:
+                continuation = json.loads(row['continuation_data'] or '{}')
+                if continuation.get('base_ready') or continuation.get('provider_task_id') or continuation.get('result_url'):
+                    continue
+                stamp = now()
+                self._transition_timing(db,row['id'],'failed',stamp)
+                db.execute("UPDATE production_runs SET status='failed',error_kind='queue_timeout',error=?,message=?,updated_at=? WHERE id=?",
+                    ('排队等待超时，请重新提交。','排队等待超时，请重新提交。',stamp,row['id']))
+                expired += 1
+            return expired
 
     def recover(self):
         with self.connection() as db:

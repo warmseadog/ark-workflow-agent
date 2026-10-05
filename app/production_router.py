@@ -18,6 +18,7 @@ from .person_video import is_video, person_ids, validate_file, validate_pair
 from .reference_roles import ACCESSORY_LABELS, OPTIONAL_KINDS
 from .model_catalog import TASK_FIELDS, task_values, resolve_task_config, editor_options, capabilities
 from . import tenancy
+from . import queue_admission
 from . import input_limits
 
 _MODEL_FIELDS = {'provider','protocol','mode','base_url','model','duration','fps','resolution','ratio','public_base_url','generate_audio'}
@@ -28,8 +29,17 @@ _MASK_FIELDS = {'blur_style','style','shape','mask_mode','robust_tracking','mask
 
 
 def get_router(settings_getter, local_guard):
-    router = APIRouter(prefix='/api/production', dependencies=[Depends(local_guard)])
-    def store(): return ProductionStore(settings_getter().storage_dir)
+    router = APIRouter(prefix='/api/production', dependencies=[Depends(local_guard)],
+                       route_class=queue_admission.route_class(settings_getter))
+    def store():
+        effective = settings_getter()
+        cache = queue_admission.request_stores.get()
+        key = str(effective.storage_dir.resolve())
+        if cache is None:
+            return ProductionStore(effective.storage_dir,queue_root=tenancy.config_root(effective))
+        if key not in cache:
+            cache[key] = ProductionStore(effective.storage_dir,queue_root=tenancy.config_root(effective))
+        return cache[key]
     def queue_limit():
         effective=settings_getter()
         if not tenancy.enabled(): return None
@@ -44,6 +54,8 @@ def get_router(settings_getter, local_guard):
     def guarded(operation):
         try: return operation()
         except HTTPException: raise
+        except queue_admission.CapacityError as exc:
+            raise HTTPException(429,str(exc),headers={'Retry-After':'2'}) from None
         except PermissionError as exc: raise HTTPException(403,str(exc)) from None
         except Conflict as exc: raise HTTPException(409,str(exc)) from None
         except LookupError as exc: raise HTTPException(404,str(exc)) from None
@@ -291,6 +303,9 @@ def get_router(settings_getter, local_guard):
                 if previous['id'] in store().deleted_run_ids(): raise Conflict('此前提交的任务已删除，请刷新并发起新的提交。')
                 if previous['draft_id']!=draft_id or previous['revision']!=revision: raise Conflict('提交标识已用于另一份输入。')
                 return decorate_run(previous)
+            with queue_admission.reserve(settings_getter(),key,max_queued=queue_limit()):
+                return create_validated(draft_id,revision,key)
+        def create_validated(draft_id,revision,key):
             draft=store().get_draft(draft_id)
             if draft['revision'] != revision:
                 raise Conflict('草稿发生变化，请保存后重新提交。')
