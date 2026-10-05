@@ -55,7 +55,7 @@ def _json(value: Any) -> str:
 
 def _decode(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
-    for key in ("metadata_json", "input_json", "output_json", "error_json", "payload_json", "snapshot_json"):
+    for key in ("metadata_json", "input_json", "output_json", "error_json", "payload_json", "snapshot_json", "provider_state_json"):
         if key in result and result[key] is not None:
             result[key[:-5] if key.endswith("_json") else key] = json.loads(result.pop(key))
     return result
@@ -191,6 +191,12 @@ class WorkflowStore:
                     ON workflow_events(entity_type, entity_id, id);
                 """
             )
+
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(stage_tasks)")}
+            if "provider_state_json" not in columns:
+                connection.execute("ALTER TABLE stage_tasks ADD COLUMN provider_state_json TEXT NOT NULL DEFAULT '{}'")
+            if "execution_token" not in columns:
+                connection.execute("ALTER TABLE stage_tasks ADD COLUMN execution_token TEXT")
 
     @staticmethod
     def _id() -> str:
@@ -364,7 +370,13 @@ class WorkflowStore:
             self.get_project(project_id, connection=connection)
             existing = self._existing_by_key(connection, "stage_tasks", idempotency_key)
             if existing:
+                if (existing["project_id"] != project_id or existing["stage"] != stage
+                        or _json(existing["input"]) != _json(input_data)):
+                    raise ConflictError("idempotency key belongs to a different task submission")
                 return existing
+            if connection.execute("SELECT 1 FROM stage_tasks WHERE project_id=? AND status='restore_held' LIMIT 1",
+                                  (project_id,)).fetchone():
+                raise ConflictError("项目包含从备份恢复的待核对任务，请管理员完成核对后再操作。")
             try:
                 connection.execute(
                     """INSERT INTO stage_tasks
@@ -410,7 +422,7 @@ class WorkflowStore:
             current = task["status"]
             if status != current and status not in _STAGE_TRANSITIONS.get(current, set()):
                 raise InvalidTransitionError(f"cannot transition task from {current} to {status}")
-            attempts = task["attempts"] + (1 if status == "running" else 0)
+            attempts = task["attempts"] + (1 if status == "running" and current != "running" else 0)
             now = _now()
             connection.execute(
                 """UPDATE stage_tasks
@@ -422,6 +434,102 @@ class WorkflowStore:
                 connection, task["project_id"], "stage_task", task_id, "stage_task.status_changed",
                 {"from": current, "to": status},
             )
+            return self.get_stage_task(task_id, connection=connection)
+
+    def claim_stage_task(self, task_id: str) -> dict[str, Any] | None:
+        """Exclusively reserve a queued task before starting any side effect."""
+        with self._transaction() as connection:
+            task = self.get_stage_task(task_id, connection=connection)
+            if task["status"] != "queued":
+                return None
+            state = task["provider_state"]
+            if (state.get("submission_uncertain") or state.get("phase") == "submitting") and not (
+                    state.get("task_id") or state.get("result_url")):
+                raise ConflictError("submission outcome is unknown; automatic resubmission is prohibited")
+            if not state.get("phase"):
+                state["phase"] = "preparing"
+            token = self._id()
+            connection.execute(
+                """UPDATE stage_tasks SET status='running', attempts=attempts+1,
+                   execution_token=?, provider_state_json=?, error_json='{}', updated_at=? WHERE id=?""",
+                (token, _json(state), _now(), task_id),
+            )
+            self._event(connection, task["project_id"], "stage_task", task_id, "stage_task.claimed", {})
+            return self.get_stage_task(task_id, connection=connection)
+
+    def checkpoint_stage_task(self, stage_task_id: str, token: str, **updates: Any) -> dict[str, Any]:
+        with self._transaction() as connection:
+            task = self.get_stage_task(stage_task_id, connection=connection)
+            if task["status"] != "running" or task["execution_token"] != token:
+                raise ConflictError("task execution is no longer owned by this worker")
+            state = {**task["provider_state"], **updates}
+            connection.execute("UPDATE stage_tasks SET provider_state_json=?, updated_at=? WHERE id=?",
+                               (_json(state), _now(), stage_task_id))
+            return self.get_stage_task(stage_task_id, connection=connection)
+
+    def queued_stage_tasks(self) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute("""SELECT * FROM stage_tasks WHERE status='queued'
+                AND stage IN ('generation','redaction_render') ORDER BY created_at, id""").fetchall()
+            return [_decode(row) for row in rows]
+
+    def release_stage_task(self, task_id: str, token: str) -> None:
+        """Return a safely interrupted claim to the durable queue during shutdown."""
+        with self._transaction() as connection:
+            task = self.get_stage_task(task_id, connection=connection)
+            state = task["provider_state"]
+            safe = state.get("phase") in {"preparing", "local_processing"} or state.get("task_id") or state.get("result_url")
+            if task["status"] != "running" or task["execution_token"] != token or not safe:
+                raise ConflictError("cannot release an uncertain or unowned execution")
+            connection.execute("UPDATE stage_tasks SET status='queued', execution_token=NULL, updated_at=? WHERE id=?",
+                               (_now(), task_id))
+            self._event(connection, task["project_id"], "stage_task", task_id, "stage_task.interrupted", {})
+
+    def recover_stage_tasks(self) -> dict[str, int]:
+        """Recover at startup only, while the dispatcher holds its exclusive lock."""
+        counts = {"queued": 0, "uncertain": 0}
+        with self._transaction() as connection:
+            rows = connection.execute("""SELECT * FROM stage_tasks WHERE status IN ('running','queued')
+                AND stage IN ('generation','redaction_render')""").fetchall()
+            for row in rows:
+                task = _decode(row)
+                state = task["provider_state"]
+                remote = state.get("task_id") or state.get("result_url")
+                safe_phases = {"preparing"} if task["stage"] == "generation" else {"preparing", "local_processing"}
+                uncertain = not remote and (
+                    state.get("submission_uncertain") or state.get("phase") == "submitting"
+                    or (task["status"] == "running" and state.get("phase") not in safe_phases))
+                if task["status"] == "queued" and not uncertain:
+                    counts["queued"] += 1
+                    continue
+                status = "failed" if uncertain else "queued"
+                error = {}
+                if uncertain:
+                    state["submission_uncertain"] = True
+                    error = {"type": "SubmissionUncertain", "message":
+                             "提交结果无法确认，已停止自动提交。请先在服务商控制台核对，避免重复扣费。"}
+                connection.execute("""UPDATE stage_tasks SET status=?, provider_state_json=?, error_json=?,
+                    execution_token=NULL, updated_at=? WHERE id=?""",
+                    (status, _json(state), _json(error), _now(), task["id"]))
+                counts["uncertain" if uncertain else "queued"] += 1
+                self._event(connection, task["project_id"], "stage_task", task["id"],
+                            "stage_task.recovered", {"status": status, "phase": state.get("phase")})
+        return counts
+
+    def resume_stage_task(self, task_id: str) -> dict[str, Any]:
+        """Queue query/download only; this API never permits a new submission."""
+        with self._transaction() as connection:
+            task = self.get_stage_task(task_id, connection=connection)
+            state = task["provider_state"]
+            if task["stage"] != "generation" or not (state.get("task_id") or state.get("result_url")):
+                raise ConflictError("没有已保存的远端任务编号，无法仅查询恢复；请核对服务商记录。")
+            if task["status"] in {"queued", "running"}:
+                return task
+            if task["status"] != "failed":
+                raise ConflictError("only an interrupted generation can be resumed")
+            connection.execute("""UPDATE stage_tasks SET status='queued', execution_token=NULL,
+                error_json='{}', updated_at=? WHERE id=?""", (_now(), task_id))
+            self._event(connection, task["project_id"], "stage_task", task_id, "stage_task.resumed", {})
             return self.get_stage_task(task_id, connection=connection)
 
     def create_review_decision(

@@ -1,0 +1,15 @@
+{
+  "root": "/opt/ark-video-workflow",
+  "service": "ark-video-workflow.service",
+  "storage_root": "/opt/ark-video-workflow/data",
+  "snapshot_root": "/var/lib/ark-video-workflow-backups",
+  "application_env": "/opt/ark-video-workflow/config/app.env",
+  "nginx_config": "/etc/nginx/conf.d/ark-video-workflow.conf",
+  "database_url": "sqlite:////opt/ark-video-workflow/data/studio.db",
+  "workflow_db": "/opt/ark-video-workflow/data/workflow.db",
+  "workflow_storage": "/opt/ark-video-workflow/data/workflow",
+  "extra_roots": {
+    "service_unit": "/etc/systemd/system/ark-video-workflow.service"
+  },
+  "legacy_source_commit": "REPLACE_ONLY_FOR_FIRST_VERIFIED_LEGACY_TRANSITION"
+}

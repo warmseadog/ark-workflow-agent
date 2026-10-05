@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
-from threading import Thread
 from typing import Any, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -18,7 +17,9 @@ from pydantic import BaseModel, Field
 
 from .media_validation import validate_media, VIDEO_SUFFIXES
 from .workflow import ProjectStage
-from .workflow_worker import run_generation_task, run_redaction_task
+from .workflow_worker import dispatch_workflow_task
+from .config import Settings
+from .recovery_guard import is_restore_held
 from .workflow_store import (
     ConflictError,
     InvalidTransitionError,
@@ -101,11 +102,29 @@ class SnapshotIn(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+def _task_payload(task: dict[str, Any]) -> dict[str, Any]:
+    public = dict(task)
+    public.pop("execution_token", None)
+    state = task.get("provider_state") or {}
+    public["provider_state"] = {key: state[key] for key in ("phase", "task_id", "submission_uncertain") if key in state}
+    public["can_resume"] = task["status"] == "failed" and bool(state.get("task_id") or state.get("result_url"))
+    public["requires_reconciliation"] = task["status"] == "restore_held" or (
+        bool(state.get("submission_uncertain")) and not bool(state.get("task_id") or state.get("result_url")))
+    return public
+
+
+def _require_active() -> Settings:
+    settings = Settings.from_env()
+    if is_restore_held(settings):
+        raise HTTPException(status_code=503, detail="备份已恢复，正在等待管理员核对任务，暂不能处理。")
+    return settings
+
+
 def _project_payload(store: WorkflowStore, project_id: str) -> dict[str, Any]:
     project = store.get_project(project_id)
     project["source_assets"] = store.list_assets(project_id)
     project["reference_assets"] = store.list_assets(project_id, references=True)
-    project["tasks"] = store.list_stage_tasks(project_id)
+    project["tasks"] = [_task_payload(task) for task in store.list_stage_tasks(project_id)]
     project["stage"] = (project.get("metadata") or {}).get("stage", ProjectStage.DRAFT.value)
     return project
 
@@ -232,6 +251,7 @@ def get_router(store: WorkflowStore | None = None) -> APIRouter:
 
     @router.post("/projects/{project_id}/tasks")
     def enqueue_task(project_id: str, payload: TaskIn):
+        _require_active()
         try:
             task = db.create_stage_task(
                 project_id,
@@ -239,7 +259,7 @@ def get_router(store: WorkflowStore | None = None) -> APIRouter:
                 input_data=payload.input_data,
                 idempotency_key=payload.idempotency_key,
             )
-            return {"task": task, "project": _project_payload(db, project_id)}
+            return {"task": _task_payload(task), "project": _project_payload(db, project_id)}
         except NotFoundError as exc:
             raise _not_found(exc) from exc
         except ConflictError as exc:
@@ -247,6 +267,7 @@ def get_router(store: WorkflowStore | None = None) -> APIRouter:
 
     @router.post("/projects/{project_id}/redaction/render")
     def render_redaction(project_id: str, payload: RedactionRunIn):
+        settings = _require_active()
         try:
             project = _project_payload(db, project_id)
             if not project["source_assets"]:
@@ -258,21 +279,8 @@ def get_router(store: WorkflowStore | None = None) -> APIRouter:
                 input_data={"source_asset_id": source["id"], "options": payload.model_dump()},
                 idempotency_key=payload.idempotency_key,
             )
-            if task["status"] == "queued":
-                db.transition_stage_task(task["id"], "running")
-                Thread(
-                    target=run_redaction_task,
-                    args=(
-                        db,
-                        task["id"],
-                        project_id,
-                        source["uri"],
-                        source["kind"],
-                        payload.model_dump(),
-                    ),
-                    daemon=True,
-                ).start()
-            return {"task": db.get_stage_task(task["id"]), "project": _project_payload(db, project_id)}
+            dispatch_workflow_task(db, task["id"], settings)
+            return {"task": _task_payload(db.get_stage_task(task["id"])), "project": _project_payload(db, project_id)}
         except NotFoundError as exc:
             raise _not_found(exc) from exc
         except (ConflictError, InvalidTransitionError, ValueError) as exc:
@@ -397,9 +405,24 @@ def get_router(store: WorkflowStore | None = None) -> APIRouter:
             task = db.get_stage_task(task_id)
             if task["project_id"] != project_id:
                 raise NotFoundError(f"task not found: {task_id}")
-            return task
+            return _task_payload(task)
         except NotFoundError as exc:
             raise _not_found(exc) from exc
+
+    @router.post("/projects/{project_id}/tasks/{task_id}/resume")
+    def resume_task(project_id: str, task_id: str):
+        settings = _require_active()
+        try:
+            task = db.get_stage_task(task_id)
+            if task["project_id"] != project_id:
+                raise NotFoundError(f"task not found: {task_id}")
+            db.resume_stage_task(task_id)
+            dispatch_workflow_task(db, task_id, settings)
+            return {"task": _task_payload(db.get_stage_task(task_id)), "project": _project_payload(db, project_id)}
+        except NotFoundError as exc:
+            raise _not_found(exc) from exc
+        except ConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @router.get("/projects/{project_id}/tasks/{task_id}/artifact")
     def get_task_artifact(project_id: str, task_id: str):
@@ -417,6 +440,7 @@ def get_router(store: WorkflowStore | None = None) -> APIRouter:
 
     @router.post("/projects/{project_id}/execute")
     def execute_project(project_id: str, payload: GenerationRunIn):
+        settings = _require_active()
         try:
             project = _project_payload(db, project_id)
             reference = {
@@ -449,22 +473,8 @@ def get_router(store: WorkflowStore | None = None) -> APIRouter:
                 },
                 idempotency_key=payload.idempotency_key,
             )
-            if task["status"] == "queued":
-                db.transition_stage_task(task["id"], "running")
-                Thread(
-                    target=run_generation_task,
-                    args=(
-                        db,
-                        task["id"],
-                        project_id,
-                        artifact["path"],
-                        reference["face"]["uri"],
-                        reference["garment"]["uri"],
-                        payload.prompt,
-                    ),
-                    daemon=True,
-                ).start()
-            return {"task": db.get_stage_task(task["id"]), "project": project}
+            dispatch_workflow_task(db, task["id"], settings)
+            return {"task": _task_payload(db.get_stage_task(task["id"])), "project": _project_payload(db, project_id)}
         except NotFoundError as exc:
             raise _not_found(exc) from exc
         except (ConflictError, InvalidTransitionError, ValueError) as exc:

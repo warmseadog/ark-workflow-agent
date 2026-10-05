@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import shutil
 import time
+from contextlib import ExitStack
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote
 
 import requests
@@ -14,6 +15,10 @@ from .secure_transport import validate_endpoint
 
 class SeedanceError(RuntimeError):
     """Raised when the Seedance adapter cannot submit or retrieve a result."""
+
+    def __init__(self, message: str, *, submission_uncertain: bool = False):
+        super().__init__(message)
+        self.submission_uncertain = submission_uncertain
 
 
 class SeedanceClient:
@@ -39,6 +44,13 @@ class SeedanceClient:
         clothing_path: Path | None,
         prompt: str,
         output_path: Path,
+        *,
+        on_submitting: Callable[[], Any] | None = None,
+        on_submitted: Callable[[str], Any] | None = None,
+        on_result: Callable[[str], Any] | None = None,
+        resume_task_id: str | None = None,
+        resume_result_url: str | None = None,
+        should_stop: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
         structured_prompt = (
             "@Video1 只参考原视频中的动作、镜头运动、构图和节奏。"
@@ -47,7 +59,7 @@ class SeedanceClient:
             "保持人物和服装在镜头之间稳定，不新增其他人物。"
             f"用户要求：{prompt.strip()}"
         )
-        if self.mode == "mock":
+        if self.mode == "mock" and not (resume_task_id or resume_result_url):
             shutil.copyfile(video_path, output_path)
             return {
                 "provider": "mock",
@@ -64,28 +76,55 @@ class SeedanceClient:
         except ValueError as exc:
             raise SeedanceError(str(exc)) from None
         headers = {"Authorization": f"Bearer {self.settings.seedance_api_key}"}
-        files = {"video": video_path.open("rb")}
-        if face_path:
-            files["face_image"] = face_path.open("rb")
-        if clothing_path:
-            files["clothing_image"] = clothing_path.open("rb")
+        task_id = resume_task_id
         try:
-            response = requests.post(
-                f"{base_url}/generations",
-                headers=headers,
-                data={"prompt": structured_prompt},
-                files=files,
-                timeout=60,
-                allow_redirects=False,
-            )
-            if not 200 <= response.status_code < 300:
-                raise SeedanceError(f'Seedance 提交失败（HTTP {response.status_code}），请检查接口配置。')
-            payload = response.json()
-            task_id = payload.get("task_id") or payload.get("id")
+            if resume_result_url:
+                if should_stop and should_stop():
+                    raise SeedanceError("任务已暂停，可稍后继续下载。")
+                try:
+                    self._download_result(resume_result_url, output_path)
+                    return {"provider": "http", "task_id": task_id, "output": str(output_path)}
+                except SeedanceError:
+                    if not task_id:
+                        raise
+                    # Signed result links can expire; only query the original task.
+                    if on_submitted:
+                        on_submitted(task_id)
             if not task_id:
-                raise SeedanceError("Seedance 提交响应中没有 task_id。")
-            deadline = time.time() + 1800
-            while time.time() < deadline:
+                with ExitStack() as stack:
+                    files = {"video": stack.enter_context(video_path.open("rb"))}
+                    if face_path:
+                        files["face_image"] = stack.enter_context(face_path.open("rb"))
+                    if clothing_path:
+                        files["clothing_image"] = stack.enter_context(clothing_path.open("rb"))
+                    if should_stop and should_stop():
+                        raise SeedanceError("任务已暂停，尚未提交。")
+                    if on_submitting:
+                        on_submitting()
+                    try:
+                        response = requests.post(
+                            f"{base_url}/generations", headers=headers,
+                            data={"prompt": structured_prompt}, files=files,
+                            timeout=60, allow_redirects=False,
+                        )
+                        if not 200 <= response.status_code < 300:
+                            raise SeedanceError(f"Seedance 提交结果无法确认（HTTP {response.status_code}），请核对服务商记录。",
+                                                submission_uncertain=True)
+                        payload = response.json()
+                        task_id = payload.get("task_id") or payload.get("id")
+                        if not isinstance(task_id, (str, int)) or not str(task_id).strip():
+                            raise SeedanceError("Seedance 提交响应中没有有效 task_id，请核对服务商记录。",
+                                                submission_uncertain=True)
+                        task_id = str(task_id)
+                    except (requests.RequestException, ValueError, TypeError, AttributeError):
+                        raise SeedanceError("Seedance 提交结果无法确认，请核对服务商记录，勿重复提交。",
+                                            submission_uncertain=True) from None
+                    if on_submitted:
+                        on_submitted(task_id)
+            deadline = time.monotonic() + 1800
+            while time.monotonic() < deadline:
+                if should_stop and should_stop():
+                    raise SeedanceError("任务已暂停，可稍后继续查询。")
                 status_response = requests.get(
                     f"{base_url}/tasks/{quote(str(task_id), safe='')}",
                     headers=headers,
@@ -100,6 +139,10 @@ class SeedanceClient:
                     result_url = status.get("output_url") or status.get("video_url")
                     if not result_url:
                         raise SeedanceError("Seedance 任务完成，但响应中没有 output_url。")
+                    if on_result:
+                        on_result(result_url)
+                    if should_stop and should_stop():
+                        raise SeedanceError("任务已暂停，可稍后继续下载。")
                     self._download_result(result_url, output_path)
                     return {"provider": "http", "task_id": task_id, "output": str(output_path)}
                 if state in {"failed", "error", "cancelled"}:
@@ -108,9 +151,6 @@ class SeedanceClient:
             raise SeedanceError("Seedance 任务等待超时。")
         except (requests.RequestException, ValueError, TypeError):
             raise SeedanceError('Seedance 接口请求失败，请检查接口配置和网络。') from None
-        finally:
-            for file_obj in files.values():
-                file_obj.close()
 
     @staticmethod
     def _download_result(url: str, destination: Path) -> None:

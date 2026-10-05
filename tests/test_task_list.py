@@ -60,3 +60,23 @@ def test_new_draft_has_useful_default_name(setup):
     name=client.post('/api/production/drafts',json={}).json()['name']
     parsed=datetime.strptime(name,'%Y-%m-%d %H:%M:%S')
     assert parsed.strftime('%Y-%m-%d %H:%M:%S')==name
+
+
+@pytest.mark.parametrize('reference,expected', [
+    ('req-public-123', 'req-public-123'),
+    ('FAKE-SNAPSHOT-KEY', None),
+    ('https://private.example/result?token=secret', None),
+])
+def test_task_list_and_detail_expose_only_safe_problem_references(setup, reference, expected):
+    client, store, draft = setup
+    run = store.create_run(draft['id'], 1, 'problem-reference', {'generation': {'api_key': 'FAKE-SNAPSHOT-KEY'}})
+    store.update_run(run['id'], status='needs_attention', error_kind='submission_uncertain', request_id=reference)
+    responses = [client.get('/api/production/runs?page=1'), client.get('/api/production/runs/'+run['id'])]
+    for response in responses:
+        assert response.status_code == 200
+        payload = response.json()
+        item = next(x for x in payload['items'] if x['id'] == run['id']) if 'items' in payload else payload
+        assert 'request_id' in item
+        assert item['request_id'] == expected
+        assert 'FAKE-SNAPSHOT-KEY' not in response.text and 'private.example' not in response.text
+        assert '_private' not in item and 'private' not in item

@@ -1,0 +1,20 @@
+{
+  "service": "ark-video-workflow.service",
+  "release_root": "/opt/ark-video-workflow/current",
+  "storage_root": "/opt/ark-video-workflow/data",
+  "snapshot_root": "/var/lib/ark-video-workflow-backups",
+  "encryption_key_file": "/etc/ark-video-backup/encryption.key",
+  "application_env": "/opt/ark-video-workflow/config/app.env",
+  "workflow_db": "/opt/ark-video-workflow/data/workflow.db",
+  "workflow_storage": "/opt/ark-video-workflow/data/workflow",
+  "extra_roots": {
+    "service_unit": "/etc/systemd/system/ark-video-workflow.service"
+  },
+  "offsite": {
+    "bucket": "REPLACE_WITH_DEDICATED_BACKUP_BUCKET",
+    "prefix": "ark-backups/",
+    "endpoint": "https://tos-cn-beijing.volces.com",
+    "region": "cn-beijing"
+  },
+  "notify_command": []
+}

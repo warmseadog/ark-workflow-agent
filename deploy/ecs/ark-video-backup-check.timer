@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Ark backup freshness every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+Unit=ark-video-backup-check.service
+
+[Install]
+WantedBy=timers.target

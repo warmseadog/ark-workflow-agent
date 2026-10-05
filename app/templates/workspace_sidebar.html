@@ -9,12 +9,14 @@
       <a href="/videos" data-workspace-page="videos"><span aria-hidden="true">▤</span>视频库</a>
       <a href="/#tasks" data-workspace-page="tasks"><span aria-hidden="true">◷</span>任务记录</a>
       <a href="/people" data-workspace-page="people"><span aria-hidden="true">♙</span>我的人物</a>
+      <a href="/help" data-workspace-page="help"><span aria-hidden="true">?</span>帮助与反馈</a>
     </nav>
     <div data-admin-only hidden>
       <p class="workspace-label">管理</p>
       <nav class="workspace-nav" aria-label="管理导航">
         <a href="/admin/settings" data-workspace-page="settings"><span aria-hidden="true">⚙</span>后台配置</a>
         <a href="/admin/users" data-workspace-page="users" data-auth-only hidden><span aria-hidden="true">♧</span>用户管理</a>
+        <a href="/admin/support" data-workspace-page="support" data-auth-only hidden><span aria-hidden="true">◷</span>反馈处理</a>
       </nav>
       {% if workspace_settings|default(false) %}
       <nav class="workspace-settings" aria-label="配置分类">

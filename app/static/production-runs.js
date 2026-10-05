@@ -139,6 +139,11 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     },item.can_delete===false);
     }
     actions.append(more);row.append(title,time,state,model,duration,actions);
+    if(item.status==='needs_attention' && item.error_kind==='submission_uncertain'){
+      const warning=node('div','','run-support-warning');warning.dataset.supportWarning='';
+      warning.append(node('p','提交结果待确认：不要重复提交或重新生成。请联系管理员核对服务商的原任务记录。'));
+      window.supportUI?.appendContext(warning,item);row.append(warning);
+    }
     if(item.error_kind==='audio_copyright' && item.status==='failed'){
       const help=node('div','','run-audio-help');
       help.append(node('strong','生成声音未通过版权检查'),node('p','服务商认为生成的音频可能涉及版权限制。'+(item.can_retry_without_audio?'可以关闭声音后，重新生成无声视频。':'请检查参考素材，或联系服务商核查。')));
@@ -195,7 +200,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
       if(item.person_preparation.person_id)preparation.append(node('small','人物编号：'+item.person_preparation.person_id));
       panel.append(preparation);
     }
-    if(item.error){const error=node('details','','run-error-detail');error.append(node('summary','错误详情'),node('p',item.error));panel.append(error);}
+    if(item.error){const error=node('details','','run-error-detail');error.append(node('summary','错误详情'),node('p',item.error));window.supportUI?.appendContext(error,item);panel.append(error);}
     const assets=item.snapshot?.assets||[],materials=node('div','','run-detail-assets');
     const labels={video:'动作参考视频',person_video:'人物参考视频',face:'人物参考图',clothing:'衣服参考图',hairstyle:'发型参考图',scene:'场景参考图',...accessoryLabels};
     for(const [kind,label] of Object.entries(labels)){

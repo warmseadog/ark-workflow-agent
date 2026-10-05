@@ -12,6 +12,11 @@ import time
 import urllib.error
 import urllib.request
 
+if mode not in {'check', 'verify', 'deploy', 'probe'}:
+    raise ValueError('Invalid release mode')
+if mode in {'deploy', 'probe'}:
+    raise ValueError('Retired delta mutation entry: use deploy/ecs/release.py with a complete verified bundle')
+
 ROOT = Path('/opt/ark-video-workflow')
 DATA = ROOT/'data'
 CURRENT = ROOT/'current'
@@ -185,6 +190,7 @@ other_pid = ctl('show', 'director-prompt-h5.service', '-p', 'MainPID', '--value'
 switched = False
 stopped = False
 public_paused = False
+reopen_allowed = False
 old_nginx = NGINX.read_bytes()
 assert old_nginx.count(b'server {') == 1 and b'listen 8443 ' in old_nginx
 
@@ -217,6 +223,16 @@ def switch(target):
     temporary.symlink_to(target)
     os.replace(temporary, CURRENT)
 
+def wait_ready():
+    for attempt in range(30):
+        try:
+            if ctl('is-active', SERVICE) == 'active' and http('/healthz')[0] == 200:
+                return
+        except (OSError, subprocess.CalledProcessError):
+            pass
+        time.sleep(1)
+    raise RuntimeError('Service readiness timeout; maintenance remains enabled')
+
 try:
     pause_public_requests()
     idle()
@@ -243,24 +259,16 @@ try:
     switch(release)
     switched = True
     run('systemctl', 'start', SERVICE, timeout=110)
-    for attempt in range(30):
-        try:
-            if http('/healthz')[0] == 200:
-                break
-        except OSError:
-            pass
-        time.sleep(1)
-    else:
-        raise RuntimeError('Startup health timeout')
+    wait_ready()
     report = verify(release)
     assert snapshot(before) == before, 'Historical records changed beyond forced-password flag'
-    restore_public_requests()
     assert ctl('show', 'director-prompt-h5.service', '-p', 'MainPID', '--value') == other_pid
     manifest = {'release': str(release), 'previous': str(PREVIOUS), 'backup': str(backup),
                 'revision': source_revision, 'historical_records_preserved': True,
                 'password_hashes_unchanged': True, 'isolated_policy_probe': 'passed', **report}
     (release/'account-policy-release.json').write_text(json.dumps(manifest))
     print(json.dumps(manifest))
+    reopen_allowed = True
 except Exception as error:
     if switched and any(queues().values()):
         print(json.dumps({'rollback': 'deferred_active_tasks', 'error_type': type(error).__name__}))
@@ -270,7 +278,10 @@ except Exception as error:
             if switched:
                 switch(PREVIOUS)
             run('systemctl', 'start', SERVICE, timeout=110)
+        wait_ready()
+        reopen_allowed = True
         print(json.dumps({'rollback': 'previous_release_restored', 'error_type': type(error).__name__}))
     raise
 finally:
-    restore_public_requests()
+    if reopen_allowed:
+        restore_public_requests()

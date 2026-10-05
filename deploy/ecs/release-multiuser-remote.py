@@ -1,4 +1,7 @@
 """SSH release body. The driver injects mode/payload/baseline/credentials in memory."""
+if globals().get('mode') not in {'check','verify'}:
+    raise ValueError('Retired delta mutation entry: use deploy/ecs/release.py with a complete verified bundle')
+
 import base64
 import datetime
 import hashlib

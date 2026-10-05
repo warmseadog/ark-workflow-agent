@@ -76,12 +76,20 @@ def safe_error(value, secrets=(), *, limit=1200):
 
 def safe_payload(value, secrets=(), *, error_context=False):
     if isinstance(value, dict):
-        return {key: safe_payload(item, secrets, error_context=error_context or key in _ERROR_FIELDS)
+        return {key: (safe_request_id(item, secrets) if key == 'request_id' else
+                      safe_payload(item, secrets, error_context=error_context or key in _ERROR_FIELDS))
                 for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [safe_payload(item, secrets, error_context=error_context) for item in value]
     if error_context and isinstance(value, str):
         return safe_error(value, secrets)
+    return value
+
+
+def safe_request_id(value, secrets=()):
+    if (not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,63}', value)
+            or any(secret and secret in value for secret in secrets)):
+        return None
     return value
 
 

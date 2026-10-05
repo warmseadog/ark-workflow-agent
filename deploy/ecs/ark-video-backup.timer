@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Ark backup at 03:00 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Asia/Shanghai
+Persistent=true
+Unit=ark-video-backup.service
+
+[Install]
+WantedBy=timers.target

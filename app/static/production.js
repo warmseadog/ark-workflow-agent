@@ -909,7 +909,7 @@
     const label = document.getElementById('person-photo-status');
     if (!label) return;
     const records = currentPhotos();
-    const failed = records.find(x => x.status === 'failed' || x.status === 'uncertain');
+    const failed = records.find(x => ['failed','uncertain','stopped'].includes(x.status));
     label.dataset.error = String(Boolean(failed));
     label.textContent = personInputPolicy === 'auto_virtual' ? (imageFiles.face.length ? (imageFiles.face.every(file => assetFor(file)) ? '已保存，生成时自动准备人物。' : '正在保存人物参考图…') : '上传人物参考图，生成时自动准备。') : !window.portraitPeople?.selected ? '参考图已恢复，可继续生成。' :
       !imageFiles.face.length ? '上传新参考图，或从人物库选择。' : failed ? failed.message :
@@ -937,12 +937,12 @@
     renderPhotoStatus();
   }
   function schedulePhotoPoll() {
-    if (pageInactive || photoTimer || photoPolling || !currentPhotos().some(x => x.id && !['active','failed'].includes(x.status))) return;
+    if (pageInactive || photoTimer || photoPolling || !currentPhotos().some(x => x.id && !['active','failed','stopped','removed','restore_held'].includes(x.status))) return;
     photoTimer = setTimeout(pollPhotos, document.hidden ? 15000 : 5000);
   }
   async function pollPhotos() {
     photoTimer = null;
-    const jobs = currentPhotos().filter(x => x.id && !['active','failed'].includes(x.status));
+    const jobs = currentPhotos().filter(x => x.id && !['active','failed','stopped','removed','restore_held'].includes(x.status));
     if (!jobs.length || photoPolling) return;
     const version = personInputVersion, targetDraft = draft?.id, targetPerson = window.portraitPeople?.selected, policy = personInputPolicy;
     const current = () => personInputVersion === version && draft?.id === targetDraft && window.portraitPeople?.selected === targetPerson && personInputPolicy === policy;
@@ -963,7 +963,7 @@
     const person=window.portraitPeople?.selected;
     for (const file of [...imageFiles.face]) {
       const key=photoKey(file,person), job=photoRecords.get(key);
-      if (!job || !['failed','uncertain'].includes(job.status)) continue;
+      if (!job || !['failed','uncertain','stopped'].includes(job.status)) continue;
       try {
         if (job.id) photoRecords.set(key,await window.portraitPeople.request('photos/'+job.id+'/retry','POST',{}));
         else { photoRecords.delete(key); await queuePhoto(file,assetFor(file),person); }

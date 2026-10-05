@@ -9,7 +9,7 @@
   mobile.addEventListener('change',closeNav);
   backdrop.addEventListener('click',closeNav);
   function sync(){
-    const view=isProduction?(location.hash==='#tasks'?'tasks':'create'):({'/videos':'videos','/people':'people','/admin/settings':'settings','/admin/users':'users'}[location.pathname]||'account');
+    const view=isProduction?(location.hash==='#tasks'?'tasks':'create'):({'/videos':'videos','/people':'people','/admin/settings':'settings','/admin/users':'users','/help':'help','/admin/support':'support'}[location.pathname]||'account');
     document.body.dataset.workspaceView=view;
     sidebar.querySelectorAll('[data-workspace-page]').forEach(link=>{if(link.dataset.workspacePage===view)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');});
     if(isProduction){const title=document.querySelector('.production-brand h1');if(title)title.textContent=view==='tasks'?'任务记录':'制作流程';}

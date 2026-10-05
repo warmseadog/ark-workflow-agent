@@ -33,16 +33,25 @@ from . import security
 @asynccontextmanager
 async def production_lifespan(app):
     from .production_worker import wake, shutdown
-    wake(settings)
+    from .workflow_worker import start_workflow_worker, stop_workflow_worker
+    from .recovery_guard import is_restore_held
+    held = is_restore_held(settings)
+    if not held:
+        wake(settings)
     try:
+        if not held:
+            start_workflow_worker(settings)
         yield
     finally:
-        shutdown(settings)
+        if not held:
+            stop_workflow_worker()
+            shutdown(settings)
 
 
 app = FastAPI(title="Face & Clothing Video Workflow", version="0.1.0", lifespan=production_lifespan,
               default_response_class=security.response_class(lambda: settings))
 APP_DIR = Path(__file__).resolve().parent
+RELEASE_ROOT = APP_DIR.parent
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 
@@ -80,10 +89,14 @@ install_access_control(app,lambda:settings)
 from .request_timing import install as install_request_timing
 install_request_timing(app)
 security.install(app, lambda: settings)
+from .recovery_guard import install as install_recovery_guard
+install_recovery_guard(app, lambda: settings)
 from .authentication import get_router as get_auth_router
 app.include_router(get_auth_router(lambda:settings,templates))
 from .user_admin import get_router as get_user_admin_router
 app.include_router(get_user_admin_router(lambda:settings,templates))
+from .support import get_router as get_support_router
+app.include_router(get_support_router(lambda:settings,templates))
 from .preview_router import get_router as get_preview_router
 app.include_router(get_preview_router(lambda:tenancy.current_settings(settings),_local_config_request))
 
@@ -494,6 +507,20 @@ async def review_discovery_candidate(candidate_id: str, payload: dict):
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok", "seedance_mode": settings.seedance_mode}
+
+
+@app.get('/api/version')
+def release_version(request: Request):
+    _local_config_request(request)
+    from .release_identity import read_release_identity, ReleaseIdentityError
+    try:
+        identity = read_release_identity(RELEASE_ROOT)
+    except ReleaseIdentityError:
+        raise HTTPException(503, '发布版本信息不一致，请联系管理员核对。') from None
+    if identity is None:
+        return {'status': 'development', 'revision': None}
+    return {'status': 'release', **{key: identity[key] for key in
+                                   ('revision', 'source_commit', 'content_sha256', 'capabilities')}}
 
 
 @app.post("/api/jobs")

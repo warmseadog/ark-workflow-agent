@@ -106,6 +106,9 @@ def verify(snapshot, store, *, wait_deadline=None, settings=None):
             photo=lib.get_photo(job_id,private=True)
             if photo['person_id']!=snapshot['person_id']:
                 raise ValueError('任务照片与所选人物不匹配。')
+            if photo['status']=='stopped':
+                raise PortraitPhotoError(photo['message'], retryable=True,
+                    kind='person_preparation_timeout')
             if photo['status']=='failed':
                 retryable = bool(photo.get('retryable'))
                 raise PortraitPhotoError(photo['message'], retryable=retryable,

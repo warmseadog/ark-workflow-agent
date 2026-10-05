@@ -3,6 +3,7 @@
   'use strict';
   const originalFetch = window.fetch.bind(window);
   const loginPage = window.location.pathname === '/login';
+  const publicHelp = window.location.pathname === '/help';
   const cacheNames = ['production-current-draft-v1', 'production-pending-submit-v1'];
   const identityEventKey = 'ark-account-identity';
   let identity = null;
@@ -46,6 +47,16 @@
       redirect('/login');
       throw authError('登录已失效，请重新登录。');
     }
+    if (!response.ok) {
+      // Read a clone so each caller retains its normal error handling and body.
+      const data = await response.clone().json().catch(() => ({}));
+      const safe = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(value) ? value : '';
+      const id = safe(data.request_id) || safe(response.headers.get('X-Request-ID'));
+      if (id) {
+        if (window.supportUI) window.supportUI.reportProblem(id);
+        else window.pendingSupportProblems = [id];
+      }
+    }
     return response;
   }
 
@@ -84,7 +95,7 @@
     const timeout = setTimeout(() => controller.abort(), 8000);
     try {
     const response = await originalFetch('/api/auth/me', {cache:'no-store', credentials:'same-origin', signal:controller.signal});
-    if (response.status === 401 && loginPage) {
+    if (response.status === 401 && (loginPage || publicHelp)) {
       identity = {auth_enabled:true, user:null, csrf_token:''};
     } else {
       await inspectResponse(response);
@@ -92,7 +103,7 @@
       identity = await response.json();
     }
     window.currentAccount = identity.user || null;
-    if (identity.auth_enabled && !identity.user && !loginPage) {
+    if (identity.auth_enabled && !identity.user && !loginPage && !publicHelp) {
       redirect('/login');
       throw authError('请先登录工作台。');
     }

@@ -1,5 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
+from dataclasses import replace
+from app.config import settings as base_settings
 
 from app.workflow_store import WorkflowStore
 from app.workflow_worker import run_generation_task, run_redaction_task
@@ -24,7 +26,7 @@ def test_redaction_worker_persists_verified_artifact(tmp_path, monkeypatch):
         str(source),
         "upload",
         {"mask_mode": "face", "style": "mosaic"},
-        settings=SimpleNamespace(storage_dir=tmp_path, deface_bin="fake"),
+        settings=replace(base_settings, storage_dir=tmp_path, deface_bin="fake"),
     )
 
     assert artifact["sha256"]
@@ -47,7 +49,7 @@ def test_generation_worker_persists_provider_output(tmp_path, monkeypatch):
         def __init__(self, settings):
             pass
 
-        def generate(self, video_path, face_path, clothing_path, prompt, output_path):
+        def generate(self, video_path, face_path, clothing_path, prompt, output_path, **kwargs):
             output_path.write_bytes(video_path.read_bytes() + b"-generated")
             return {"provider": "fake", "message": "ok"}
 

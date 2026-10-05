@@ -397,7 +397,7 @@ class ProductionStore:
 
     def page_runs(self, page, page_size, legacy, status_filter=None):
         # Summaries are selected by SQLite before any snapshot/media decoration.
-        fields=['id','name','status','stage','message','progress','created_at','updated_at','error_kind','duration','model','source_clip','target_duration','download_url','has_remote','legacy','generate_audio','protocol']
+        fields=['id','name','status','stage','message','progress','created_at','updated_at','error_kind','duration','model','source_clip','target_duration','download_url','has_remote','legacy','generate_audio','protocol','request_id','_private']
         with self.connection() as db:
             db.execute('CREATE TEMP TABLE legacy_page (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
             db.executemany('INSERT INTO legacy_page VALUES (?,?)',[(x['id'],json.dumps({k:x.get(k) for k in fields})) for x in legacy])
@@ -408,7 +408,7 @@ class ProductionStore:
                 json_extract(snapshot,'$.model.duration') AS duration,json_extract(snapshot,'$.model.model') AS model,json_extract(snapshot,'$.source_clip') AS source_clip,json_extract(snapshot,'$.target_duration') AS target_duration,NULL AS download_url,
                 (provider_task_id IS NOT NULL OR result_url IS NOT NULL) AS has_remote,0 AS legacy,
                 COALESCE(json_extract(snapshot,'$.model.generate_audio'),json_extract(private,'$.generation.generate_audio'),1) AS generate_audio,
-                COALESCE(json_extract(private,'$.generation.protocol'),'ark') AS protocol
+                COALESCE(json_extract(private,'$.generation.protocol'),'ark') AS protocol,request_id,private AS _private
                 FROM production_runs
                 UNION ALL SELECT """+legacy_sql+""" FROM legacy_page l
             ), visible AS (SELECT c.*,COALESCE(n.name,c.name) AS display_name FROM combined c
@@ -423,6 +423,9 @@ class ProductionStore:
         timings = self.run_timings(row['id'] for row in rows)
         for row in rows:
             item=dict(row);item['name']=item.pop('display_name');item['legacy']=bool(item['legacy']);remote=item.pop('has_remote')
+            from .security import safe_payload, secret_values
+            private=item.pop('_private')
+            item=safe_payload(item,secret_values(json.loads(private)) if private else ())
             item['generate_audio'] = bool(item['generate_audio'])
             decorate_audio_failure(item, enabled=item['generate_audio'], supported=not item['legacy'] and capabilities(item.get('model') or '', item.pop('protocol') or 'ark')['audio_control'])
             item['source_clip'] = json.loads(item['source_clip']) if item.get('source_clip') else None

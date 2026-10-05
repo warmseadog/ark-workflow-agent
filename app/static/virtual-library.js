@@ -77,7 +77,8 @@
   dialog.innerHTML = `<div class="portrait-heading"><h2 id="virtual-library-title">人物素材库</h2><button type="button" data-close aria-label="关闭人物素材库">×</button></div>
     <p class="virtual-intro">添加照片或视频后，回制作页按名字选择。真人视频需添加到已授权的人物。</p>
     <p class="portrait-small">照片支持批量添加：电脑按住 Ctrl 或 Shift 多选，手机可在相册中选择多张。上传后需等待检查通过。</p>
-    <p class="portrait-small library-video-requirements">人物视频：MP4 / MOV，2–30 秒，最大 50 MB，24–60 fps，建议 720p 或 1080p。上传后需等待检查通过。</p>
+    <p class="portrait-small" data-input-requirement="portrait_photo">正在读取人物照片要求…</p>
+    <p class="portrait-small library-video-requirements" data-input-requirement="person_video">正在读取人物视频要求…</p>
     <div class="person-library-tabs" role="group" aria-label="管理人物类型"><button type="button" data-library-type="AIGC" aria-pressed="true">虚拟人物</button><button type="button" data-library-type="LivenessFace" aria-pressed="false">真人</button></div>
     <div class="virtual-toolbar"><button type="button" class="primary" data-new aria-expanded="false" aria-controls="virtual-create-panel">＋ 新增虚拟人物</button></div>
     <form id="virtual-create-panel" data-create class="virtual-create" hidden><label for="virtual-person-name">新人物叫什么？</label><input id="virtual-person-name" name="name" maxlength="60" required placeholder="例如：短发女模特"><div class="virtual-form-actions"><button class="primary" type="submit">新增</button><button type="button" class="secondary" data-cancel-create>取消</button></div></form>
@@ -97,6 +98,7 @@
       <p data-project></p>
     </details>`;
   document.body.append(dialog);
+  window.supportUI?.renderRequirements(dialog);
   const preview = document.createElement('dialog'); preview.className = 'portrait-dialog library-photo-preview';
   preview.dataset.libraryPreview = ''; preview.setAttribute('aria-label','查看人物照片或视频');
   preview.innerHTML = '<div class="portrait-heading"><h2 data-preview-name></h2><button type="button" data-preview-close aria-label="关闭照片预览">×</button></div><div data-preview-media></div>';
@@ -156,10 +158,10 @@
         if (video && (!file.size || file.size > 50*1024*1024)) throw new Error('人物视频需大于 0、小于等于 50 MB。');
         status.textContent = '正在为“'+person.name+'”上传'+label+'…';
         const job = await uploadFile(person,kind,file,label);
-        watchedPhoto = ['active','failed'].includes(job.status) ? null : {id:job.id,name:person.name,label};
+        watchedPhoto = ['active','failed','stopped'].includes(job.status) ? null : {id:job.id,name:person.name,label};
         await refresh();
         if (job.status === 'failed') throw new Error(job.message || label+'检查失败，请重试。');
-        status.textContent = job.status === 'active' ? label+'已可用，返回制作页按名称选择。' : job.status === 'uncertain' ? job.message : label+'已添加，正在检查。通过后可在制作页选用。';
+        status.textContent = job.status === 'active' ? label+'已可用，返回制作页按名称选择。' : ['uncertain','stopped'].includes(job.status) ? job.message : label+'已添加，正在检查。通过后可在制作页选用。';
       });
     });
     return {input,button:action('添加'+label,video ? 'upload-video' : 'upload',() => input.click())};
@@ -191,7 +193,7 @@
       hasPending ||= pending > 0;
       const ready = person.photo_count > 0 || person.video_count > 0;
       const state = document.createElement('small'); state.className = ready ? 'virtual-ready' : '';
-      state.textContent = [person.photo_count ? `${person.photo_count} 张照片可用` : '', person.video_count ? `${person.video_count} 段视频可用` : '', !ready && !pending ? '还没有可用素材' : '', pending ? `${pending} 项正在检查` : '', counts.failed ? `${counts.failed} 项检查失败，可重新添加` : ''].filter(Boolean).join(' · ');
+      state.textContent = [person.photo_count ? `${person.photo_count} 张照片可用` : '', person.video_count ? `${person.video_count} 段视频可用` : '', !ready && !pending && !counts.stopped ? '还没有可用素材' : '', pending ? `${pending} 项正在检查` : '', counts.failed ? `${counts.failed} 项检查失败，可重新添加` : '', counts.stopped ? `${counts.stopped} 项自动查询已停止，可继续检查原记录` : ''].filter(Boolean).join(' · ');
       text.append(name,badge,state); main.append(text); row.append(main);
       const actions = document.createElement('div'); actions.className = 'virtual-person-actions';
       const photoUpload = uploadControl(person,'face'), videoUpload = uploadControl(person,'person_video');
@@ -264,12 +266,12 @@
         else { const placeholder = document.createElement('div'); placeholder.className = 'library-photo-placeholder'; placeholder.textContent = isVideo(photo) ? '视频预览' : '暂无缩略图'; row.append(placeholder); }
         const name = document.createElement('strong'); name.textContent = photo.name || '人物照片';
         const state = document.createElement('span'); state.className = 'library-photo-state'; state.dataset.state = photo.status;
-        state.textContent = photo.status === 'active' && isVideo(photo) ? '视频可用' : ({active:'照片可用',queued:'等待检查',uploading:'正在上传',submitting:'正在提交',processing:'正在检查',uncertain:'等待确认',failed:'检查失败'})[photo.status] || '状态待确认';
+        state.textContent = photo.status === 'active' && isVideo(photo) ? '视频可用' : ({active:'照片可用',queued:'等待检查',uploading:'正在上传',submitting:'正在提交',processing:'正在检查',uncertain:'等待确认',failed:'检查失败',stopped:'自动查询已停止'})[photo.status] || '状态待确认';
         const message = document.createElement('p'); message.className = 'library-photo-message'; message.textContent = photo.message || '';
         const actions = document.createElement('div'); actions.className = 'virtual-form-actions';
         if (safeMediaUrl(photo.url)) actions.append(action(isVideo(photo) ? '打开视频' : '查看原图','open-photo',() => openPhoto(photo)));
         if (canManage(photo,person)) {
-          if (photo.status === 'failed') actions.append(action('重试检查','retry-photo',() => run(async () => { await request('photos/'+encodeURIComponent(photo.id)+'/retry','POST',{}); await refresh(); await loadDetail(person); })));
+          if (['failed','uncertain','stopped'].includes(photo.status)) actions.append(action(photo.status === 'stopped' ? '继续检查原记录' : '重试检查','retry-photo',() => run(async () => { await request('photos/'+encodeURIComponent(photo.id)+'/retry','POST',{}); await refresh(); await loadDetail(person); })));
           actions.append(action(isVideo(photo) ? '删除这段视频' : '删除这张照片','remove-photo',() => askDelete({type:'photo',id:photo.id,name:photo.name || '人物素材',personId:person.id,label:isVideo(photo) ? '视频' : '照片'})));
         }
         row.append(name,state,message,actions); list.append(row);
@@ -332,7 +334,7 @@
     let photoState;
     try { photoState = await request('photos?ids='+encodeURIComponent(watching.id)); } catch (_) { return; }
     const completedPhoto = photoState?.items?.[0];
-    if (watchedPhoto === watching && completedPhoto && ['active','failed'].includes(completedPhoto.status)) {
+    if (watchedPhoto === watching && completedPhoto && ['active','failed','stopped'].includes(completedPhoto.status)) {
       status.textContent = completedPhoto.status === 'active' ? '“'+watchedPhoto.name+'”的'+(watchedPhoto.label || '照片')+'已通过检查，可在制作页选用。' : completedPhoto.message;
       status.dataset.error = String(completedPhoto.status === 'failed'); watchedPhoto = null;
     }

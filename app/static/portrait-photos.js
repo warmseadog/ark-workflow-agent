@@ -24,7 +24,7 @@
   }
   function schedule() {
     clearTimeout(timer);
-    if (dialog.open && person && photos.some(p => !['active','failed'].includes(p.status))) {
+    if (dialog.open && person && photos.some(p => !['active','failed','stopped','removed','restore_held'].includes(p.status))) {
       timer = setTimeout(async () => {
         if (!working) { try { await refresh(); } catch (_) { find('status').textContent = '照片状态暂时读取失败，可点击“刷新”重试。'; } }
         schedule();
@@ -55,7 +55,7 @@
       const name = document.createElement('span'); name.className = 'person-photo-name'; name.textContent = photo.name; name.title = photo.name;
       const selected = window.portraitPeople.selected === person.id && current && (current.id === photo.asset_id || current.portrait?.remote_asset_id === photo.remote_asset_id);
       const active = photo.status === 'active' && photo.remote_asset_id;
-      const label = document.createElement('small'); label.textContent = selected ? '当前主参考' : active ? '可用' : photo.status === 'failed' ? '检查未通过' : photo.status === 'uncertain' ? '结果待确认' : '入库检查中…';
+      const label = document.createElement('small'); label.textContent = selected ? '当前主参考' : active ? '可用' : photo.status === 'stopped' ? '自动查询已停止' : photo.status === 'failed' ? '检查未通过' : photo.status === 'uncertain' ? '结果待确认' : '入库检查中…';
       label.className = active ? 'photo-ready' : 'photo-pending';
       const use = document.createElement('button'); use.type = 'button'; use.className = 'primary'; use.dataset.photoUse = ''; use.dataset.unavailable = String(!active); use.textContent = selected ? '继续使用' : mode === 'video' ? '使用这段' : '使用这张';
       use.addEventListener('click',() => run(async () => {
@@ -69,9 +69,9 @@
         play.addEventListener('click', () => { releaseVideos(); image.src = photo.url; image.play().catch(() => { find('status').textContent = '视频暂时无法播放，请重试。'; }); });
         card.append(play);
       }
-      if (['failed','uncertain'].includes(photo.status) && photo.can_manage !== false) {
+      if (['failed','uncertain','stopped'].includes(photo.status) && photo.can_manage !== false) {
         const message = document.createElement('small'); message.textContent = photo.message; card.append(message);
-        const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'secondary'; retry.textContent = '重新检查'; retry.dataset.photoRetry = '';
+        const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'secondary'; retry.textContent = photo.status === 'stopped' ? '继续检查原记录' : '重新检查'; retry.dataset.photoRetry = '';
         retry.addEventListener('click',() => run(async () => { await request('photos/'+photo.id+'/retry','POST',{}); await refresh(); find('status').textContent = '已请求重新检查。'; })); card.append(retry);
       }
       grid.append(card);

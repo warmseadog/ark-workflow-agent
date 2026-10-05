@@ -31,7 +31,7 @@ def test_project_asset_and_task_lifecycle_is_durable(tmp_path: Path) -> None:
         project["id"], "url", "ignored", idempotency_key="source-demo"
     )["id"] == source["id"]
     assert store.create_stage_task(
-        project["id"], "redaction", idempotency_key="task-demo"
+        project["id"], "redaction", input_data={"source_asset_id": source["id"]}, idempotency_key="task-demo"
     )["id"] == task["id"]
 
     running = store.transition_stage_task(task["id"], "running")

@@ -195,6 +195,30 @@ def test_failed_photo_is_not_retryable_and_copy_uses_resolved_person(env):
     assert store.get_run(run['id'])['snapshot'] == {k: v for k, v in run['snapshot'].items() if k != 'assets'}
 
 
+def test_stopped_photo_requires_explicit_continue_and_reuses_original_record(env):
+    client, store, _, settings = env
+    run = submit(env, draft(env)).json()
+    production_worker.execute_run(settings, store, store.claim_next())
+    prep = store.get_preparation(run['id'])
+    lib = PortraitLibrary(settings)
+    for ident in prep['uploads'].values():
+        lib.update(ident, status='stopped', remote_id='asset-original', retryable=True,
+                   message='自动查询已停止，请继续检查原记录')
+    production_worker.execute_run(settings, store, store.get_run(run['id'], private=True))
+    paused = store.get_run(run['id'])
+    assert paused['status'] == 'needs_attention'
+    assert paused['can_retry_preparation'] is True
+    response = client.post('/api/production/runs/' + run['id'] + '/person-preparation/retry')
+    assert response.status_code == 200, response.text
+    production_worker.execute_run(settings, store, store.claim_next())
+    assert store.get_preparation(run['id'])['uploads'] == prep['uploads']
+    for ident in prep['uploads'].values():
+        photo = lib.get_photo(ident, private=True)
+        assert photo['status'] == 'processing'
+        assert photo['remote_id'] == 'asset-original'
+        assert photo['query_window']['attempts'] == 0
+
+
 def test_old_client_explicit_person_choice_normalizes_policy(env):
     client, _, _, settings = env
     item = draft(env)

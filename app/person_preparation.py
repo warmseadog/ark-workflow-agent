@@ -127,11 +127,14 @@ def prepare_run(settings, store, run):
         if prep.get('retry_requested'):
             for photo_id in uploads.values():
                 photo = lib.get_photo(photo_id, private=True)
-                if photo['status'] == 'uncertain' or (photo['status'] == 'failed' and photo.get('retryable')):
+                if photo['status'] in {'uncertain','stopped'} or (photo['status'] == 'failed' and photo.get('retryable')):
                     lib.retry(photo_id)
             store.update_preparation(ident, retry_requested=False)
         for photo_id in uploads.values():
             photo = lib.get_photo(photo_id, private=True)
+            if photo['status'] == 'stopped':
+                _fail(store, ident, photo['message'], retryable=True,
+                    kind='person_preparation_timeout')
             if photo['status'] == 'failed':
                 _fail(store, ident, photo['message'], retryable=bool(photo.get('retryable')),
                     kind='person_preparation_failed' if photo.get('retryable') else 'material_rejected')

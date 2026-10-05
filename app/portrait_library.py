@@ -12,8 +12,12 @@ import uuid
 import warnings
 from . import portrait_service as service, storage_settings
 from .production_store import ProductionStore, Conflict
+from . import input_limits as limits
 
 _process_lock = threading.Lock()
+QUERY_ATTEMPTS = 60
+QUERY_SECONDS = 1800
+QUERY_BACKOFF = (5, 15, 30, 60)
 
 
 def validate_photo(settings, asset, *, require_upload_dimensions=True):
@@ -24,15 +28,17 @@ def validate_photo(settings, asset, *, require_upload_dimensions=True):
     path = Path(asset['path']).resolve()
     if asset['kind'] != 'face' or not path.is_relative_to((settings.storage_dir/'assets').resolve()) or not path.is_file():
         raise ValueError('请选择已上传的人物照片。')
-    if not 0 < path.stat().st_size <= 20*1024*1024:
+    if not 0 < path.stat().st_size <= limits.IMAGE_MAX_BYTES:
         raise ValueError('人物照片需小于 20 MB。')
     try:
         with warnings.catch_warnings():
             warnings.simplefilter('error', Image.DecompressionBombWarning)
             with Image.open(path) as image:
-                if image.format not in {'PNG','JPEG','WEBP'} or getattr(image,'n_frames',1) != 1:
+                if image.format not in limits.PORTRAIT_FORMATS or getattr(image,'n_frames',1) != 1:
                     raise ValueError('请使用静态 PNG、JPEG 或 WebP 人物照片。')
-                if require_upload_dimensions and not (300 < image.width < 6000 and 300 < image.height < 6000 and .4 < image.width/image.height < 2.5):
+                if require_upload_dimensions and not (limits.PORTRAIT_MIN_DIMENSION < image.width < limits.PORTRAIT_MAX_DIMENSION
+                        and limits.PORTRAIT_MIN_DIMENSION < image.height < limits.PORTRAIT_MAX_DIMENSION
+                        and limits.PORTRAIT_MIN_ASPECT < image.width/image.height < limits.PORTRAIT_MAX_ASPECT):
                     raise ValueError('人物照片宽高需大于 300、小于 6000 像素，宽高比在 0.4–2.5 之间。')
                 image.verify()
     except (OSError, Image.DecompressionBombError, Image.DecompressionBombWarning):
@@ -81,6 +87,13 @@ class PortraitLibrary:
                 CREATE INDEX IF NOT EXISTS portrait_photos_pending ON portrait_photos(status,next_check);
                 CREATE TABLE IF NOT EXISTS portrait_photo_errors (
                     photo_id TEXT PRIMARY KEY, retryable INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS portrait_query_windows (
+                    photo_id TEXT NOT NULL, number INTEGER NOT NULL,
+                    started_at REAL NOT NULL, deadline_at REAL NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    consecutive_errors INTEGER NOT NULL DEFAULT 0,
+                    stopped_at REAL, stop_reason TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(photo_id,number));
             """)
 
             db.execute('BEGIN IMMEDIATE')
@@ -95,6 +108,14 @@ class PortraitLibrary:
             for column in ('remote_group_id', 'auto_kind', 'auto_sha256'):
                 if column not in request_columns:
                     db.execute(f'ALTER TABLE portrait_group_requests ADD COLUMN {column} TEXT')
+            # Existing in-flight records inherit their original age; restarts
+            # must neither renew a window nor erase its query budget.
+            db.execute('''INSERT INTO portrait_query_windows
+                (photo_id,number,started_at,deadline_at)
+                SELECT id,1,created,created+? FROM portrait_photos ph
+                WHERE status IN ('processing','uncertain','submitting')
+                AND NOT EXISTS (SELECT 1 FROM portrait_query_windows w WHERE w.photo_id=ph.id)''',
+                (QUERY_SECONDS,))
 
     def api(self, person_type, asset_type='Image'):
         if asset_type=='Video': return service.ArkPortraitClient(self.config,person_type=person_type,asset_type='Video')
@@ -318,7 +339,7 @@ class PortraitLibrary:
         with self.store.connection() as db:
             people=db.execute("SELECT id FROM portrait_people WHERE account=? AND person_type='AIGC' AND id NOT IN (SELECT person_id FROM portrait_hidden_people WHERE account=?)",(self.account,self.account)).fetchall()
             counts=db.execute("SELECT ph.status,count(*) AS count FROM portrait_photos ph JOIN portrait_people pe ON pe.id=ph.person_id WHERE ph.account=? AND pe.person_type='AIGC' AND pe.id NOT IN (SELECT person_id FROM portrait_hidden_people) GROUP BY ph.status",(self.account,)).fetchall()
-            failures=db.execute("SELECT pe.name,ph.message,ph.created FROM portrait_photos ph JOIN portrait_people pe ON pe.id=ph.person_id WHERE ph.account=? AND pe.person_type='AIGC' AND pe.id NOT IN (SELECT person_id FROM portrait_hidden_people) AND ph.status IN ('failed','uncertain') ORDER BY ph.created DESC LIMIT 5",(self.account,)).fetchall()
+            failures=db.execute("SELECT pe.name,ph.message,ph.created FROM portrait_photos ph JOIN portrait_people pe ON pe.id=ph.person_id WHERE ph.account=? AND pe.person_type='AIGC' AND pe.id NOT IN (SELECT person_id FROM portrait_hidden_people) AND ph.status IN ('failed','uncertain','stopped') ORDER BY ph.created DESC LIMIT 5",(self.account,)).fetchall()
             runs=db.execute("""SELECT r.snapshot,r.updated_at,
                 COALESCE(json_extract(r.snapshot,'$.person_id'),json_extract(p.data,'$.person_id')) AS resolved_person_id
                 FROM production_runs r LEFT JOIN production_person_preparations p ON p.run_id=r.id
@@ -469,13 +490,84 @@ class PortraitLibrary:
             row = db.execute('''SELECT ph.*,COALESCE(e.retryable,0) AS retryable
                 FROM portrait_photos ph LEFT JOIN portrait_photo_errors e ON e.photo_id=ph.id
                 WHERE ph.id=? AND ph.account=?''',(ident,self.account)).fetchone()
+            window = db.execute('''SELECT number,started_at,deadline_at,attempts,
+                consecutive_errors,stopped_at,stop_reason FROM portrait_query_windows
+                WHERE photo_id=? ORDER BY number DESC LIMIT 1''', (ident,)).fetchone()
         if not row: raise LookupError('照片校验记录不可用，请重新选择人物和照片。')
         self.require_available(row['person_id'],sha256=row['sha256'])
         result = dict(row)
         result['retryable'] = bool(result['retryable'])
+        result['query_window'] = dict(window) if window else None
         if not private:
-            result = {k:result[k] for k in ('id','person_id','asset_id','status','message')}
+            result = {k:result[k] for k in ('id','person_id','asset_id','status','message','retryable','query_window')}
         return result
+
+    def _new_query_window(self, db, ident, started_at):
+        previous = db.execute('''SELECT * FROM portrait_query_windows
+            WHERE photo_id=? ORDER BY number DESC LIMIT 1''', (ident,)).fetchone()
+        number = previous['number'] + 1 if previous else 1
+        if previous and previous['stopped_at'] is None:
+            db.execute('''UPDATE portrait_query_windows SET stopped_at=?,stop_reason='continued'
+                WHERE photo_id=? AND number=?''', (started_at, ident, previous['number']))
+        db.execute('''INSERT INTO portrait_query_windows (photo_id,number,started_at,deadline_at)
+            VALUES (?,?,?,?)''', (ident, number, started_at, started_at + QUERY_SECONDS))
+        return db.execute('SELECT * FROM portrait_query_windows WHERE photo_id=? AND number=?',
+                          (ident, number)).fetchone()
+
+    def _stop_query(self, db, job, window, now):
+        reason = ('deadline' if now >= window['deadline_at'] else
+                  'attempt_limit' if window['attempts'] >= QUERY_ATTEMPTS else '')
+        if not reason:
+            return False
+        db.execute('''UPDATE portrait_query_windows SET stopped_at=?,stop_reason=?
+            WHERE photo_id=? AND number=?''', (now, reason, job['id'], window['number']))
+        db.execute("""UPDATE portrait_photos SET status='stopped',next_check=0,message=? WHERE id=?""",
+            ('自动查询已停止（达到 60 次或 30 分钟上限）；可继续检查原记录，不会重复提交照片。', job['id']))
+        db.execute('INSERT OR REPLACE INTO portrait_photo_errors VALUES (?,1)', (job['id'],))
+        return True
+
+    def _reserve_query(self, ident):
+        """Charge a logical query before any remote read, including crash cases."""
+        with self.store.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            now = time.time()
+            job = db.execute('SELECT * FROM portrait_photos WHERE id=? AND account=?',
+                             (ident, self.account)).fetchone()
+            if not job or job['status'] not in {'processing','uncertain'}:
+                return None
+            window = db.execute('''SELECT * FROM portrait_query_windows
+                WHERE photo_id=? ORDER BY number DESC LIMIT 1''', (ident,)).fetchone()
+            if not window:
+                window = self._new_query_window(db, ident, job['created'])
+            if self._stop_query(db, job, window, now) or job['next_check'] > now:
+                return None
+            db.execute('''UPDATE portrait_query_windows SET attempts=attempts+1
+                WHERE photo_id=? AND number=?''', (ident, window['number']))
+            # A crash must not immediately reissue the same read in a tight loop.
+            db.execute('UPDATE portrait_photos SET next_check=? WHERE id=?', (now + 60, ident))
+            return window['number']
+
+    def _finish_query(self, ident, number, *, failed=False):
+        now = time.time()
+        with self.store.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            window = db.execute('''SELECT * FROM portrait_query_windows
+                WHERE photo_id=? ORDER BY number DESC LIMIT 1''', (ident,)).fetchone()
+            # An explicit continuation in another API process invalidates an
+            # older in-flight query's budget and backoff decisions.
+            if not window or window['number'] != number:
+                return
+            errors = window['consecutive_errors'] + 1 if failed else 0
+            db.execute('''UPDATE portrait_query_windows SET consecutive_errors=?
+                WHERE photo_id=? AND number=?''', (errors, ident, number))
+            job = db.execute('SELECT * FROM portrait_photos WHERE id=?', (ident,)).fetchone()
+            if job['status'] in {'processing','uncertain'}:
+                if not self._stop_query(db, job, window, now) and failed:
+                    db.execute('UPDATE portrait_photos SET next_check=? WHERE id=?',
+                        (now + QUERY_BACKOFF[min(errors, len(QUERY_BACKOFF)) - 1], ident))
+            elif job['status'] in {'active','failed','removed'}:
+                db.execute('''UPDATE portrait_query_windows SET stopped_at=?,stop_reason=?
+                    WHERE photo_id=? AND number=?''', (now, job['status'], ident, number))
 
     def update(self, ident, **values):
         retryable = values.pop('retryable', None)
@@ -535,11 +627,19 @@ class PortraitLibrary:
         return self.get_photo(ident)
 
     def retry(self, ident):
-        job=self.get_photo(ident,private=True)
-        if job['status'] not in {'failed','uncertain'}: return self.get_photo(ident)
-        # Never repeat CreateAsset after an ambiguous response. Existing remote IDs are polled again.
-        state='processing' if job['remote_id'] else ('uncertain' if job['status']=='uncertain' else 'queued')
-        self.update(ident,status=state,next_check=0,message='等待重新核实照片状态')
+        with _process_lock:
+            job=self.get_photo(ident,private=True)
+            if job['status'] not in {'failed','uncertain','stopped'}: return self.get_photo(ident)
+            # Only failures before submission may return to the upload queue.
+            state=('processing' if job['remote_id'] else
+                   'uncertain' if job['status'] in {'uncertain','stopped'} or job['query_window'] else 'queued')
+            with self.store.connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                if state != 'queued':
+                    self._new_query_window(db, ident, time.time())
+                db.execute('UPDATE portrait_photos SET status=?,next_check=0,message=? WHERE id=?',
+                           (state,'等待重新核实照片状态',ident))
+                db.execute('DELETE FROM portrait_photo_errors WHERE photo_id=?', (ident,))
         return self.get_photo(ident)
 
     def recover(self):
@@ -548,10 +648,19 @@ class PortraitLibrary:
             db.execute("UPDATE portrait_photos SET status='uncertain',next_check=0 WHERE status='submitting'")
 
     def process_one(self):
+        from .recovery_guard import is_restore_held
+        if is_restore_held(self.settings): return
         if not _process_lock.acquire(blocking=False): return
         try:
             with self.store.connection() as db:
-                row = db.execute("SELECT * FROM portrait_photos WHERE account=? AND status IN ('queued','processing','uncertain') AND next_check<=? ORDER BY next_check,created LIMIT 1",(self.account,time.time())).fetchone()
+                row = db.execute("""SELECT ph.* FROM portrait_photos ph
+                    LEFT JOIN portrait_query_windows w ON w.photo_id=ph.id
+                    AND w.number=(SELECT MAX(number) FROM portrait_query_windows WHERE photo_id=ph.id)
+                    WHERE account=? AND status IN ('queued','processing','uncertain')
+                    AND (next_check<=? OR (status IN ('processing','uncertain')
+                         AND (w.deadline_at<=? OR w.attempts>=?)))
+                    ORDER BY next_check,created LIMIT 1""",
+                    (self.account,time.time(),time.time(),QUERY_ATTEMPTS)).fetchone()
             if not row: return
             job=dict(row); ident=job['id']
             if not self.available(job['person_id'],sha256=job['sha256']):
@@ -561,6 +670,11 @@ class PortraitLibrary:
             asset=self.store.get_asset(job['asset_id'],private=True)
             api=self.api(person['person_type'],'Video' if asset['kind']=='person_video' else 'Image')
             group=person['group_id']
+            window = None
+            if job['status'] in {'processing','uncertain'}:
+                window = self._reserve_query(ident)
+                if window is None: return
+            query_failed = False
             try:
                 if job['status']=='queued':
                     self.update(ident,status='uploading',message='正在上传人物照片')
@@ -570,7 +684,11 @@ class PortraitLibrary:
                     from .shared_portraits import authorize_asset
                     authorize_asset(self.settings,asset['id'])
                     self.require_available(job['person_id'],sha256=job['sha256'])
-                    self.update(ident,status='submitting',message='正在提交官方照片校验')
+                    with self.store.connection() as db:
+                        db.execute('BEGIN IMMEDIATE')
+                        db.execute("UPDATE portrait_photos SET status='submitting',message=? WHERE id=?",
+                                   ('正在提交官方照片校验',ident))
+                        self._new_query_window(db, ident, time.time())
                     remote=api.create_asset(group,url,'portrait-'+ident)
                     self.update(ident,status='processing',remote_id=remote,next_check=time.time()+5,message='正在核对是否为所选人物')
                 elif job['status']=='uncertain':
@@ -599,8 +717,11 @@ class PortraitLibrary:
                 if current['status']=='submitting':
                     self.update(ident,status='uncertain',message='提交结果待确认，正在查找官方记录',next_check=time.time()+15)
                 elif current['status'] in {'processing','uncertain'}:
-                    self.update(ident,message=safe,next_check=time.time()+30)
+                    query_failed = True
+                    self.update(ident,message=safe)
                 else: self.update(ident,status='failed',retryable=True,message=safe)
+            if window is not None:
+                self._finish_query(ident, window, failed=query_failed)
             if asset['kind']=='person_video':
                 current=self.get_photo(ident,private=True)
                 self.update(ident,message=current['message'].replace('照片','视频'))

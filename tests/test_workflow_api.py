@@ -1,11 +1,19 @@
 from tests.media_fixtures import image_bytes, video_bytes, media_bytes
 import os
+import pytest
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.workflow_router import get_router
 from app.workflow_store import WorkflowStore
+
+
+@pytest.fixture(autouse=True)
+def stop_legacy_dispatchers():
+    yield
+    from app.workflow_worker import stop_workflow_worker
+    assert stop_workflow_worker()
 
 
 def test_workflow_api_lifecycle(tmp_path):
@@ -98,7 +106,7 @@ def test_redaction_render_is_idempotent(tmp_path, monkeypatch):
         json={"kind": "url", "uri": "https://example.test/video.mp4"},
     )
 
-    monkeypatch.setattr("app.workflow_router.run_redaction_task", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.workflow_worker.run_redaction_task", lambda *args, **kwargs: None)
     first = client.post(
         f"/api/workflow/projects/{project_id}/redaction/render",
         json={"idempotency_key": "render-1"},
@@ -139,7 +147,7 @@ def test_material_upload_and_execute_task_are_on_workflow_store(tmp_path, monkey
         output_data={"artifact": {"path": str(redacted), "sha256": "demo"}},
     )
 
-    monkeypatch.setattr("app.workflow_router.run_generation_task", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.workflow_worker.run_generation_task", lambda *args, **kwargs: None)
     response = client.post(
         f"/api/workflow/projects/{project_id}/execute",
         json={"prompt": "保持动作", "idempotency_key": "execute-1"},

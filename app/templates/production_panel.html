@@ -8,9 +8,10 @@
         <div class="asset-picker" id="video-picker">
           <span class="asset-empty"><b>＋</b><strong>上传参考视频</strong><small>点击选择视频文件</small></span>
           <span class="asset-thumbnails" id="video-reference-preview"></span>
-          <input id="studio-source-video" type="file" name="video" form="studio-job-form" accept="video/*" aria-label="上传参考视频">
+          <input id="studio-source-video" type="file" name="video" form="studio-job-form" accept="video/*" data-requirement-input="source_video" aria-label="上传参考视频" aria-describedby="source-upload-requirement">
         </div>
         <div class="asset-footer"><span id="source-file-name">建议 5–15 秒</span><span class="asset-edit-actions"><button type="button" id="replace-source-video" data-asset-edit hidden>更换视频</button><button type="button" id="remove-source-video" data-asset-edit hidden>移除视频</button><button type="button" id="toggle-video-url" aria-expanded="false">使用链接</button></span></div>
+        <p id="source-upload-requirement" class="input-requirement" data-input-requirement="source_video">正在读取上传要求…</p>
         <p id="source-model-hint" class="field-hint" role="status" hidden></p>
         <details class="source-redaction-preview" id="flow-stage-redaction"><summary>预览打码效果</summary><button type="button" class="secondary" id="studio-preview-submit" disabled>预览打码视频</button><p id="studio-preview-status" role="status">选择参考视频后可预览</p><div id="studio-preview" hidden><video id="studio-defaced-video" controls playsinline preload="none"></video></div></details>
         <div id="video-url-entry" hidden>
@@ -18,6 +19,7 @@
           <div class="link-import-actions"><button type="button" class="primary" id="confirm-video-url" disabled>确认并加载视频</button></div>
           <p class="field-hint">小红书 · 抖音 · 快手 · B 站</p>
           <p id="video-link-status" class="field-hint" role="status" aria-live="polite">粘贴一个作品的分享文案即可。</p>
+          <p class="billing-notice" data-billing-notice>正在读取费用说明…</p>
           <details id="link-settings" class="link-settings">
             <summary>⚙ 链接解析设置 · TikHub <span id="link-key-state">TikHub</span></summary>
             <div class="link-settings-body">
@@ -35,9 +37,10 @@
         <div class="asset-picker" id="clothing-picker">
           <span class="asset-empty"><b>＋</b><strong>上传衣服参考图</strong><small>支持选择多张图片</small></span>
           <span class="asset-thumbnails" id="clothing-reference-preview"></span>
-          <input id="studio-clothing-image" type="file" name="clothing_image" accept="image/*" multiple required aria-label="上传衣服参考图">
+          <input id="studio-clothing-image" type="file" name="clothing_image" accept="image/*" data-requirement-input="image" multiple required aria-label="上传衣服参考图" aria-describedby="image-upload-requirement">
         </div>
         <div class="asset-footer"><span id="clothing-file-name">款式清晰、完整展示</span><button type="button" data-add-images="clothing" data-asset-edit>＋ 添加</button></div>
+        <p id="image-upload-requirement" class="input-requirement" data-input-requirement="image">正在读取图片要求…</p>
 
       </article>
       <article class="asset-entry" id="person-reference-card">
@@ -55,9 +58,10 @@
         <div class="asset-picker" id="face-picker">
           <span class="asset-empty"><b>＋</b><strong>上传人物参考图</strong><small>支持选择多张图片</small></span>
           <span class="asset-thumbnails" id="face-reference-preview"></span>
-          <input id="studio-face-image" type="file" name="face_image" accept="image/*" multiple required aria-label="上传人物参考图">
+          <input id="studio-face-image" type="file" name="face_image" accept="image/*" data-requirement-input="portrait_photo" multiple required aria-label="上传人物参考图" aria-describedby="portrait-upload-requirement">
         </div>
         <div class="asset-footer"><span id="face-file-name">清晰正脸、光线自然</span><button type="button" data-add-images="face" data-asset-edit>添加参考图</button></div>
+        <p id="portrait-upload-requirement" class="input-requirement" data-input-requirement="portrait_photo">正在读取人物照片要求…</p>
         <p id="person-photo-status" class="field-hint" role="status" aria-live="polite">上传人物参考图，生成时自动准备。</p>
         <div class="portrait-entry"><button type="button" id="person-photo-retry" hidden>重试校验</button></div>
         </div>
@@ -65,7 +69,7 @@
           <label class="person-video-empty person-video-upload" id="person-video-upload">上传人物参考视频<input id="person-video-file" type="file" accept=".mp4,.mov" aria-label="上传人物参考视频"></label>
           <video id="person-video-preview" controls playsinline preload="none" hidden></video>
           <div class="asset-footer"><span id="person-video-name">未设置</span><div><button type="button" id="person-video-replace" hidden>替换</button><button type="button" id="person-video-remove" hidden>移除</button></div></div>
-          <p class="field-hint" title="仅参考人物身份，建议清晰单人视频，时长 2–5 秒。">MP4 / MOV · 2–15 秒 · ≤ 50 MB</p>
+          <p class="input-requirement" data-input-requirement="person_video">正在读取人物视频要求…</p>
           <p id="person-video-status" class="field-hint" role="status"></p>
           <p id="person-video-duration" class="field-hint" role="status">动作 + 人物视频合计 ≤ 15 秒</p>
         </div>
@@ -90,6 +94,7 @@
           <label class="scene-description-label" for="scene-description">场景补充（可选）</label>
           <textarea id="scene-description" rows="3" maxlength="2000" placeholder="补充光线、氛围或需要保留的细节"></textarea>
           <p class="field-hint">可上传场景图或仅填写场景描述；启用时替换背景，不使用时保留原视频场景。</p>
+          <p class="input-requirement" data-input-requirement="image">正在读取图片要求…</p>
           </div>
         </div>
       </details>
@@ -103,6 +108,7 @@
           <div class="asset-footer"><span id="hairstyle-file-name">未设置</span></div>
           <label class="optional-enable"><input id="hairstyle-enabled" type="checkbox"> 使用发型参考图</label>
             <p class="field-hint">只参考发型和发色，人物身份仍使用上方人物参考。不上传则沿用人物参考的发型。</p>
+            <p class="input-requirement" data-input-requirement="image">正在读取图片要求…</p>
             <div id="hairstyle-mask-panel" hidden>
               <p class="field-hint">自动遮挡人脸，尽量保留发型。生成使用下方打码图。</p>
               <details class="hairstyle-mask-options"><summary>调整打码范围 <span id="hairstyle-mask-summary">1.0 倍</span></summary>
@@ -118,6 +124,7 @@
 <details class="accessory-references" id="accessory-references">
           <summary>更多搭配 <span id="accessory-count">可选</span></summary>
           <p class="field-hint">点击类别上传对应图片，每类一张；关闭“本次使用”可暂时停用。</p>
+          <p class="input-requirement" data-input-requirement="image">正在读取图片要求…</p>
           <div class="accessory-buttons">
           {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜'),('earrings','耳环')] %}
             <button type="button" data-add-images="{{ kind }}" data-asset-edit id="{{ kind }}-add">{{ label }}<span id="{{ kind }}-reference-state">可选</span></button>
@@ -161,9 +168,11 @@
       </div>
       <label class="sr-only" for="generation-prompt">生成提示词</label>
       <textarea id="generation-prompt" name="prompt" rows="4">保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图中的脸和身份；应用@Image2衣服参考图中的服装款式、颜色和材质，保持全片自然稳定。</textarea>
-      <p class="field-hint">默认严格遵循参考：视频控制动作，人物控制身份，服装控制穿着；独立发型、场景与配饰按各自参考执行。下方规则自动更新，文字只补充细节。全部参考图合计最多 9 张。</p>
+      <p class="field-hint">默认严格遵循参考：视频控制动作，人物控制身份，服装控制穿着；独立发型、场景与配饰按各自参考执行。下方规则自动更新，文字只补充细节。参考图上限以本次模型的计数提示为准。</p>
+      <p class="input-requirement" data-input-requirement="prompt">正在读取提示词要求…</p>
     </details>
     <h3 class="generation-settings-heading" id="generation-settings-heading">生成设置</h3>
+    <p class="billing-notice" data-billing-notice>正在读取费用说明…</p>
     <div class="generation-action" id="generation-settings" aria-labelledby="generation-settings-heading">
       <div class="generation-task">
         <div class="draft-task-title"><span>任务名称</span><strong id="draft-task-name">正在读取…</strong><button type="button" id="draft-name-edit" class="run-rename" aria-label="修改本次任务名称">✎</button></div>

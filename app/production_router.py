@@ -18,6 +18,7 @@ from .person_video import is_video, person_ids, validate_file, validate_pair
 from .reference_roles import ACCESSORY_LABELS, OPTIONAL_KINDS
 from .model_catalog import TASK_FIELDS, task_values, resolve_task_config, editor_options, capabilities
 from . import tenancy
+from . import input_limits
 
 _MODEL_FIELDS = {'provider','protocol','mode','base_url','model','duration','fps','resolution','ratio','public_base_url','generate_audio'}
 _DRAFT_FIELDS = {'source_clip','person_reference_mode','person_video_asset_id','name','person_id','source_asset_id','face_asset_ids','clothing_asset_ids','hairstyle_asset_ids','scene_asset_ids','hairstyle_enabled','hairstyle_mask','scene_enabled','scene_description','prompt','mask','model'}
@@ -96,7 +97,7 @@ def get_router(settings_getter, local_guard):
         if 'prompt' in values:
             from .reference_prompt import strip_reference_rules
             prompt = values['prompt']
-            if not isinstance(prompt,str) or len(prompt)>14000 or len(strip_reference_rules(prompt))>10000:
+            if not isinstance(prompt,str) or len(prompt)>input_limits.PROMPT_WITH_RULES_MAX_CHARS or len(strip_reference_rules(prompt))>input_limits.PROMPT_MAX_CHARS:
                 raise ValueError('提示词正文最多 10000 字，请缩短后重试。')
         for field in (kind+'_enabled' for kind in OPTIONAL_KINDS):
             if field in values and type(values[field]) is not bool: raise ValueError('参考图启用状态不正确。')
@@ -157,7 +158,7 @@ def get_router(settings_getter, local_guard):
         supported={'.mp4','.mov','.webm','.mkv','.avi','.m4v'} if kind=='video' else {'.png','.jpg','.jpeg','.webp','.gif','.bmp','.tif','.tiff','.heic','.heif','.avif'}
         if kind=='person_video':supported={'.mp4','.mov'}
         if suffix not in supported: raise HTTPException(422,'请选择有效的视频或图片文件。')
-        limit=(settings_getter().max_upload_mb if kind=='video' else 50 if kind=='person_video' else 20)*1024*1024
+        limit=(settings_getter().max_upload_mb*1024*1024 if kind=='video' else input_limits.PERSON_VIDEO_MAX_BYTES if kind=='person_video' else input_limits.IMAGE_MAX_BYTES)
         root=settings_getter().storage_dir/'assets'
         root.mkdir(parents=True,exist_ok=True)
         path=root/(uuid.uuid4().hex+suffix)

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ '反馈处理' if support_admin else '帮助与反馈' }} · mira</title>
+<link rel="stylesheet" href="/static/account.css?v=20260929-navigation-people-1">
+<script src="/static/account.js?v=20261005-support-1"></script>
+{% include "workspace_head.html" %}
+</head><body class="workspace-shell mira-workspace" data-support-admin="{{ 'true' if support_admin else 'false' }}">
+{% include "workspace_sidebar.html" %}
+<main class="support-page">
+  <header><p class="support-eyebrow">mira · 使用支持</p><h1>{{ '反馈处理' if support_admin else '帮助与反馈' }}</h1><p>{{ '查看用户反馈，核对任务后回复处理结果。' if support_admin else '了解素材要求、任务状态和出错后的下一步。站内反馈由管理员处理。' }}</p></header>
+  <p class="account-banner" data-account-error role="alert" hidden></p>
+  {% if not support_admin %}
+  <nav class="support-contents" aria-label="帮助目录"><a href="#guide">开始制作</a><a href="#requirements">素材要求</a><a href="#recovery">失败处理</a><a href="#billing">费用说明</a><a href="#feedback">反馈与回复</a></nav>
+  <section id="guide" class="support-card"><h2>开始制作</h2><ol><li>在制作流程中选择动作参考视频、衣服参考图和人物素材。真人请从人物库选择已授权素材；仅上传你有权使用的内容。</li><li>按需要设置场景、发型、配饰和提示词。选择模型、画质、比例、时长及是否生成声音；界面会显示当前模型的可用范围。</li><li>等待素材保存完成后点击“生成视频”。任务使用提交时的素材快照，后续编辑不会改变已提交任务。</li><li>在“任务记录”查看状态；完成后可播放、下载，作品也会进入视频库。关闭或刷新页面不会取消后台任务。</li></ol><p>人物库中的照片或视频要通过检查才能用于生成。虚拟人物属于当前账户，真人的可用范围由管理员设置。</p></section>
+  <section id="requirements" class="support-card"><h2>选择素材前先检查</h2><dl class="support-requirements"><dt>动作参考视频</dt><dd data-input-requirement="source_video">正在读取当前上传要求…</dd><dt>衣服、场景、发型与配饰图片</dt><dd data-input-requirement="image">正在读取当前上传要求…</dd><dt>人物照片</dt><dd data-input-requirement="portrait_photo">正在读取当前上传要求…</dd><dt>人物视频</dt><dd data-input-requirement="person_video">正在读取当前上传要求…</dd><dt>提示词</dt><dd data-input-requirement="prompt">正在读取当前上传要求…</dd></dl><p>上传要求与生成模型的限制分别检查：参考图片总数、动作与人物视频合计时长，以制作页所选模型的实时提示为准。素材可入库不代表所有模型都能使用。</p><button type="button" class="support-button" data-reload-support-config>重新读取要求</button></section>
+  <section id="recovery" class="support-card"><h2>任务状态与失败处理</h2><dl class="support-requirements"><dt>排队中 / 生成中</dt><dd>任务正在等待或执行。只有尚未开始且未提交给服务商的任务可以取消排队。</dd><dt>需要处理 / 提交结果待确认</dt><dd>不要重复提交或重新生成。先通过下方反馈联系管理员核对原任务。出现“继续查询 / 下载”时，该操作查询原任务并获取结果，不重新生成视频。</dd><dt>自动查询已停止</dt><dd>人物素材的自动查询达到窗口上限。可在人物库点击“继续检查原记录”，继续核实原素材；无需重新上传同一份素材。</dd><dt>检查未通过 / 生成失败</dt><dd>打开任务详情查看原因。素材被拒绝时按提示更换素材；声音版权检查失败时，可选择无声重试。复制为草稿、重新生成或无声重试都会创建新的生成任务。</dd><dt>上传或草稿保存失败</dt><dd>保留当前页面，先检查网络并点击“重试保存”。发生版本冲突时可使用“保留当前修改”；未保存前不要清除浏览器数据。</dd></dl><p>需要帮助时，请提供任务名称、问题编号、发生时间和操作步骤。不要提交密码、API Key、授权二维码或原始敏感素材。</p></section>
+  <section id="billing" class="support-card"><h2>费用说明</h2><p data-billing-notice>正在读取费用说明…</p><p>“继续查询 / 下载”查询原任务；复制为草稿后生成、重新生成和无声重试会创建新任务。费用及失败后的处理方式，请向管理员确认，并核对供应商记录。</p></section>
+  <section id="feedback" class="support-card"><h2>向管理员反馈</h2><p>反馈由管理员查看和回复。提交后请回到下方“我的反馈”查看处理结果。</p><p id="support-login" hidden><a href="/login">登录后提交反馈</a>。无法登录或需要账号时，请通过向你分配账号的管理员已有联系渠道处理。</p><p id="support-unavailable" hidden>当前未启用账户登录，站内反馈暂不可用。请联系工作台部署管理员。</p>
+    <form id="support-form" hidden><label for="support-task-name">相关任务名称</label><input id="support-task-name" name="task_name" maxlength="160" autocomplete="off"><label for="support-request-id">问题编号</label><input id="support-request-id" name="request_id" maxlength="64" autocomplete="off" aria-describedby="support-id-hint"><small id="support-id-hint">可从错误提示或任务详情复制；没有编号可以留空。</small><label for="support-message">问题描述</label><textarea id="support-message" name="message" rows="5" required maxlength="4000" placeholder="发生时间、操作步骤、看到的现象，以及期望的结果" aria-describedby="support-form-limit"></textarea><p id="support-form-limit" class="support-muted"></p><p class="support-muted">请勿填写密码、密钥或敏感个人信息。</p><button class="support-button support-primary" type="submit">提交反馈</button></form>
+  </section>
+  {% endif %}
+  <section class="support-card" id="support-history-section" hidden><div class="support-history-heading"><h2>{{ '用户反馈' if support_admin else '我的反馈' }}</h2><button type="button" class="support-button" id="support-refresh">刷新反馈</button></div>
+    {% if support_admin %}<label for="support-filter">筛选状态</label><select id="support-filter"><option value="">全部</option><option value="open">待处理</option><option value="resolved">已处理</option></select>{% endif %}
+    <div id="support-history"></div><nav class="support-pagination" aria-label="反馈分页"><button type="button" class="support-button" id="support-previous">上一页</button><span id="support-page-number">1 / 1</span><button type="button" class="support-button" id="support-next">下一页</button></nav>
+  </section>
+  <p id="support-local" class="support-muted" hidden>当前使用本机单用户模式，站内反馈与处理仅限本机访问；公网匿名访问不会获准提交。<a href="/admin/support">处理本机反馈</a></p>
+  <p id="support-status" role="status" aria-live="polite"></p>
+</main><script src="/static/help.js?v=20261005-support-1"></script>
+</body></html>

@@ -1,0 +1,24 @@
+[Unit]
+Description=Verified encrypted Ark backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/ark-video-workflow/current
+EnvironmentFile=/etc/ark-video-backup/credentials.env
+ExecStart=/opt/ark-video-workflow/venv/bin/python -m app.backup_operations --config /etc/ark-video-backup/config.json backup
+# Runs after all backup processes exit, including abnormal termination.
+ExecStopPost=/opt/ark-video-workflow/venv/bin/python -m app.backup_operations --config /etc/ark-video-backup/config.json recover-service
+TimeoutStartSec=infinity
+TimeoutStopSec=240
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+# SQLite's read-only connection may need WAL/SHM side files in the source dir.
+# Add directories for any independently configured SQLite roots as well.
+ReadWritePaths=/var/lib/ark-video-workflow-backups /opt/ark-video-workflow/data

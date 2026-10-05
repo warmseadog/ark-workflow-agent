@@ -2,6 +2,7 @@
 import hashlib
 import math
 from pathlib import Path
+from . import input_limits as limits
 
 
 def is_video(draft):
@@ -26,20 +27,21 @@ def probe(path):
     finally:capture.release()
 
 
-def validate_file(path, *, person=True, max_seconds=30):
+def validate_file(path, *, person=True, max_seconds=limits.PERSON_VIDEO_MAX_SECONDS):
     path=Path(path)
-    if not path.is_file() or not 0<path.stat().st_size<=50*1024*1024:
+    if not path.is_file() or not 0<path.stat().st_size<=limits.PERSON_VIDEO_MAX_BYTES:
         raise ValueError('单段参考视频需大于 0、小于等于 50 MB。')
-    if person and path.suffix.lower() not in {'.mp4','.mov'}:
+    if person and path.suffix.lower() not in limits.PERSON_VIDEO_EXTENSIONS:
         raise ValueError('人物视频请使用 MP4 或 MOV 格式。')
     info=probe(path)
-    if not 2<=info['duration']<=max_seconds:
+    if not limits.PERSON_VIDEO_MIN_SECONDS<=info['duration']<=max_seconds:
         raise ValueError(f'参考视频时长需在 2–{max_seconds} 秒之间。')
     if person:
         w,h=info['width'],info['height']
-        if not (300<w<6000 and 300<h<6000 and .4<w/h<2.5 and 407696<=w*h<=8295044):
+        if not (limits.PORTRAIT_MIN_DIMENSION<w<limits.PORTRAIT_MAX_DIMENSION and limits.PORTRAIT_MIN_DIMENSION<h<limits.PORTRAIT_MAX_DIMENSION
+                and limits.PORTRAIT_MIN_ASPECT<w/h<limits.PORTRAIT_MAX_ASPECT and limits.PERSON_VIDEO_MIN_PIXELS<=w*h<=limits.PERSON_VIDEO_MAX_PIXELS):
             raise ValueError('人物视频尺寸不符合素材库要求，请使用 720p 或 1080p 的横屏或竖屏视频。')
-        if not 23.9<=info['fps']<=60.1:
+        if not limits.PERSON_VIDEO_MIN_FPS<=info['fps']<=limits.PERSON_VIDEO_MAX_FPS:
             raise ValueError('人物视频帧率需为 24–60 fps。')
     return info
 

@@ -1,0 +1,15 @@
+[Unit]
+Description=Check Ark verified backup freshness
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/ark-video-workflow/current
+EnvironmentFile=/etc/ark-video-backup/credentials.env
+ExecStart=/opt/ark-video-workflow/venv/bin/python -m app.backup_operations --config /etc/ark-video-backup/config.json check
+TimeoutStartSec=60
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict

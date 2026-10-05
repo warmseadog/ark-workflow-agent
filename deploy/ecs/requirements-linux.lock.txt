@@ -1,6 +1,8 @@
 absl-py==2.3.1
 annotated-types==0.7.0
 anyio==4.14.1
+argon2-cffi==25.1.0
+argon2-cffi-bindings==26.1.0
 attrs==26.1.0
 certifi==2026.6.17
 cffi==2.0.0
@@ -65,6 +67,7 @@ sqlalchemy==2.0.51
 starlette==0.47.3
 tifffile==2026.3.3
 tos==2.9.3
+cryptography==48.0.1
 tqdm==4.67.1
 typing-extensions==4.16.0
 typing-inspection==0.4.2
