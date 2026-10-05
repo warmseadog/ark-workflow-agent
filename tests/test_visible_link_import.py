@@ -38,7 +38,9 @@ def test_link_entry_is_visible_and_imports_without_an_extra_toggle(mira_browser,
     expect(source).to_be_visible()
     expect(button).to_be_visible()
     expect(button).to_be_disabled()
-    assert source.bounding_box()['y'] < page.locator('#source-upload-requirement').bounding_box()['y']
+    expect(page.locator('#source-upload-requirement')).to_be_hidden()
+    picker = page.locator('#video-picker').bounding_box()
+    assert source.bounding_box()['y'] >= picker['y'] + picker['height']
     assert page.locator('#link-settings').is_hidden()
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     output = Path(__file__).resolve().parents[1] / 'exports/link-import-preview'
