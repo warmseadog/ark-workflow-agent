@@ -393,7 +393,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         expect(page.locator('#draft-save-status')).to_contain_text('已保存')
         assert drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['model']['duration']==6
         assert drafts[page.evaluate("localStorage.getItem('production-current-draft-v1')")]['mask']['mask_scale']==1.4
-        page.locator('#toggle-video-url').click()
+        expect(page.locator('#video-url-entry')).to_be_visible()
         page.locator('[name=video_url]').fill('https://example.test/video')
         page.locator('#confirm-video-url').click()
         expect(page.locator('#source-file-name')).to_contain_text('imported.mp4')

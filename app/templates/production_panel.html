@@ -10,15 +10,14 @@
           <span class="asset-thumbnails" id="video-reference-preview"></span>
           <input id="studio-source-video" type="file" name="video" form="studio-job-form" accept="video/*" data-requirement-input="source_video" aria-label="上传参考视频" aria-describedby="source-upload-requirement">
         </div>
-        <div class="asset-footer"><span id="source-file-name">建议 5–15 秒</span><span class="asset-edit-actions"><button type="button" id="replace-source-video" data-asset-edit hidden>更换视频</button><button type="button" id="remove-source-video" data-asset-edit hidden>移除视频</button><button type="button" id="toggle-video-url" aria-expanded="false">使用链接</button></span></div>
-        <p id="source-upload-requirement" class="input-requirement" data-input-requirement="source_video">正在读取上传要求…</p>
-        <p id="source-model-hint" class="field-hint" role="status" hidden></p>
-        <details class="source-redaction-preview" id="flow-stage-redaction"><summary>预览打码效果</summary><button type="button" class="secondary" id="studio-preview-submit" disabled>预览打码视频</button><p id="studio-preview-status" role="status">选择参考视频后可预览</p><div id="studio-preview" hidden><video id="studio-defaced-video" controls playsinline preload="none"></video></div></details>
-        <div id="video-url-entry" hidden>
-          <textarea name="video_url" form="studio-job-form" rows="3" maxlength="10000" placeholder="粘贴链接或整段分享文案，自动识别视频链接" aria-label="参考视频链接" aria-describedby="video-link-status"></textarea>
-          <div class="link-import-actions"><button type="button" class="primary" id="confirm-video-url" disabled>确认并加载视频</button></div>
-          <p class="field-hint">小红书 · 抖音 · 快手 · B 站</p>
-          <p id="video-link-status" class="field-hint" role="status" aria-live="polite">粘贴一个作品的分享文案即可。</p>
+        <div class="asset-footer"><span id="source-file-name">建议 5–15 秒</span><span class="asset-edit-actions"><button type="button" id="replace-source-video" data-asset-edit hidden>更换视频</button><button type="button" id="remove-source-video" data-asset-edit hidden>移除视频</button></span></div>
+        <div id="video-url-entry" class="video-link-card">
+          <label class="video-link-title" for="source-video-url"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4M8 16l-1 1a4.2 4.2 0 0 1-6-6l4-4a4.2 4.2 0 0 1 6 0m2 10a4.2 4.2 0 0 0 6 0l4-4a4.2 4.2 0 0 0-6-6l-1 1" transform="translate(0 0) scale(.95)"/></svg><span>粘贴视频链接</span></label>
+          <p class="video-link-description">无需先下载，粘贴分享链接即可导入</p>
+          <textarea id="source-video-url" name="video_url" form="studio-job-form" rows="2" maxlength="10000" placeholder="在这里粘贴视频链接，或整段分享文案…" aria-label="参考视频链接" aria-describedby="video-link-platforms video-link-status" spellcheck="false"></textarea>
+          <div class="link-import-actions"><button type="button" class="primary" id="confirm-video-url" disabled>导入视频</button></div>
+          <p id="video-link-platforms" class="field-hint">支持抖音 · 小红书 · 快手 · B 站</p>
+          <p id="video-link-status" class="field-hint" role="status" aria-live="polite">自动识别链接，点击导入或按回车确认。</p>
           <p class="billing-notice" data-billing-notice>正在读取费用说明…</p>
           <details id="link-settings" class="link-settings">
             <summary>⚙ 链接解析设置 · TikHub <span id="link-key-state">TikHub</span></summary>
@@ -31,6 +30,9 @@
             </div>
           </details>
         </div>
+        <p id="source-upload-requirement" class="input-requirement" data-input-requirement="source_video">正在读取上传要求…</p>
+        <p id="source-model-hint" class="field-hint" role="status" hidden></p>
+        <details class="source-redaction-preview" id="flow-stage-redaction"><summary>预览打码效果</summary><button type="button" class="secondary" id="studio-preview-submit" disabled>预览打码视频</button><p id="studio-preview-status" role="status">选择参考视频后可预览</p><div id="studio-preview" hidden><video id="studio-defaced-video" controls playsinline preload="none"></video></div></details>
       </article>
       <article class="asset-entry" id="flow-stage-references">
         <div class="asset-heading"><span>02</span><h3>衣服参考图</h3><small>必填 · 款式与材质</small></div>

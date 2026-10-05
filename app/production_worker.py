@@ -210,9 +210,9 @@ class QueueManager:
         from .tenancy import root_settings
         self.settings = root_settings(settings)
         try:
-            self.worker_count = max(1, min(32, int(os.getenv('APP_VIDEO_WORKERS', '10'))))
+            self.worker_count = max(1, min(50, int(os.getenv('APP_VIDEO_WORKERS', '50'))))
         except ValueError:
-            self.worker_count = 10
+            self.worker_count = 50
         # Keep the legacy root store available to existing callers.
         self.store = ProductionStore(self.settings.storage_dir)
         self.stop = threading.Event()

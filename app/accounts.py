@@ -2,7 +2,7 @@
 
 Public users never contain password hashes. ``authenticate`` returns a session
 mapping with ``user``, ``csrf_token`` and Unix ``expires_at`` (fixed 12 hours).
-All state is shared through SQLite, including login throttling across workers.
+All state is shared through SQLite, including authentication throttling across workers.
 """
 from __future__ import annotations
 
@@ -26,6 +26,8 @@ SESSION_SECONDS = 12 * 60 * 60
 LOGIN_WINDOW_SECONDS = 15 * 60
 LOGIN_USERNAME_LIMIT = 5
 LOGIN_IP_LIMIT = 20
+REGISTRATION_WINDOW_SECONDS = 15 * 60
+REGISTRATION_IP_LIMIT = 5
 _HASHER = PasswordHasher(type=Type.ID)
 _DUMMY_HASH = _HASHER.hash(secrets.token_urlsafe(32))
 _PUBLIC_FIELDS = (
@@ -141,6 +143,12 @@ class Accounts:
                 CREATE INDEX IF NOT EXISTS attempts_username ON login_attempts(username, created_at);
                 CREATE INDEX IF NOT EXISTS attempts_ip ON login_attempts(remote_ip, created_at);
                 CREATE INDEX IF NOT EXISTS attempts_time ON login_attempts(created_at);
+                CREATE TABLE IF NOT EXISTS registration_attempts (
+                    remote_ip TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS registration_attempts_ip ON registration_attempts(remote_ip, created_at);
+                CREATE INDEX IF NOT EXISTS registration_attempts_time ON registration_attempts(created_at);
                 CREATE TABLE IF NOT EXISTS audit (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     actor_id TEXT NOT NULL,
@@ -229,6 +237,37 @@ class Accounts:
                         'max_concurrent': max_concurrent, 'max_queued': max_queued})
             return _public(self._user(conn, user_id))
 
+    def register(self, username: str, password: str, remote_ip: str) -> dict:
+        """Create an ordinary account and its session atomically; never bootstrap admins."""
+        username, password = _username(username), _password(password)
+        remote_ip = _text(remote_ip, 128) or 'unknown'
+        now = time.time()
+        result = None
+        with self._connect(write=True) as conn:
+            if not conn.execute("SELECT 1 FROM users WHERE role='admin' AND enabled=1 LIMIT 1").fetchone():
+                raise AccountError(503, '工作台尚未完成账号初始化，请联系管理员。')
+            conn.execute('DELETE FROM registration_attempts WHERE created_at<=?',
+                         (now - REGISTRATION_WINDOW_SECONDS,))
+            attempts = conn.execute('SELECT COUNT(*) FROM registration_attempts WHERE remote_ip=?',
+                                    (remote_ip,)).fetchone()[0]
+            if attempts >= REGISTRATION_IP_LIMIT:
+                raise AccountError(429, '注册尝试过于频繁，请在 15 分钟后重试。')
+            conn.execute('INSERT INTO registration_attempts(remote_ip,created_at) VALUES(?,?)', (remote_ip, now))
+            # Keep duplicate attempts in the same committed rate-limit budget.
+            # BEGIN IMMEDIATE serializes the uniqueness check across workers.
+            if not conn.execute('SELECT 1 FROM users WHERE username=?', (username,)).fetchone():
+                user_id = uuid4().hex
+                conn.execute('''INSERT INTO users(id,username,password_hash,role,enabled,max_concurrent,
+                                max_queued,legacy_owner,must_change_password,created_at)
+                                VALUES(?,?,?,'user',1,8,10,0,0,?)''',
+                             (user_id, username, _HASHER.hash(password), now))
+                self._audit(conn, user_id, 'user.register', user_id,
+                            {'username': username, 'role': 'user', 'remote_ip': remote_ip})
+                result = self._create_session(conn, self._user(conn, user_id), remote_ip)
+        if result is None:
+            raise AccountError(409, '用户名已存在。')
+        return result
+
     def get_user(self, user_id: str) -> dict:
         with self._connect() as conn:
             return _public(self._user(conn, user_id))
@@ -299,6 +338,16 @@ class Accounts:
             self._audit(conn, user_id, 'user.change_password', user_id)
             return _public(self._user(conn, user_id))
 
+    def _create_session(self, conn, user, remote_ip: str) -> dict:
+        now = time.time()
+        conn.execute('DELETE FROM sessions WHERE expires_at<=?', (now,))
+        token, csrf_token = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+        conn.execute('''INSERT INTO sessions(token_hash,user_id,csrf_token,created_at,expires_at)
+                        VALUES(?,?,?,?,?)''',
+                     (hashlib.sha256(token.encode()).hexdigest(), user['id'], csrf_token, now, now + SESSION_SECONDS))
+        self._audit(conn, user['id'], 'auth.login', user['id'], {'remote_ip': remote_ip})
+        return {'token': token, 'csrf_token': csrf_token, 'user': _public(user)}
+
     def login(self, username: str, password: str, remote_ip: str) -> dict:
         username = _username(username)
         remote_ip = _text(remote_ip, 128) or 'unknown'
@@ -323,12 +372,7 @@ class Accounts:
             else:
                 if _HASHER.check_needs_rehash(encoded):
                     conn.execute('UPDATE users SET password_hash=? WHERE id=?', (_HASHER.hash(password), user['id']))
-                token, csrf_token = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-                conn.execute('''INSERT INTO sessions(token_hash,user_id,csrf_token,created_at,expires_at)
-                                VALUES(?,?,?,?,?)''',
-                             (hashlib.sha256(token.encode()).hexdigest(), user['id'], csrf_token, now, now + SESSION_SECONDS))
-                self._audit(conn, user['id'], 'auth.login', user['id'], {'remote_ip': remote_ip})
-                result = {'token': token, 'csrf_token': csrf_token, 'user': _public(user)}
+                result = self._create_session(conn, user, remote_ip)
         if result is None:
             raise AccountError(401, '用户名或密码不正确。')
         return result

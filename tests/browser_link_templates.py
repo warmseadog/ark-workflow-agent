@@ -78,7 +78,7 @@ try:
             page.locator('#flow-stage-generation > summary').click()
             expect(page.locator('#prompt-template-list button')).to_have_count(4)
 
-            page.locator('#toggle-video-url').click()
+            expect(page.locator('#video-url-entry')).to_be_visible()
             for url, label in [('https://v.douyin.com/abc/', '抖音'), ('https://xhslink.cn/abc', '小红书'),
                                ('https://v.kuaishou.com/abc', '快手'), ('https://b23.tv/abc', 'B 站')]:
                 page.get_by_label('参考视频链接', exact=True).fill('复制打开，看看作品「' + url + '」。')

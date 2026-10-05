@@ -73,7 +73,7 @@ def check(width, height):
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         page.goto(BASE + '/')
         expect(page.locator('a.admin-entry')).to_be_visible()
-        page.locator('#toggle-video-url').click()
+        expect(page.locator('#video-url-entry')).to_be_visible()
         page.locator('#link-settings > summary').click()
         expect(page.locator('#test-tikhub-key')).to_be_visible()
         page.locator('#test-tikhub-key').click()

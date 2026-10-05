@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <link rel="stylesheet" href="/static/account.css?v=20260929-navigation-people-1">
-<script src="/static/account.js?v=20261005-support-1"></script>
+<script src="/static/account.js?v=20261005-register-1"></script>
 <link rel="stylesheet" href="/static/support.css?v=20261005-support-2">
 <script src="/static/support-ui.js?v=20261005-support-1"></script>
 <title>mira — 氛围感 AI 时尚总监</title>
 <link rel="stylesheet" href="/static/mira/mira-cover.css?v=20261005-production-1">
 <link rel="stylesheet" href="/static/mira/mira-system.css?v=20261005-production-1">
 <link rel="stylesheet" href="/static/mira/mira-cover-shell.css?v=20261005-cases-1">
-<link rel="stylesheet" href="/static/mira/mira-production.css?v=20261005-production-1">
+<link rel="stylesheet" href="/static/mira/mira-production.css?v=20261005-register-1">
 <link rel="stylesheet" href="/static/mira/mira-cases.css?v=20261005-cases-1">
 </head>
-<body class="mira-cover-page">
+<body class="mira-cover-page" data-auth-mode="{{ 'register' if registration_mode else 'login' }}">
 <main class="cover" aria-label="mira 作品展示封面">
  <img id="poster" class="media" alt="" hidden>
  <video id="film" class="media" autoplay muted playsinline preload="auto" hidden></video><div class="shade"></div>
@@ -21,6 +21,7 @@
   <a class="cover-brand" href="/login" aria-label="mira"><span class="brand-crop"><img src="/static/mira/brand/mira-wordmark-transparent-v1.png" alt="mira"></span><span class="brand-descriptor">YOUR AI<br>FASHION DIRECTOR</span></a>
   <div class="top-right">
    <button class="login" id="open-login" data-action="login" type="button" aria-haspopup="dialog" aria-controls="login-dialog" data-i18n="login">登录</button>
+   <button class="login register" id="open-register" data-action="register" type="button" aria-haspopup="dialog" aria-controls="login-dialog" data-i18n="register">注册</button>
    <div class="language-control"><button id="language-trigger" class="language-trigger" type="button" aria-expanded="false" aria-controls="language-list" data-i18n-label="language"><span id="language-code">中</span><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg></button><div id="language-list" class="language-list" hidden><button type="button" data-language="zh" aria-pressed="true">简体中文</button><button type="button" data-language="en" aria-pressed="false">English</button></div></div>
    <button class="menu-trigger" id="menu-trigger" data-action="menu" type="button" aria-haspopup="dialog" aria-controls="site-menu" data-i18n-label="menu"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M2 7h24M2 14h24M2 21h24"/></svg></button>
   </div>
@@ -43,9 +44,21 @@
   <label class="login-field" for="login-username"><span data-i18n="username">用户名</span><input id="login-username" name="username" autocomplete="username" spellcheck="false" required maxlength="256"></label>
   <label class="login-field" for="login-password"><span data-i18n="password">密码</span><input id="login-password" name="password" type="password" autocomplete="current-password" required maxlength="1024"></label>
   <p id="login-error" class="login-error" role="alert" hidden></p>
-  <button class="mira-action" type="submit" id="login-submit">登录工作台</button>
+  <button class="mira-action" type="submit" id="login-submit" data-i18n="loginSubmit">登录工作台</button>
+  <p class="auth-switch"><span data-i18n="noAccount">还没有账号？</span><button id="switch-register" type="button" data-auth-mode="register" data-i18n="registerNow">立即注册</button></p>
  </form>
- <p class="login-note" data-i18n="loginNote">使用管理员分配的账号登录。需要账号或重置密码，请联系管理员。</p>
+ <form id="register-form" hidden>
+  <label class="login-field" for="register-username"><span data-i18n="username">用户名</span><input id="register-username" name="username" autocomplete="username" spellcheck="false" required maxlength="64" aria-describedby="register-username-hint"></label>
+  <p class="auth-hint" id="register-username-hint" data-i18n="usernameHint">1–64 位，可使用中文、字母、数字和 . @ + _ -。</p>
+  <label class="login-field" for="register-password"><span data-i18n="newPassword">设置密码</span><input id="register-password" name="password" type="password" autocomplete="new-password" required minlength="6" maxlength="1024" aria-describedby="register-password-hint"></label>
+  <p class="auth-hint" id="register-password-hint" data-i18n="passwordHint">至少 6 位，可使用纯数字。</p>
+  <label class="login-field" for="register-confirm-password"><span data-i18n="confirmPassword">确认密码</span><input id="register-confirm-password" name="confirm_password" type="password" autocomplete="new-password" required minlength="6" maxlength="1024"></label>
+  <p id="register-error" class="login-error" role="alert" hidden></p>
+  <button class="mira-action" type="submit" id="register-submit" data-i18n="registerSubmit">注册并进入工作台</button>
+  <p class="auth-switch"><span data-i18n="hasAccount">已有账号？</span><button id="switch-login" type="button" data-auth-mode="login" data-i18n="loginNow">直接登录</button></p>
+ </form>
+ <p id="login-note" class="login-note" data-i18n="loginNote">使用你的账号登录。忘记密码，请联系管理员。</p>
+ <p id="register-note" class="login-note" data-i18n="registerNote" hidden>注册后即可管理你的素材与作品。</p>
 </dialog>
 
 <dialog id="site-menu" aria-labelledby="menu-heading">
@@ -77,6 +90,6 @@
 </dialog>
 <dialog id="info-dialog" aria-labelledby="info-title"><div class="dialog-top"><h2 id="info-title"></h2><button class="close" data-action="close" data-i18n-label="close">×</button></div><p class="info-copy" id="info-copy"></p><button class="mira-action" data-action="close" data-i18n="ok">知道了</button></dialog>
 <script src="/static/mira/mira-cases-data.js?v=20261005-cases-1"></script>
-<script src="/static/mira/mira-cover.js?v=20261005-cases-1"></script>
-<script src="/static/login.js?v=20260929-account-2"></script>
+<script src="/static/mira/mira-cover.js?v=20261005-register-1"></script>
+<script src="/static/login.js?v=20261005-register-1"></script>
 </body></html>

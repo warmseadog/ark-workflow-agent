@@ -20,3 +20,15 @@
 
 .link-import-actions { display:flex; justify-content:flex-end; margin-top:10px; }
 .link-import-actions button { min-height:34px; font-size:12px; padding:7px 14px; }
+
+.video-link-card { margin:16px 0; padding:16px; border:1px solid #d7c7e3; border-radius:16px; background:linear-gradient(135deg,#f4edf9,#fcfaff); min-width:0; }
+#video-url-entry .video-link-title { display:flex; align-items:center; gap:8px; margin:0; font-size:14px; font-weight:600; color:#614876; }
+.video-link-title svg { width:19px; height:19px; flex:none; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+#video-url-entry .video-link-description { margin:7px 0 12px; color:#786985; font-size:12px; line-height:1.7; }
+.mira-workspace #video-url-entry textarea { margin:0; min-height:78px; padding:12px; border:1px solid #cdbbdd; border-radius:10px; background:#fff; color:#493957; font-size:13px; }
+#video-url-entry textarea::placeholder { color:#94849f; }
+#video-url-entry textarea:focus { outline:2px solid #9174aa; outline-offset:2px; }
+#video-url-entry .link-import-actions { display:block; margin:10px 0; }
+#video-url-entry .link-import-actions button { width:100%; min-height:42px; border-radius:10px; font-size:13px; }
+#video-url-entry .field-hint { margin:7px 0 0; }
+#video-url-entry [data-billing-notice] { margin:12px 0 0; font-size:10px; line-height:1.6; }

@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const originalFetch = window.fetch.bind(window);
-  const loginPage = window.location.pathname === '/login';
+  const loginPage = ['/login', '/register'].includes(window.location.pathname);
   const publicHelp = window.location.pathname === '/help';
   const cacheNames = ['production-current-draft-v1', 'production-pending-submit-v1'];
   const identityEventKey = 'ark-account-identity';

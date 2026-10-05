@@ -5,7 +5,7 @@ from tests.test_tenant_scheduler import tenants, queued, finish, close
 
 
 def test_ten_global_slots_and_account_limit(tenants, monkeypatch):
-    monkeypatch.delenv('APP_VIDEO_WORKERS', raising=False)
+    monkeypatch.setenv('APP_VIDEO_WORKERS', '10')
     tenants.rows[0][0]['max_concurrent']=10
     tenants.rows[1][0]['enabled']=False
     queued(tenants.a,11)
@@ -18,7 +18,7 @@ def test_ten_global_slots_and_account_limit(tenants, monkeypatch):
 
 
 def test_worker_pool_reaches_ten_without_duplicate_claims(tenants,monkeypatch):
-    monkeypatch.delenv('APP_VIDEO_WORKERS',raising=False)
+    monkeypatch.setenv('APP_VIDEO_WORKERS', '10')
     tenants.rows[0][0]['max_concurrent']=10;tenants.rows[1][0]['enabled']=False
     queued(tenants.a,11)
     release=threading.Event();entered=threading.Event();lock=threading.Lock();seen=[]

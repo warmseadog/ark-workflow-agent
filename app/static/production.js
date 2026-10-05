@@ -347,7 +347,7 @@
     busy = value;
     window.portraitPeople?.lock(value);
     generationForm.setAttribute('aria-busy', String(value));
-    [...sourceForm.elements, ...generationForm.querySelectorAll('input,textarea,[data-prompt-template],[data-template-action],[data-asset-edit]'), document.getElementById('toggle-video-url')].forEach(input => input.disabled = value);
+    [...sourceForm.elements, ...generationForm.querySelectorAll('input,textarea,[data-prompt-template],[data-template-action],[data-asset-edit]')].forEach(input => input.disabled = value);
     window.generationOptions?.setLocked(value);
     ['draft-recover'].forEach(id => document.getElementById(id).disabled = value || !sessionReady);
     document.querySelectorAll('[data-person-media],#person-video-replace,#person-video-remove').forEach(button => button.disabled = value);
@@ -476,7 +476,7 @@
   }
   source.addEventListener('change', () => {
     sourceAsset = null;
-    if (source.files.length) { sourceUrl.value = ''; document.getElementById('video-url-entry').hidden = true; document.getElementById('toggle-video-url').setAttribute('aria-expanded', 'false'); }
+    if (source.files.length) sourceUrl.value = '';
     showFiles(source, 'video'); invalidate();
   });
   sourceUrl.addEventListener('input', () => {
@@ -488,13 +488,13 @@
   document.getElementById('remove-source-video').addEventListener('click', () => {
     if (busy) return;
     source.value = ''; sourceAsset = null; sourceUrl.value = ''; showFiles(source, 'video');
-    document.getElementById('video-url-entry').hidden = true;
-    document.getElementById('toggle-video-url').setAttribute('aria-expanded', 'false'); invalidate();
+    invalidate();
   });
-  document.getElementById('toggle-video-url').addEventListener('click', event => {
-    const entry = document.getElementById('video-url-entry'); entry.hidden = !entry.hidden;
-    event.currentTarget.setAttribute('aria-expanded', String(!entry.hidden));
-    if (!entry.hidden) sourceUrl.focus();
+  sourceUrl.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      if (!importButton.disabled) importButton.click();
+    }
   });
   importButton.addEventListener('click', async () => {
     if (busy || !sourceUrl.value.trim()) return;
@@ -534,7 +534,7 @@
       linkStatus.textContent = error.message || '网络异常，视频导入失败，请重试。';
     } finally {
       document.getElementById('video-picker').removeAttribute('aria-busy');
-      importButton.textContent = '确认并加载视频';
+      importButton.textContent = '导入视频';
       lock(false);
     }
   });

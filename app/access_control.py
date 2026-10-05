@@ -9,10 +9,10 @@ from . import tenancy
 
 def public_request(path, method):
     if method in {'GET','HEAD'}:
-        return (path.startswith('/static/') or path in {'/healthz','/login','/auth/portrait/done','/help','/api/support/config'}
+        return (path.startswith('/static/') or path in {'/healthz','/login','/register','/auth/portrait/done','/help','/api/support/config'}
                 or bool(re.fullmatch(r'/auth/portrait/(scan|return)/[a-f0-9]{64}',path))
                 or bool(re.fullmatch(r'/api/reference-videos/[A-Za-z0-9_-]{32,128}',path)))
-    return path == '/api/auth/login' and method == 'POST'
+    return path in {'/api/auth/login', '/api/auth/register'} and method == 'POST'
 
 
 def ordinary_allowed(path, method):

@@ -188,7 +188,7 @@ def test_upload_requirements_follow_server_config_before_selecting_files(support
     expect(page.locator('#clothing-picker').locator('..').locator('[data-input-requirement]')).to_contain_text('17 MB')
     expect(page.locator('#person-image-panel [data-input-requirement]')).to_contain_text('6000')
     expect(page.locator('#studio-face-image')).to_have_attribute('accept','.png,.jpg,.jpeg,.webp')
-    page.locator('#toggle-video-url').click()
+    expect(page.locator('#video-url-entry')).to_be_visible()
     expect(page.locator('#video-url-entry [data-billing-notice]')).to_contain_text('请先向管理员确认')
     page.locator('[data-person-media=video]').click()
     expect(page.locator('#person-video-panel [data-input-requirement]')).to_contain_text('49 MB')

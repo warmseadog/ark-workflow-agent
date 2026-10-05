@@ -18,9 +18,14 @@
 .mira-workspace .library-player-footer a { color:#624a73; background:#f1eaf6; border-color:#d9cce2; }
 .mira-cover-page { min-width:320px; }
 .mira-cover-page *, .mira-cover-page *::before, .mira-cover-page *::after { box-sizing:border-box; }
-.mira-cover-page #login-submit { width:100%; min-height:48px; }
-.mira-cover-page #login-submit:disabled { cursor:wait; opacity:.65; }
-.mira-cover-page #login-error { color:#a02748; margin:16px 0 0; }
+.mira-cover-page :is(#login-submit,#register-submit) { width:100%; min-height:48px; }
+.mira-cover-page :is(#login-submit,#register-submit):disabled { cursor:wait; opacity:.65; }
+.mira-cover-page .login-error { color:#a02748; margin:16px 0 0; }
+.mira-cover-page .top-right .register { background:#f2eaf6; color:#574064; border-color:#f2eaf6; }
+.mira-cover-page .auth-hint { margin:7px 0 0; color:var(--mira-muted); font-size:11px; line-height:1.7; }
+.mira-cover-page .auth-switch { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:4px; font-size:12px; margin:12px 0 0; color:var(--mira-muted); }
+.mira-cover-page .auth-switch button { min-height:40px; padding:8px; color:var(--mira-purple); background:transparent; font:inherit; text-decoration:underline; text-underline-offset:4px; }
+.mira-cover-page #login-dialog [hidden] { display:none!important; }
 .mira-cover-page .account-banner { position:fixed; z-index:5; top:0; left:0; right:0; border-radius:12px; }
 .mira-cover-page #login-dialog { margin:auto; }
 .mira-cover-page .cover { min-height:min(540px,100svh); }

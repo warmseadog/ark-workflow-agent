@@ -13,6 +13,9 @@ const info={
 };
 let lang='zh';try{lang=localStorage.getItem('mira-language')==='en'?'en':'zh'}catch{}
 const t=key=>words[lang][key];
+window.miraAuthText=t;
+Object.assign(words.zh,{register:'注册',loginSubmit:'登录工作台',loginBusy:'正在登录…',registerTitle:'开始你的创作之旅。',registerBody:'创建账号，拥有你的素材与作品空间。',registerSubmit:'注册并进入工作台',registerBusy:'正在注册…',newPassword:'设置密码',confirmPassword:'确认密码',usernameHint:'1–64 位，可使用中文、字母、数字和 . @ + _ -。',passwordHint:'至少 6 位，可使用纯数字。',passwordMismatch:'两次输入的密码不一致。',noAccount:'还没有账号？',registerNow:'立即注册',hasAccount:'已有账号？',loginNow:'直接登录',loginNote:'使用你的账号登录。忘记密码，请联系管理员。',registerNote:'注册后即可管理你的素材与作品。'});
+Object.assign(words.en,{register:'Sign up',loginSubmit:'Enter workspace',loginBusy:'Logging in…',registerTitle:'Start your creative journey.',registerBody:'Create an account for your materials and work.',registerSubmit:'Create account',registerBusy:'Creating account…',newPassword:'Choose a password',confirmPassword:'Confirm password',usernameHint:'1–64 characters: letters, numbers, Chinese characters, or . @ + _ -.',passwordHint:'At least 6 characters. Numbers-only passwords are accepted.',passwordMismatch:'The passwords do not match.',noAccount:'New to mira?',registerNow:'Create an account',hasAccount:'Already have an account?',loginNow:'Log in',loginNote:'Log in with your account. Contact your administrator for a password reset.',registerNote:'Manage your materials and work after signing up.'});
 Object.assign(words.zh,{menuCases:'案例',backCases:'← 案例',backFilms:'返回首页',caseRoster:'MIRA · 虚拟人',caseLabel:'虚拟人作品集',caseDescription:'影像、图集，以及她的线上空间。',caseVideos:'视频作品',caseImages:'图集',caseLinks:'相关链接',casePending:'作品整理中',caseNoVideos:'视频作品将在确认素材归属后展示。',caseNoImages:'图集将在确认素材归属后展示。',caseNoLinks:'账号与作品链接将在确认后展示。'});
 Object.assign(words.en,{menuCases:'CASES',backCases:'← Cases',backFilms:'BACK TO HOME',caseRoster:'MIRA · VIRTUAL TALENT',caseLabel:'Virtual talent portfolio',caseDescription:'Films, photographs, and her online world.',caseVideos:'Films',caseImages:'Gallery',caseLinks:'Links',casePending:'Portfolio in preparation',caseNoVideos:'Films will appear once their attribution is confirmed.',caseNoImages:'Photographs will appear once their attribution is confirmed.',caseNoLinks:'Verified profile and portfolio links will appear here.'});
 const cases=window.MIRA_CASES||[];let activeCase=cases[0],caseFilter='videos';
@@ -97,8 +100,19 @@ languageTrigger.onclick=()=>{languageList.hidden=!languageList.hidden;languageTr
 document.addEventListener('click',e=>{if(!e.target.closest('.language-control'))closeLanguage();const el=e.target.closest('[data-language]');if(el)setLanguage(el.dataset.language)});
 languageList.addEventListener('keydown',e=>{if(e.key==='Escape'){closeLanguage();languageTrigger.focus()}});
 const returnFocus=new WeakMap();let dialogSwitch=false;
-function openDialog(id,origin=document.activeElement){closeLanguage();dialogSwitch=true;$$('dialog[open]').forEach(d=>d.close());dialogSwitch=false;const d=$('#'+id);returnFocus.set(d,origin);hideCursor();clearTimeout(advanceTimer);film.autoplay=false;film.pause();d.showModal();if(id==='login-dialog')$('#login-username').focus();}
-$$('dialog').forEach(d=>{let down=false;const outside=e=>{const r=d.getBoundingClientRect();return e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom};d.addEventListener('pointerdown',e=>down=e.target===d&&outside(e));d.addEventListener('click',e=>{if(down&&e.target===d&&outside(e))d.close();down=false});d.addEventListener('close',()=>{if(d.id==='login-dialog')$('#login-password').value='';resumeCover();if(!dialogSwitch&&!document.querySelector('dialog[open]')){const target=returnFocus.get(d);if(target&&target.getClientRects().length)target.focus();else $('#menu-trigger').focus()}})});
+function clearAuthPasswords(){$$('#login-dialog input[type="password"]').forEach(input=>input.value='')}
+function setAuthMode(mode){
+ const register=mode==='register';
+ $('#login-form').hidden=register;$('#register-form').hidden=!register;
+ $('#login-note').hidden=register;$('#register-note').hidden=!register;
+ $('#login-title').dataset.i18n=register?'registerTitle':'loginTitle';
+ $('#login-description').dataset.i18n=register?'registerBody':'loginBody';
+ clearAuthPasswords();$$('#login-dialog .login-error').forEach(error=>error.hidden=true);syncText();
+ if($('#login-dialog').open)$(register?'#register-username':'#login-username').focus();
+}
+function openDialog(id,origin=document.activeElement,mode='login'){closeLanguage();dialogSwitch=true;$$('dialog[open]').forEach(d=>d.close());dialogSwitch=false;const d=$('#'+id);returnFocus.set(d,origin);hideCursor();clearTimeout(advanceTimer);film.autoplay=false;film.pause();if(id==='login-dialog')setAuthMode(mode);d.showModal();if(id==='login-dialog')$(mode==='register'?'#register-username':'#login-username').focus();}
+document.addEventListener('click',event=>{const button=event.target.closest('button[data-auth-mode]');if(button)setAuthMode(button.dataset.authMode)});
+$$('dialog').forEach(d=>{let down=false;const outside=e=>{const r=d.getBoundingClientRect();return e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom};d.addEventListener('pointerdown',e=>down=e.target===d&&outside(e));d.addEventListener('click',e=>{if(down&&e.target===d&&outside(e))d.close();down=false});d.addEventListener('close',()=>{if(d.id==='login-dialog')clearAuthPasswords();resumeCover();if(!dialogSwitch&&!document.querySelector('dialog[open]')){const target=returnFocus.get(d);if(target&&target.getClientRects().length)target.focus();else $('#menu-trigger').focus()}})});
 function showInfo(key){if(key==='contact'){window.location.assign('/help#feedback');return;}currentInfo=key;syncText();openDialog('info-dialog')}
 function safeCaseURL(value){if(typeof value!=='string'||!value.trim())return null;try{const url=new URL(value,location.href);return ['http:','https:'].includes(url.protocol)?url.href:null}catch{return null}}
 function renderCase(){
@@ -131,7 +145,7 @@ document.addEventListener('click',event=>{
  if(filterButton){caseFilter=filterButton.dataset.caseFilter;renderCase()}
 });
 $('#case-dialog').addEventListener('close',()=>{$$('#case-content video').forEach(video=>video.pause());resumeCover()});
-document.addEventListener('click',e=>{const el=e.target.closest('[data-action]');if(!el)return;const action=el.dataset.action;if(action==='login')openDialog('login-dialog');if(action==='menu')openDialog('site-menu');if(action==='close')el.closest('dialog').close();if(action==='films'){$$('dialog[open]').forEach(d=>d.close());$('#next').focus()}if(curated.some(s=>s.key===action)){$$('dialog[open]').forEach(d=>d.close());if(slides!==curated){slides=[...curated]}index=curated.findIndex(s=>s.key===action);render();$('#next').focus()}if(action.startsWith('info:'))showInfo(action.slice(5))});
+document.addEventListener('click',e=>{const el=e.target.closest('[data-action]');if(!el)return;const action=el.dataset.action;if(action==='login'||action==='register')openDialog('login-dialog',el,action);if(action==='menu')openDialog('site-menu');if(action==='close')el.closest('dialog').close();if(action==='films'){$$('dialog[open]').forEach(d=>d.close());$('#next').focus()}if(curated.some(s=>s.key===action)){$$('dialog[open]').forEach(d=>d.close());if(slides!==curated){slides=[...curated]}index=curated.findIndex(s=>s.key===action);render();$('#next').focus()}if(action.startsWith('info:'))showInfo(action.slice(5))});
 document.addEventListener('keydown',e=>{if(e.key==='Tab')hideCursor();if(e.key==='Escape'&&!languageList.hidden){closeLanguage();languageTrigger.focus()}if(document.querySelector('dialog[open]')||!languageList.hidden||e.target.closest('button,a,input,textarea,select'))return;if(e.key==='ArrowRight'){e.preventDefault();navigate(1)}if(e.key==='ArrowLeft'){e.preventDefault();navigate(-1)}});
 // Touch swipes have the same result as the visible arrow buttons.
 let touchStart=null;cover.addEventListener('pointerdown',e=>{if(e.pointerType==='touch'&&!e.target.closest('button,a'))touchStart={x:e.clientX,y:e.clientY}});
@@ -149,10 +163,11 @@ reduced.addEventListener('change',()=>{hideCursor();motionOptIn=false;film.autop
 // Hidden tabs pause, visible tabs resume — unless the visitor explicitly paused.
 function resumeCover(){if(!canAdvance())return;if(mediaFailed||film.ended)advanceFilm();else if(slides[index]?.video)resumeFilm();else scheduleAdvance(6000)}
 document.addEventListener('visibilitychange',()=>{if(document.hidden){film.pause();clearTimeout(advanceTimer);hideCursor()}else resumeCover()});
-window.addEventListener('pagehide',()=>{film.pause();clearTimeout(advanceTimer);hideCursor();$('#login-password').value='' });
+window.addEventListener('pagehide',()=>{film.pause();clearTimeout(advanceTimer);hideCursor();clearAuthPasswords()});
 window.addEventListener('pageshow',resumeCover);window.addEventListener('focus',resumeCover);
 // Some mobile browsers require a user gesture before allowing playback.
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#play'))resumeFilm()},{passive:true});
 window.accountReady.catch(()=>openDialog('login-dialog',$('#open-login')));
 render();
+if(document.body.dataset.authMode==='register')openDialog('login-dialog',$('#open-register'),'register');
 })();

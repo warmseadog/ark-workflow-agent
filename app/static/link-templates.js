@@ -158,15 +158,15 @@
   async function inspect() {
     if (busy()) return;
     const version = ++inspectVersion, text = source.value.trim(), status = byId('video-link-status');
-    if (!text) { message(status, '粘贴一个作品的分享文案即可。'); return; }
+    if (!text) { message(status, '自动识别链接，点击导入或按回车确认。'); return; }
     message(status, '正在识别链接…');
     try {
       const data = await request('/api/video-link/inspect', 'POST', {text});
       if (busy() || version !== inspectVersion || source.value.trim() !== text) return;
       keyState({has_api_key:data.configured});
       message(status, data.platform
-        ? '已识别' + data.label + '链接：' + data.url + '。' + (configured ? '点击“确认并加载视频”即可在上方预览。' : '请先展开下方设置，保存 TikHub API Key，再确认加载。')
-        : '已识别其他链接，点击“确认并加载视频”尝试导入。');
+        ? '已识别' + data.label + '链接。' + (configured ? '点击“导入视频”即可加载。' : '链接解析服务尚未配置，请联系管理员。')
+        : '已识别其他链接，点击“导入视频”尝试导入。');
     } catch (error) {
       if (!busy() && version === inspectVersion && source.value.trim() === text) message(status, error.message, true);
     }

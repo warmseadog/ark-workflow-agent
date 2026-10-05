@@ -50,7 +50,7 @@ def _same_origin(request: Request) -> None:
     supplied = request.headers.getlist('origin')
     expected = _origin(os.getenv('APP_PUBLIC_ORIGIN') or str(request.base_url))
     if len(supplied) != 1 or expected is None or _origin(supplied[0]) != expected:
-        raise HTTPException(403, '请从本工作台页面发起登录请求。')
+        raise HTTPException(403, '请从本工作台页面发起账号请求。')
 
 
 def _clear_cookie(response: Response) -> None:
@@ -88,6 +88,11 @@ class _Login(_Input):
 class _PasswordChange(_Input):
     current_password: SecretStr = Field(max_length=1024)
     new_password: SecretStr = Field(min_length=6, max_length=1024)
+
+
+class _Register(_Login):
+    password: SecretStr = Field(min_length=6, max_length=1024)
+    confirm_password: SecretStr = Field(min_length=6, max_length=1024)
 
 
 class _CreateUser(_Login):
@@ -140,7 +145,13 @@ def get_router(settings_getter, templates) -> APIRouter:
 
     @router.get('/login')
     def login_page(request: Request):
-        return templates.TemplateResponse(request=request, name='login.html', context={'auth_enabled': auth_enabled()})
+        return templates.TemplateResponse(request=request, name='login.html',
+                                          context={'auth_enabled': auth_enabled(), 'registration_mode': False})
+
+    @router.get('/register')
+    def register_page(request: Request):
+        return templates.TemplateResponse(request=request, name='login.html',
+                                          context={'auth_enabled': auth_enabled(), 'registration_mode': True})
 
     @router.get('/account/password')
     def password_page(request: Request):
@@ -168,6 +179,20 @@ def get_router(settings_getter, templates) -> APIRouter:
         if not isinstance(session, dict) or not session.get('csrf_token'):
             raise AccountError(401, '请先登录。')
         return {'user': user, 'csrf_token': session['csrf_token'], 'auth_enabled': True}
+
+    @router.post('/api/auth/register', status_code=201)
+    def register(request: Request, payload: _Register, response: Response):
+        require_enabled()
+        _same_origin(request)
+        password = payload.password.get_secret_value()
+        if password != payload.confirm_password.get_secret_value():
+            raise AccountError(422, '两次输入的密码不一致。')
+        session = accounts().register(payload.username, password,
+                                      request.client.host if request.client else 'unknown')
+        accounts().logout(request.cookies.get(COOKIE_NAME))
+        response.set_cookie(COOKIE_NAME, session['token'], max_age=SESSION_SECONDS,
+                            path='/', secure=_secure_cookie(), httponly=True, samesite='lax')
+        return {'user': session['user'], 'csrf_token': session['csrf_token']}
 
     @router.post('/api/auth/password')
     def change_password(request: Request, payload: _PasswordChange, response: Response):
