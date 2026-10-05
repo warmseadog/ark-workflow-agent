@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
-from jinja2 import Environment, FileSystemLoader
+from tests.browser_template_fixture import template_environment, serve_editor_rules, LOCAL_ACCOUNT, EDITOR_RULES_PATH
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,7 +20,7 @@ def test_audio_choice_restore_and_one_click_retry(width, tmp_path):
            'can_retry_without_audio':True,'generate_audio':True,'model':model['model'],'duration':8,
            'created_at':'2026-09-29T08:56:43Z','can_delete':True,'snapshot':{**copy.deepcopy(draft),'model':{**model,'generate_audio':True}}}
     drafts = {'draft1':draft}; calls=[]; held=[]; errors=[]
-    html = Environment(loader=FileSystemLoader(ROOT/'app/templates')).get_template('production.html').render()
+    html = template_environment(ROOT, LOCAL_ACCOUNT).get_template('production.html').render()
     with sync_playwright() as p:
         browser=p.chromium.launch(channel='msedge',headless=True)
         page=browser.new_page(viewport={'width':width,'height':1000})
@@ -29,6 +29,7 @@ def test_audio_choice_restore_and_one_click_retry(width, tmp_path):
             req=route.request;path=urlsplit(req.url).path
             body=req.post_data_json if req.method in ('PUT','POST') else {}
             if path=='/':route.fulfill(content_type='text/html',body=html)
+            elif path==EDITOR_RULES_PATH:serve_editor_rules(route, ROOT, LOCAL_ACCOUNT)
             elif path.startswith('/static/'):route.fulfill(path=str(ROOT/'app'/path.lstrip('/')))
             elif path=='/api/auth/me':route.fulfill(json={'auth_enabled':False,'user':None})
             elif path=='/api/production/model-options':route.fulfill(json={'defaults':model,'items':[{'id':model['model'],'label':'Seedance 2.0','audio_control':True,'resolutions':['720p'],'max_duration':15,'max_images':9,'max_video_seconds':15}]})

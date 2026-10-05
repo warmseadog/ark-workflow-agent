@@ -67,12 +67,17 @@ def _media_url(url):
 
 
 class VideoProvider:
-    def __init__(self, config: GenerationConfig, poll_seconds: float = 5, progress=None):
+    def __init__(self, config: GenerationConfig, poll_seconds: float = 5, progress=None, phase_callback=None):
         self.config = config
         self._last_request_id: str | None = None
         self._content_roles = {}
         self.poll_seconds = poll_seconds
         self.progress = progress or (lambda message, percent: None)
+        self.phase_callback = phase_callback
+
+    def _phase(self, phase):
+        if self.phase_callback is not None:
+            self.phase_callback(phase)
 
     def _safe(self, value) -> str:
         if isinstance(value, dict):
@@ -108,13 +113,19 @@ class VideoProvider:
         timeout = (60, 120) if method == 'POST' else (15, 30)
         started = None
         try:
+            if method == 'POST':
+                self._phase('waiting')
             with _upload_lock if method == 'POST' else nullcontext():
                 # requests uses the connection timeout while writing the body.
                 # The old 15 seconds was insufficient for inline reference images.
+                if method == 'POST':
+                    self._phase('upload')
                 started = time.monotonic()
                 response = requests.request(method, f'{base_url}{path}',
                     headers={'Authorization': f'Bearer {self.config.api_key}'},
                     timeout=timeout, allow_redirects=False, **kwargs)
+            if method == 'POST':
+                self._phase('model' if submitting else 'other')
         except requests.RequestException as exc:
             errors = _transport_errors(exc)
             if any(isinstance(error, requests.ConnectTimeout) for error in errors):
@@ -362,6 +373,7 @@ class VideoProvider:
         return error
 
     def _poll(self, task_id: str, output: Path, on_result: Callable[[str], None] | None) -> dict:
+        self._phase('model')
         endpoint = {'ark': '/contents/generations/tasks', 'toapis': '/videos/generations'}.get(self.config.protocol, '/tasks')
         deadline = time.monotonic() + 1800
         while time.monotonic() < deadline:
@@ -405,6 +417,7 @@ class VideoProvider:
             error_kind='query_unavailable', retryable=True), task_id)
 
     def _download_result(self, url: str, output: Path, task_id: str | None) -> dict:
+        self._phase('other')
         self.progress('生成完成，正在下载视频', 95)
         try:
             self._download(url, output)

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>mira · 管理员工作台</title>
+  <link rel="stylesheet" href="/static/admin-settings.css?v=20261005-admin-workflow-1">
+  <link rel="stylesheet" href="/static/account.css?v=20261005-admin-workflow-1">
+  <link rel="stylesheet" href="/static/admin-operations.css?v=20261005-admin-workflow-1">
+  <script src="/static/account.js?v=20261005-admin-workflow-1"></script>
+</head>
+<body class="operations-page">
+  <header class="page-header"><h1>管理员工作台</h1><nav><a href="/">返回制作页</a> · <a href="/admin/users">用户与任务</a></nav></header>
+  <main class="content">
+    <p>管理普通用户、共享提示词和任务；全局并发由超级管理员设置。</p>
+    <section id="section-overview" class="section"><h2>任务调度</h2></section>
+    <section class="section card"><h2>共享提示词模板</h2>
+      <p>模板规则版本保持不变。修改默认模板后，新建任务使用新正文，旧草稿保留原内容。</p>
+      <label>选择模板<select id="operations-template"></select></label>
+      <form id="operations-template-form">
+        <label>名称<input id="operations-template-name" maxlength="60" required></label>
+        <label>正文<textarea id="operations-template-content" maxlength="10000" rows="14" required></textarea></label>
+        <p id="operations-template-rule"></p>
+        <div class="actions">
+          <button class="primary" type="submit">保存修改</button>
+          <button class="secondary" type="button" id="operations-template-new">新建模板</button>
+          <button class="secondary" type="button" id="operations-template-copy">另存为新模板</button>
+          <button class="danger" type="button" id="operations-template-delete">删除模板</button>
+        </div>
+      </form>
+      <p id="operations-template-status" role="status"></p>
+    </section>
+  </main>
+  <script src="/static/scheduling-settings.js?v=20261005-admin-workflow-1"></script>
+  <script src="/static/admin-operations.js?v=20261005-admin-workflow-1"></script>
+</body></html>

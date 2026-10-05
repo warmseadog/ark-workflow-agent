@@ -9,6 +9,8 @@
   let identity = null;
   let invalidated = false;
   window.currentAccount = null;
+  window.isAdmin = user => ['admin', 'super_admin'].includes((user || window.currentAccount)?.role);
+  window.isSuperAdmin = user => (user || window.currentAccount)?.role === 'super_admin';
 
   function authError(message) {
     const error = new Error(message);
@@ -168,8 +170,10 @@
     try {
       const account = await window.accountReady;
       const signedIn = account.auth_enabled && Boolean(account.user);
-      const admin = !account.auth_enabled || account.user?.is_admin === true || account.user?.role === 'admin';
+      const admin = !account.auth_enabled || window.isAdmin(account.user);
+      const superAdmin = !account.auth_enabled || window.isSuperAdmin(account.user);
       document.documentElement.dataset.accountRole = admin ? 'admin' : 'user';
+      document.documentElement.dataset.accountAuthority = account.user?.role || 'super_admin';
       // These links live in the shared production panel, outside this module's templates.
       document.querySelectorAll('.standalone-production a[href="/admin/settings#people"]').forEach(node => { node.href = '/people'; });
       document.querySelectorAll('.standalone-production a[href^="/admin/"]').forEach(node => { node.hidden = !admin || (node.hasAttribute('data-auth-only') && !signedIn); });
@@ -177,6 +181,10 @@
       if (linkSettings) { linkSettings.hidden = !admin; linkSettings.dataset.adminOnly = ''; }
       document.querySelectorAll('[data-auth-only], [data-admin-only]').forEach(node => {
         node.hidden = (node.hasAttribute('data-auth-only') && !signedIn) || (node.hasAttribute('data-admin-only') && !admin);
+      });
+      document.querySelectorAll('[data-super-admin-only]').forEach(node => { node.hidden = !superAdmin; });
+      document.querySelectorAll('[data-account-role-label]').forEach(node => {
+        node.textContent = {user:'普通用户', admin:'管理员', super_admin:'超级管理员'}[account.user?.role] || '';
       });
       document.querySelectorAll('[data-account-name]').forEach(node => { node.textContent = account.user?.username || ''; });
       document.querySelectorAll('[data-account-logout]').forEach(button => {

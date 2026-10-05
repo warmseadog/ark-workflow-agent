@@ -61,7 +61,7 @@
       byId('support-local').hidden=false;
     }else{
       if(!account.user){if(!admin)byId('support-login').hidden=false;return;}
-      if(admin&&account.user.role!=='admin'){status.textContent='仅管理员可以处理反馈。';return;}
+      if(admin&&!['admin','super_admin'].includes(account.user.role)){status.textContent='仅管理员可以处理反馈。';return;}
     }
     if(form)form.hidden=false;byId('support-history-section').hidden=false;await refresh();
   }).catch(error=>{status.textContent=error.message;});

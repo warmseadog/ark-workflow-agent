@@ -74,7 +74,7 @@ def _shared_settings(settings):
             user = Accounts(tenancy.config_root(settings)).get_user(getattr(settings, 'user_id', ''))
         except AccountError:
             raise PermissionError('共享模板仅管理员可管理。') from None
-        if not user['enabled'] or user['role'] != 'admin':
+        if not user['enabled'] or user['role'] not in {'admin', 'super_admin'}:
             raise PermissionError('共享模板仅管理员可管理。')
     return tenancy.root_settings(settings)
 

@@ -64,6 +64,7 @@ def execute(settings, store, run, base, output, config, storage):
     from .reference_roles import snapshot_content_roles
     from .video_provider import VideoProvider
     ident=run['id']
+    store.set_phase(ident, 'other')
     frozen=run['private']['continuation']
     state=store.get_continuation(ident)
     store.update_run(ident,stage='continuation_planning',message='正在分析基础片结尾并扩写后续剧情',progress=88)
@@ -76,9 +77,11 @@ def execute(settings, store, run, base, output, config, storage):
     plan=state.get('plan')
     if not plan:
         frames=ending_frames(base,base.parent/'continuation-frames')
+        store.set_phase(ident, 'model')
         plan=plan_continuation(ContinuationConfig(**frozen['config']),
             original_prompt=run['snapshot']['prompt'],frames=frames,source_duration=actual,
             target_duration=target,reference_roles=snapshot_content_roles(run['snapshot']))
+        store.set_phase(ident, 'other')
         state=store.update_continuation(ident,plan=plan,source_duration=actual,target_duration=target,
             llm_model=frozen['config']['model'],skill_version=frozen['skill_version'],
             frame_timestamps=[f['timestamp'] for f in frames])
@@ -86,18 +89,26 @@ def execute(settings, store, run, base, output, config, storage):
     remote_id,remote_url=state.get('provider_task_id'),state.get('result_url')
     if not remote_id and not remote_url:
         store.update_run(ident,stage='continuation_upload',message='正在上传基础片以续写后续剧情',progress=89)
+        if storage.enabled:
+            store.set_phase(ident, 'upload')
         url=publish_base(base,settings,config,storage)
+        store.set_phase(ident, 'other')
         authorize_run_inputs(settings,store,run['snapshot'])
         store.update_run(ident,stage='continuation_submitting',message='正在提交剧情续写任务',progress=90)
     def submitted(task_id):
         store.update_continuation(ident,provider_task_id=task_id)
         store.update_run(ident,stage='continuation_generating',message='正在生成新增剧情',progress=92)
+        store.set_phase(ident, 'model')
     def result(result_url):
+        store.set_phase(ident, 'other')
         store.update_continuation(ident,result_url=result_url)
         store.update_run(ident,stage='continuation_downloading',message='正在下载续写结果',progress=96)
     extension=base.parent/'extended.mp4'
     client=VideoProvider(replace(config,duration=math.ceil(target),ratio='adaptive'),settings.seedance_poll_seconds,
         lambda msg,pct:store.update_run(ident,message='续写：'+msg,progress=90+round(pct/20)))
+    client.phase_callback = lambda phase: store.set_phase(ident, phase)
+    if remote_id and not remote_url:
+        store.set_phase(ident, 'model')
     try:
         client.extend(base,plan['continuation_prompt'],extension,video_url=url,
             resume_task_id=remote_id,resume_result_url=remote_url,on_submitted=submitted,on_result=result)
@@ -105,6 +116,7 @@ def execute(settings, store, run, base, output, config, storage):
         if getattr(error,'terminal_failure',False):
             store.update_continuation(ident,terminal_failure=True)
         raise
+    store.set_phase(ident, 'other')
     store.update_run(ident,stage='continuation_finalizing',message='正在校验续写成片时长',progress=98)
     authorize_run_inputs(settings,store,run['snapshot'])
     finalize(extension,output,target)

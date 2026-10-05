@@ -56,6 +56,7 @@ def mask_faces(frame, detections, mask_scale):
     return frame
 
 def process_hairstyle(settings, asset, values=None):
+    from .run_phases import notify
     params = options(values)
     if asset['kind']!='hairstyle':raise ValueError('请选择发型参考图。')
     source = Path(asset['path']).resolve()
@@ -67,7 +68,9 @@ def process_hairstyle(settings, asset, values=None):
     key = hashlib.sha256((digest+json.dumps(params,sort_keys=True)+':hair-face-v1').encode()).hexdigest()
     root = settings.storage_dir/'cache'/'hairstyle-mask';root.mkdir(parents=True,exist_ok=True)
     output,metadata = root/(key+'.png'),root/(key+'.json')
+    notify('waiting')
     with _lock:
+        notify('other')
         if output.is_file() and metadata.is_file():
             try:
                 details = json.loads(metadata.read_text(encoding='utf-8'))
@@ -75,9 +78,11 @@ def process_hairstyle(settings, asset, values=None):
                         and details.get('settings')==params
                         and details.get('output_sha256')==sha256_file(output)
                         and type(details.get('faces_detected')) is int):
+                    notify('masking', cached=True)
                     return {**details,'path':output,'key':key,'source_asset_id':asset.get('id')}
             except (ValueError,OSError):pass
         try:
+            notify('masking')
             with Image.open(source) as image:
                 if image.width*image.height>16000000:raise ValueError('发型参考图过大，请缩小到 1600 万像素以内。')
                 if getattr(image,'n_frames',1)>1:raise ValueError('发型打码请使用静态图片。')
@@ -92,6 +97,7 @@ def process_hairstyle(settings, asset, values=None):
             details = {'faces_detected':len(detections),'settings':params,
                        'source_sha256':digest,'output_sha256':sha256_file(output)}
             metadata.write_text(json.dumps(details),encoding='utf-8')
+            notify('other')
             return {**details,'path':output,'key':key,'source_asset_id':asset.get('id')}
         except (ValueError,UnidentifiedImageError):raise ValueError('发型图无法处理，请使用有效静态图片（最多 1600 万像素）。') from None
         except Exception:raise MediaPipelineError('发型参考图打码失败，请检查图片后重试。') from None

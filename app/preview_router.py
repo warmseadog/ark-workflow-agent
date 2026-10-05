@@ -279,13 +279,15 @@ def get_router(settings_getter, local_guard):
         from . import redaction_service
         settings = redaction_service.freeze(settings)
         mask = json.dumps({**json.loads(mask), 'service_fingerprint': redaction_service.fingerprint(settings)}, sort_keys=True)
-        return _submit(settings, store, payload['source_asset_id'], mask)
+        from .prompt_visibility import project
+        return project(_submit(settings, store, payload['source_asset_id'], mask), settings)
 
     @router.get('/{ident}')
     def get_preview(ident: str, response: Response):
         response.headers.update(_PRIVATE)
         _, store = context()
-        return _public(store, _row(store, ident))
+        from .prompt_visibility import project
+        return project(_public(store, _row(store, ident)), settings_getter())
 
     @router.api_route('/{ident}/file', methods=['GET','HEAD'])
     def preview_file(ident: str):

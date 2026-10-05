@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>用户与任务 · mira</title>
   <link rel="stylesheet" href="/static/account.css?v=20260929-navigation-people-1">
-  <script src="/static/account.js?v=20261005-support-1"></script>
+  <script src="/static/account.js?v=20261005-admin-workflow-1"></script>
 <link rel="stylesheet" href="/static/admin-embedded.css?v=20260929-admin-pages-1"><script src="/static/admin-embedded.js?v=20260929-admin-pages-1"></script>
 {% include "workspace_head.html" %}
 </head>
@@ -17,13 +17,13 @@
   <p id="users-access-error" class="account-banner" role="alert" hidden></p>
   <main class="accounts-main" id="users-workspace" hidden>
     <p class="account-eyebrow">工作台管理</p><h1>用户与任务</h1>
-    <p class="account-muted">管理账号与任务额度，查看生成用量和操作记录。</p>
+    <p class="account-muted" id="users-authority">管理账号与任务额度，查看生成用量和操作记录。</p>
     <section class="account-panel" aria-labelledby="create-user-title">
       <div class="account-section-heading"><div><h2 id="create-user-title">创建账号</h2><p>设置角色和登录密码，用户可直接登录工作台。</p></div></div>
       <form id="create-user-form"><fieldset class="account-form-grid" id="create-user-fields">
-        <div><label for="create-username">用户名</label><input id="create-username" name="username" autocomplete="off" spellcheck="false" required></div>
+        <div><label for="create-username">用户名（2–20 个字符）</label><input id="create-username" name="username" autocomplete="off" spellcheck="false" minlength="2" maxlength="20" required></div>
         <div><label for="create-password">密码（至少 6 位，可使用纯数字）</label><input id="create-password" name="password" type="password" autocomplete="new-password" minlength="6" maxlength="1024" required></div>
-        <div><label for="create-role">角色</label><select id="create-role" name="role"><option value="user" selected>普通用户</option><option value="admin">管理员</option></select></div>
+        <div><label for="create-role">角色</label><select id="create-role" name="role"><option value="user" selected>普通用户</option><option value="admin">管理员</option><option value="super_admin">超级管理员</option></select></div>
         <div><label for="create-concurrent">同时生成上限</label><input id="create-concurrent" name="max_concurrent" type="number" min="1" max="10000" step="1" value="1" required></div>
         <div><label for="create-queued">排队上限</label><input id="create-queued" name="max_queued" type="number" min="0" max="10000" step="1" value="10" required></div>
         <button type="submit" class="account-primary">创建账号</button>
@@ -63,7 +63,7 @@
       <nav class="account-pagination" aria-label="审计分页"><button type="button" class="account-secondary" id="audit-previous" disabled>上一页</button><span id="audit-page" aria-live="polite">正在加载…</span><button type="button" class="account-secondary" id="audit-next" disabled>下一页</button></nav>
     </section>
   </main>
-  <script src="/static/users.js?v=20261005-registration-1"></script>
-  <script src="/static/portrait-access.js?v=20260929-navigation-people-1"></script>
+  <script src="/static/users.js?v=20261005-admin-workflow-1"></script>
+  <script src="/static/portrait-access.js?v=20261005-admin-workflow-1"></script>
 </body>
 </html>

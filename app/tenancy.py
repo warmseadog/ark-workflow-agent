@@ -6,6 +6,7 @@ import re
 import sqlite3
 
 _request_settings = ContextVar('request_tenant_settings', default=None)
+_request_user = ContextVar('request_actor_user', default=None)
 
 
 def enabled():
@@ -40,7 +41,7 @@ def tenant_settings(base, include_disabled=False):
         return [({'id':'legacy','enabled':True,'legacy_owner':True,'max_concurrent':2,'max_queued':10},base)]
     from .accounts import Accounts
     return [(user,user_settings(base,user)) for user in Accounts(base.storage_dir).list_users()
-            if include_disabled or user['enabled']]
+            if include_disabled or (user['enabled'] and not user.get('deleted_at'))]
 
 
 def legacy_allowed(settings):

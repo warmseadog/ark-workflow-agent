@@ -95,9 +95,9 @@ def test_old_database_migration_preserves_hashes_and_overrides_old_default(tmp_p
 
 def test_create_admin_and_change_roles_preserve_ownership_revoke_sessions_and_audit(accounts):
     admin = accounts.init_admin('admin', 'initial-password')
-    second = accounts.create_user('second', 'second-password', admin['id'], role='admin')
+    second = accounts.create_user('second', 'second-password', admin['id'], role='super_admin')
     ordinary = accounts.create_user('alice', 'alice-password', admin['id'])
-    assert second['role'] == 'admin' and ordinary['role'] == 'user'
+    assert second['role'] == 'super_admin' and ordinary['role'] == 'user'
     assert not second['legacy_owner'] and not ordinary['legacy_owner']
     with sqlite3.connect(accounts.db_path) as conn:
         hashes = dict(conn.execute('SELECT id,password_hash FROM users'))
@@ -116,7 +116,7 @@ def test_create_admin_and_change_roles_preserve_ownership_revoke_sessions_and_au
                    and event['actor_id'] == second['id'] and event['details']['role'] == role
                    for event in events if event['action'] == 'user.update')
     assert any(event['action'] == 'user.create' and event['target'] == second['id']
-               and event['details']['role'] == 'admin' for event in events)
+               and event['details']['role'] == 'super_admin' for event in events)
     assert not any(password in json.dumps(events) for password in hashes.values())
     rejected(403, lambda: accounts.create_user('blocked', 'valid-password', admin['id'], role='admin'))
     rejected(403, lambda: accounts.update_user(admin['id'], admin['id'], role='admin'))
@@ -145,7 +145,7 @@ def test_last_enabled_admin_cannot_be_removed_even_if_disabled_admin_exists(acco
                                         ({'role': 'user'}, {'enabled': False})])
 def test_concurrent_admin_demotion_or_disable_keeps_one_admin(accounts, operations):
     admin = accounts.init_admin('admin', 'initial-password')
-    other = accounts.create_user('second', 'second-password', admin['id'], role='admin')
+    other = accounts.create_user('second', 'second-password', admin['id'], role='super_admin')
     barrier = Barrier(2)
     def change(item):
         user, changes = item
@@ -158,13 +158,13 @@ def test_concurrent_admin_demotion_or_disable_keeps_one_admin(accounts, operatio
     with ThreadPoolExecutor(max_workers=2) as pool:
         codes = list(pool.map(change, zip((admin, other), operations)))
     assert sorted(codes) == [200, 409]
-    assert sum(user['role'] == 'admin' and user['enabled'] for user in accounts.list_users()) == 1
+    assert sum(user['role'] == 'super_admin' and user['enabled'] for user in accounts.list_users()) == 1
 
 
 def test_same_role_patch_keeps_existing_sessions(accounts):
     admin = accounts.init_admin('admin', 'initial-password')
     token = accounts.login('admin', 'initial-password', '127.0.0.1')['token']
-    accounts.update_user(admin['id'], admin['id'], role='admin', max_concurrent=2)
+    accounts.update_user(admin['id'], admin['id'], role='super_admin', max_concurrent=2)
     assert accounts.authenticate(token)['user']['max_concurrent'] == 2
 
 

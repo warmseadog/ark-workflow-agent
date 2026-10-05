@@ -12,7 +12,7 @@
     const choices = card.querySelector('.portrait-access-users');
     choices.replaceChildren();
     if (!window.adminUsers) { choices.append(node('p', '正在读取用户列表，请稍候；读取失败时请点击上方“刷新用户”。')); return; }
-    for (const user of window.adminUsers.filter(user => user.role !== 'admin' && !user.is_admin)) {
+    for (const user of window.adminUsers.filter(user => !['admin','super_admin'].includes(user.role) && !user.is_admin)) {
       const label = node('label'), input = node('input'); input.type = 'checkbox'; input.value = user.id;
       input.checked = selected.includes(user.id);
       label.append(input, document.createTextNode(user.username + (user.enabled === false ? '（已停用）' : '')));
@@ -73,7 +73,7 @@
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 8000);
     try {
       const account = await window.accountReady;
-      if (!account.user?.is_admin && account.user?.role !== 'admin') throw new Error('仅管理员可以分配真人库权限。');
+      if (!account.user?.is_admin && !['admin','super_admin'].includes(account.user?.role)) throw new Error('仅管理员可以分配真人库权限。');
       const data = await window.accountUI.readJSON(await fetch('/api/admin/portrait-access', {cache:'no-store', signal:controller.signal}));
       render(data.items || []); loaded = true; report('');
     } catch (error) { report(error.name === 'AbortError' ? '读取超时，请点击“刷新人物权限”重试。' : error.message); }

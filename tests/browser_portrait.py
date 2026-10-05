@@ -3,10 +3,10 @@ import copy
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from jinja2 import Environment, FileSystemLoader
+from tests.browser_template_fixture import template_environment, serve_editor_rules, LOCAL_ACCOUNT, EDITOR_RULES_PATH
 from playwright.sync_api import expect, sync_playwright
 
-from browser_asset_editor import png
+from tests.browser_asset_editor import png
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = dict(provider='ark', protocol='ark', mode='mock', base_url='https://example.test',
@@ -14,7 +14,7 @@ CONFIG = dict(provider='ark', protocol='ark', mode='mock', base_url='https://exa
 
 
 def check(width=1440):
-    html = Environment(loader=FileSystemLoader(ROOT / 'app/templates')).get_template('production.html').render()
+    html = template_environment(ROOT, LOCAL_ACCOUNT).get_template('production.html').render()
     portrait = dict(project_name='default', use_storage_credentials=False, has_credentials=False,
                     has_access_key=False, has_secret_key=False)
     draft = dict(id='d1', name='测试草稿', revision=0, source_asset_id=None, face_asset_ids=[],
@@ -35,6 +35,8 @@ def check(width=1440):
             request, path = route.request, urlsplit(route.request.url).path
             body = request.post_data_json if request.method in ('POST', 'PUT') and 'application/json' in request.headers.get('content-type', '') else {}
             if path == '/': route.fulfill(content_type='text/html', body=html)
+            elif path == '/api/auth/me': route.fulfill(json=LOCAL_ACCOUNT)
+            elif path == EDITOR_RULES_PATH: serve_editor_rules(route, ROOT, LOCAL_ACCOUNT)
             elif path.startswith('/static/'): route.fulfill(path=str(ROOT / 'app' / path.lstrip('/')))
             elif path == '/api/model-settings': route.fulfill(json={'config': dict(CONFIG, has_api_key=False, status='demo'), 'presets': {'ark': {'models': []}}})
             elif path == '/api/prompt-templates': route.fulfill(json={'items': []})

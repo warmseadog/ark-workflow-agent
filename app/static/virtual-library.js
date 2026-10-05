@@ -113,7 +113,7 @@
   function canManage(item, person = item) {
     if (item.can_manage !== undefined) return item.can_manage === true;
     if (person.can_manage !== undefined) return person.can_manage === true;
-    return !window.currentAccount || window.currentAccount.role === 'admin';
+    return !window.currentAccount || ['admin','super_admin'].includes(window.currentAccount.role);
   }
   function personType(person) { return person.person_type === 'LivenessFace' ? '真人' : '虚拟人物'; }
   function action(label, name, handler, className = 'secondary') {

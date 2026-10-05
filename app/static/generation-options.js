@@ -56,6 +56,7 @@
     slider.value = value === null ? 0 : ticks.reduce((best, tick, index) => Math.abs(tick-value) < Math.abs(ticks[best]-value) ? index : best, 0);
     slider.style.setProperty('--duration-fill', `${Number(slider.max) ? Number(slider.value) / Number(slider.max) * 100 : 0}%`);
     slider.disabled = locked || !loaded || raw === null;
+    byId('generation-duration-reset').disabled = locked || !loaded || raw === null;
     slider.setAttribute('aria-valuetext', value === null ? '待选择视频' : `${display(value)} 秒`);
     byId('generation-duration-note').textContent = value === null ? '待选择视频' : `${display(value)} 秒`;
     byId('generation-source-duration').textContent = raw === null ? '读取参考视频后默认使用原片时长' : `原片 ${display(raw)} 秒`;
@@ -138,6 +139,13 @@
   };
   control('model').addEventListener('change', () => { selected = null; byId('source-clip-start').value = 0; byId('source-clip-duration').value = ''; render(getForm()); apply(); });
   slider.addEventListener('input', () => { selected = ticks[Number(slider.value)]; apply(); });
+  byId('generation-duration-reset').addEventListener('click', () => {
+    if (locked || !loaded || rawSeconds() === null) return;
+    selected = null;
+    byId('source-clip-start').value = 0;
+    byId('source-clip-duration').value = '';
+    apply();
+  });
   byId('source-clip-start').addEventListener('input', apply);
   byId('source-clip-duration').addEventListener('input', apply);
   control('resolution').addEventListener('change', apply);

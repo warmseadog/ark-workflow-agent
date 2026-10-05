@@ -28,7 +28,7 @@ def test_bootstrap_is_normalized_private_and_never_overwrites(accounts, tmp_path
     admin = accounts.init_admin('  ADMIN  ', PASSWORD)
     assert admin['username'] == 'admin'
     assert len(admin['id']) == 32 and int(admin['id'], 16)
-    assert admin['role'] == 'admin' and admin['legacy_owner'] is True
+    assert admin['role'] == 'super_admin' and admin['legacy_owner'] is True
     assert admin['enabled'] is True and admin['must_change_password'] is False
     assert admin['max_concurrent'] == 1 and admin['max_queued'] == 10
     assert admin['created_at']
@@ -175,9 +175,9 @@ def test_authenticate_rechecks_disabled_flag_even_if_session_still_exists(accoun
 def test_two_admins_cannot_concurrently_disable_both(accounts, tmp_path):
     admin = accounts.init_admin('admin', PASSWORD)
     other = accounts.create_user('second', PASSWORD, admin['id'])
-    # Role promotion is deliberately not part of the public create/update API.
+    # Two super administrators must not concurrently remove both active accounts.
     with sqlite3.connect(tmp_path / 'private' / 'accounts.db') as conn:
-        conn.execute("UPDATE users SET role='admin' WHERE id=?", (other['id'],))
+        conn.execute("UPDATE users SET role='super_admin' WHERE id=?", (other['id'],))
 
     def disable(user):
         from app.accounts import AccountError

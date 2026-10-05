@@ -23,8 +23,10 @@ def asset(client,kind,name):
 def complete_draft(client):
     video=asset(client,'video','source.mp4'); face=asset(client,'face','face.png'); clothing=asset(client,'clothing','dress.png')
     draft=client.post('/api/production/drafts',json={}).json()
-    r=client.put('/api/production/drafts/'+draft['id'],json={'revision':draft['revision'],
-        'source_asset_id':video['id'],'face_asset_ids':[face['id']],'clothing_asset_ids':[clothing['id']],'prompt':'original'})
+    values={'revision':draft['revision'], 'source_asset_id':video['id'],
+            'face_asset_ids':[face['id']],'clothing_asset_ids':[clothing['id']]}
+    if 'prompt' in draft: values['prompt']='original'
+    r=client.put('/api/production/drafts/'+draft['id'],json=values)
     assert r.status_code==200,r.text
     return r.json()
 

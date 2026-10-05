@@ -1,6 +1,7 @@
 """Bounded background production queue with durable provider recovery."""
 from __future__ import annotations
 from dataclasses import asdict
+from contextlib import nullcontext
 import hashlib
 import json
 import os
@@ -19,6 +20,7 @@ from .video_provider import VideoProvider, ProviderError
 from .source_clip import clip_video, fingerprint as clip_fingerprint
 from .video_framing import reframe_video
 from .reference_roles import ACCESSORY_LABELS, snapshot_content_roles
+from . import scheduling_settings
 
 _preprocess_lock = threading.Lock()
 _managers = {}
@@ -106,7 +108,9 @@ def execute_run(settings, store, run):
                     raise ValueError('当前模型不支持指定视频片段。')
                 clip_message = '正在放慢动作视频以匹配时长' if snapshot['source_clip'].get('retime') == 'slow' else '正在截取动作视频片段'
                 store.update_run(ident,stage='preprocess',message=clip_message,progress=3)
+                store.set_phase(ident, 'waiting')
                 with _preprocess_lock:
+                    store.set_phase(ident, 'other')
                     source_path = clip_video(source_path,work/'source-clip.mp4',snapshot['source_clip'],max_seconds=capabilities(config.model,config.protocol)['max_video_seconds'])
             faces = [] if is_video(snapshot) else [Path(store.get_asset(x, private=True)['path']) for x in snapshot['face_asset_ids']]
             if is_video(snapshot):
@@ -121,7 +125,10 @@ def execute_run(settings, store, run):
                     assets = [store.get_asset(x,private=True) for x in snapshot.get(kind+'_asset_ids',[])]
                     if kind=='hairstyle':
                         store.update_run(ident,stage='preprocess',message='正在处理发型参考图人脸打码',progress=4)
-                        extra_references[argument] = [process_hairstyle(settings,asset,snapshot.get('hairstyle_mask',{}))['path'] for asset in assets]
+                        from .run_phases import observe
+                        with observe(lambda phase, **kw: store.set_phase(ident, phase, **kw)):
+                            extra_references[argument] = [process_hairstyle(settings,asset,snapshot.get('hairstyle_mask',{}))['path'] for asset in assets]
+                        store.set_phase(ident, 'other')
                         from .artifacts import sha256_file
                         records = [{'source_asset_id':asset['id'], 'source_sha256':asset['sha256'],
                                     'output_sha256':sha256_file(path),
@@ -138,19 +145,26 @@ def execute_run(settings, store, run):
             key = hashlib.sha256((source['sha256'] + json.dumps(options.model_dump(mode='json'), sort_keys=True) + redaction_service.fingerprint(settings) + clip_fingerprint(snapshot.get('source_clip'))).encode()).hexdigest()
             cache = settings.storage_dir / 'cache' / 'redacted' / (key + '.mp4')
             store.update_run(ident, stage='preprocess', message='等待本地视频预处理', progress=5)
+            store.set_phase(ident, 'waiting')
             with _preprocess_lock:
+                store.set_phase(ident, 'other')
                 if not defaced.is_file():
                     if cache.is_file():
+                        store.set_phase(ident, 'masking', cached=True)
                         shutil.copyfile(cache, defaced)
                     else:
                         store.update_run(ident, message='正在处理视频打码', progress=15)
                         temporary = work / 'defaced.tmp.mp4'
+                        store.set_phase(ident, 'masking')
                         run_deface(source_path, temporary, settings, options)
+                        store.set_phase(ident, 'other')
                         temporary.replace(defaced)
                         cache.parent.mkdir(parents=True, exist_ok=True)
                         cache_tmp = cache.with_suffix('.tmp.mp4')
                         shutil.copyfile(defaced, cache_tmp)
                         cache_tmp.replace(cache)
+                else:
+                    store.set_phase(ident, 'masking', cached=True)
                 if capabilities(config.model, config.protocol)['follow_source'] and config.ratio != 'adaptive':
                     store.update_run(ident, message='正在调整参考视频画面比例', progress=45)
                     framed = reframe_video(defaced, work/'framed.mp4', config.ratio)
@@ -159,9 +173,11 @@ def execute_run(settings, store, run):
             if config.mode == 'http' and config.protocol == 'ark':
                 store.update_run(ident, stage='upload', message='正在上传打码视频', progress=55)
                 if storage.enabled:
+                    store.set_phase(ident, 'upload')
                     video_url = upload_redacted_video(defaced, settings, storage)
                 else:
                     video_url = publish_video(defaced, settings.storage_dir, config.public_base_url)
+                store.set_phase(ident, 'other')
             # Check after preprocessing/upload and immediately before a NEW
             # provider submission. Existing task polling keeps its frozen data.
             authorize_run_inputs(settings, store, snapshot)
@@ -170,15 +186,21 @@ def execute_run(settings, store, run):
             store.update_run(ident, message=message, progress=percent)
         def submitted(task_id):
             store.update_run(ident, provider_task_id=task_id, stage='generating', message='模型任务已接收', progress=70)
+            store.set_phase(ident, 'model')
         def result(url):
+            store.set_phase(ident, 'other')
             store.update_run(ident, result_url=url, stage='downloading', message='正在下载生成结果', progress=95)
         if not base_ready:
             client = VideoProvider(config, settings.seedance_poll_seconds, progress)
+            client.phase_callback = lambda phase: store.set_phase(ident, phase)
+            if provider_id and not result_url:
+                store.set_phase(ident, 'model')
             client.generate(defaced, faces, clothes, snapshot['prompt'], base_output, video_url=video_url,
                             prompt_rule_version=snapshot.get('prompt_rule_version','legacy-v1'),
                             on_submitted=submitted, on_result=result,
                             resume_task_id=provider_id, resume_result_url=result_url, **extra_references,
                             **({'image_asset_uris':image_asset_uris} if image_asset_uris else {}))
+            store.set_phase(ident, 'other')
         if continuation_intent:
             continuation_started = True
             store.update_continuation(ident,base_ready=True)
@@ -210,10 +232,8 @@ class QueueManager:
     def __init__(self, settings):
         from .tenancy import root_settings
         self.settings = root_settings(settings)
-        try:
-            self.worker_count = max(1, min(50, int(os.getenv('APP_VIDEO_WORKERS', '50'))))
-        except ValueError:
-            self.worker_count = 50
+        self.worker_count = scheduling_settings.worker_capacity()
+        scheduling_settings.load_config(self.settings, capacity=self.worker_count)
         # Keep the legacy root store available to existing callers.
         self.store = ProductionStore(self.settings.storage_dir)
         self.stop = threading.Event()
@@ -256,7 +276,7 @@ class QueueManager:
                 if time.monotonic()-self._last_expiry.get(key,0) >= 3:
                     self._stores[key].expire_queued()
                     self._last_expiry[key] = time.monotonic()
-                if user.get('enabled', True):
+                if user.get('enabled', True) and not user.get('deleted_at'):
                     ready.append((key, user, settings, self._stores[key]))
             except Exception:
                 # A broken tenant must not prevent the others from progressing.
@@ -276,14 +296,19 @@ class QueueManager:
         video workers. The cursor advances only on a successful video claim.
         """
         with self._dispatch_lock:
-            if sum(self._active.values()) >= self.worker_count:
+            limit = scheduling_settings.load_config(self.settings, capacity=self.worker_count)['global_concurrency']
+            if sum(self._active.values()) >= limit:
                 return None
             for key, user, settings, store in self._rotated(self._ready_tenants(), 'video'):
                 try:
-                    limit = max(0, int(user.get('max_concurrent', 1)))
-                    if self._active.get(key, 0) >= limit:
-                        continue
-                    run = store.claim_next()
+                    from .tenancy import enabled
+                    from .accounts import Accounts
+                    guard = Accounts(self.settings.storage_dir).active_user(user['id']) if enabled() else nullcontext(user)
+                    with guard as current_user:
+                        limit = max(0, int(current_user.get('max_concurrent', 1)))
+                        if self._active.get(key, 0) >= limit:
+                            continue
+                        run = store.claim_next()
                 except Exception:
                     continue
                 if run:

@@ -49,6 +49,20 @@ def login(client, username='admin', password=PASSWORD, **kwargs):
                        headers={'Origin': 'http://testserver'}, **kwargs)
 
 
+def test_three_role_listing_and_delete_restore_http(auth_app):
+    client, accounts, owner = auth_app
+    manager = accounts.create_user('manager', PASSWORD, owner['id'], role='admin')
+    user = accounts.create_user('person', PASSWORD, owner['id'])
+    login(client, 'manager')
+    assert {u['id'] for u in client.get('/api/admin/users').json()['items']} == {user['id']}
+    assert client.delete('/api/admin/users/' + owner['id']).status_code == 403
+    assert client.delete('/api/admin/users/' + user['id']).status_code == 200
+    assert client.post('/api/admin/users/' + user['id'] + '/restore').status_code == 403
+    login(client)
+    response = client.post('/api/admin/users/' + user['id'] + '/restore')
+    assert response.status_code == 200 and response.json()['user']['enabled']
+
+
 def test_login_me_cookie_and_html_contract(auth_app):
     client, accounts, admin = auth_app
     assert client.get('/login').text == '<h1>Login</h1>'
@@ -219,7 +233,7 @@ def test_api_roles_reject_invalid_values_for_create_and_patch(auth_app, role):
     response = client.post('/api/admin/users', json={'username': 'invalid', 'password': PASSWORD, 'role': role})
     assert response.status_code == 422 and PASSWORD not in response.text
     assert client.patch(f'/api/admin/users/{admin["id"]}', json={'role': role}).status_code == 422
-    assert accounts.get_user(admin['id'])['role'] == 'admin'
+    assert accounts.get_user(admin['id'])['role'] == 'super_admin'
     assert len(accounts.list_users()) == 1
 
 

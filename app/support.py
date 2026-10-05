@@ -142,7 +142,7 @@ def _actor(request, *, admin=False):
         actor = getattr(request.state,'user',None)
         if not isinstance(actor,dict) or not actor.get('id') or not actor.get('enabled'):
             raise HTTPException(401,'请先登录。')
-        if admin and actor.get('role') != 'admin':
+        if admin and actor.get('role') not in {'admin','super_admin'}:
             raise HTTPException(403,'此操作仅管理员可用。')
         return actor
     forwarded = request.headers.get('x-forwarded-for','')

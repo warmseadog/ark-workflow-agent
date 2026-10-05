@@ -1,6 +1,8 @@
 (() => {
   const sourceForm = document.getElementById('studio-job-form');
   const generationForm = document.getElementById('studio-generate-form');
+  const promptEditable = Boolean(document.getElementById('generation-prompt'));
+  const promptInput = document.getElementById('generation-prompt') || document.createElement('textarea');
   const source = sourceForm.elements.namedItem('video');
   const sourceUrl = sourceForm.elements.namedItem('video_url');
   const importButton = document.getElementById('confirm-video-url');
@@ -134,7 +136,6 @@
   window.productionSession = true;
   const mediaUrls = new Map();
   const accessoryLabels = {bag:'包包',hat:'帽子',watch:'手表',shoes:'鞋子',necklace:'项链',glasses:'眼镜',earrings:'耳环'};
-  const accessoryRules = {bag:'参考包型、颜色、材质及背带，自然手持或背戴',hat:'参考帽型、颜色与佩戴方式',watch:'参考表盘、表带与颜色，佩戴于手腕',shoes:'参考鞋型、颜色与材质，保持足部结构自然',necklace:'参考链条、吊坠及材质，佩戴于颈部',glasses:'参考镜框、镜片与颜色，保持眼部和面部特征',earrings:'参考耳环造型、颜色与材质，自然佩戴于耳部，保持耳部结构与面部特征'};
   const extraKinds = ['hairstyle','scene',...Object.keys(accessoryLabels)];
   const imageFiles = Object.fromEntries(['face','clothing',...extraKinds].map(kind=>[kind,[]]));
   const imageInputs = Object.fromEntries(Object.keys(imageFiles).map(kind=>[kind,generationForm.elements.namedItem(kind+'_image')]));
@@ -342,7 +343,7 @@
     generateButton.disabled = busy || !sessionReady || (!pendingSubmission && (window.generationOptions?.available() === false || referenceOverLimit() || durationOver || (personMode === 'video' && (!personVideoCheck || !personVideoCheck.can_use)) || !(hasSource() && (personMode === 'video' ? personVideo && (personInputPolicy === 'auto_virtual' || window.portraitPeople?.selected) : imageFiles.face.length) && imageFiles.clothing.length)));
     generateButton.formNoValidate = Boolean(pendingSubmission);
     for (const id of ['replace-source-video', 'remove-source-video']) document.getElementById(id).hidden = !hasSource();
-    if (!busy) generateButton.textContent = pendingSubmission ? '确认上次提交结果' : '生成视频 →';
+    if (!busy) generateButton.textContent = pendingSubmission ? '确认上次提交结果' : window.delegatedEditor ? '为该用户重新生成 →' : '生成视频 →';
     updateReadiness(durationOver);
   }
   function lock(value) {
@@ -563,7 +564,8 @@
     return text.replace(/\n*【素材联动】[\s\S]*?【联动结束】/g, '').trim();
   }
   function syncReferencePrompt() {
-    const input = generationForm.elements.namedItem('prompt');
+    if (!promptEditable) return;
+    const input = promptInput;
     const exclusive = generationForm.dataset.promptRuleVersion === 'exclusive-v2';
     document.getElementById('exclusive-prompt-preview').hidden = !exclusive;
     if (exclusive) {
@@ -573,42 +575,7 @@
       schedulePromptPreview();
       return;
     }
-    const rules = [
-      '严格参考：参考素材在各自负责范围内优先于文字描述，文字仅补充未指定细节。',
-      '@Video1 动作主参考：严格遵循动作顺序、关键姿态、移动方向、运镜、构图和节奏，不自行增加动作或镜头；不采用其中的人脸和服装，不生成打码痕迹。'
-    ];
-    const identity = personMode === 'video' ? '@Video2' : '@Image1';
-    const clothing = personMode === 'video' ? '@Image1' : '@Image2';
-    if (personMode === 'video' || imageFiles.face.length) rules.push(`${identity} 人物主参考：锁定脸型、五官比例、肤色与人物身份，全片一致；不混入其他素材人物，不自行美化或重塑五官。`);
-    if (imageFiles.clothing.length) rules.push(`${clothing} 服装主参考：严格还原款式、剪裁、版型、颜色、材质、纹理、图案及可见细节，不改款、不换色、不增加装饰。`);
-    let supplement = (personMode === 'video' ? 0 : Math.min(1,imageFiles.face.length)) + Math.min(1,imageFiles.clothing.length);
-    if (personMode !== 'video') for (const _ of imageFiles.face.slice(1)) rules.push(`@Image${++supplement} 仅补充人物角度和细节，冲突时以人物主参考为准。`);
-    for (const _ of imageFiles.clothing.slice(1)) rules.push(`@Image${++supplement} 仅补充服装角度和细节，冲突时以服装主参考为准。`);
-    let index = (personMode === 'video' ? 0 : imageFiles.face.length) + imageFiles.clothing.length;
-    if (personMode === 'video') rules.push('人物身份以 @Video2 为准；动作和镜头以 @Video1 为准；衣服主参考为 @Image1。不采用视频2的动作、服装、背景、声音或台词。');
-    const hair = imageFiles.hairstyle.length > 0 && document.getElementById('hairstyle-enabled').checked;
-    const description = document.getElementById('scene-description').value.trim();
-    const sceneEnabled = document.getElementById('scene-enabled').checked;
-    const scene = imageFiles.scene.length > 0 && sceneEnabled;
-    if (hair) rules.push(`@Image${++index} 发型参考：采用图中的发长、轮廓、刘海、卷曲程度和发色；仅参考头发，不采用该图的人脸、身份、服装或背景。人物身份以 ${personMode === 'video' ? '@Video2' : '@Image1'} 为准，发型以本图为准。`);
-    else rules.push(personMode === 'video' ? '发型沿用人物参考视频 @Video2，不使用独立发型图。' : '发型沿用主人物参考图，不使用独立发型图。');
-    if (scene) {
-      rules.push(`@Image${++index} 场景参考：使用图中的空间、布景、光线和环境替换原视频背景；不引入图中的人物，保留 @Video1 的主体动作、运镜与节奏。`);
-      if (description) rules.push('场景补充：'+description);
-    } else if (sceneEnabled && description) rules.push('按文字描述替换场景：'+description+'；保留原视频的动作、镜头与节奏。');
-    else rules.push('保留原视频场景，不替换背景。');
-    for (const [kind,label] of Object.entries(accessoryLabels)) {
-      if (imageFiles[kind].length && document.getElementById(kind+'-enabled').checked) rules.push(`@Image${++index} ${label}参考：${accessoryRules[kind]}；仅采用对应配饰，不引入图中人物、服装或背景。`);
-    }
-    rules.push('独立发型、场景或配饰在各自范围内优先，严格保持对应参考的可见细节，不混用其他内容。禁止凭空增加人物、配饰、文字、水印或特效；全片保持身份、穿着和细节连续一致。');
-    const base = stripReferenceRules(input.value)
-      .replace(/@(?:Image1|Video2)人物参考(?:图|视频)/g, identity + (personMode === 'video' ? '人物参考视频' : '人物参考图'))
-      .replace(/@(?:Image1|Video2)(?=的人物身份|的脸|为主人物身份)/g, identity)
-      .replace(/@Image[12](?=衣服参考图|服装参考图|的服装|服装|为主服装)/g, clothing);
-    input.value = base + '\n\n【素材联动】\n' + rules.join('\n') + '\n【联动结束】';
-    input.rows = 9;
-    const hint = document.getElementById('prompt-reference-status');
-    if (hint) hint.textContent = '已启用严格参考';
+    window.syncLegacyReferencePrompt({input, personMode, imageFiles, accessoryLabels, stripReferenceRules});
   }
   function exclusivePreviewPayload() {
     const faces = personMode === 'video' ? 0 : imageFiles.face.length, clothes = imageFiles.clothing.length;
@@ -618,12 +585,13 @@
       if (imageFiles[kind].length && document.getElementById(kind+'-enabled').checked) roles.push(label);
     }
     const model = publicModel();
-    return {prompt:stripReferenceRules(generationForm.elements.namedItem('prompt').value),roles,
+    return {prompt:stripReferenceRules(promptInput.value),roles,
       person_video:personMode === 'video',rule_version:generationForm.dataset.promptRuleVersion,
       scene_description:document.getElementById('scene-enabled').checked ? document.getElementById('scene-description').value.trim() : '',
       model:Object.fromEntries(['model','duration','resolution','ratio','generate_audio'].filter(key=>key in model).map(key=>[key,model[key]]))};
   }
   function schedulePromptPreview() {
+    if (!promptEditable) return;
     clearTimeout(promptPreviewTimer);
     if (generationForm.dataset.promptRuleVersion !== 'exclusive-v2') return;
     const hint = document.getElementById('exclusive-prompt-status');
@@ -632,6 +600,7 @@
     promptPreviewTimer = setTimeout(() => ensurePromptPreview().catch(() => {}), 180);
   }
   async function ensurePromptPreview() {
+    if (!promptEditable) return null;
     if (generationForm.dataset.promptRuleVersion !== 'exclusive-v2') return null;
     const payload = exclusivePreviewPayload(), key = JSON.stringify(payload);
     const hint = document.getElementById('exclusive-prompt-status');
@@ -655,7 +624,7 @@
       throw error;
     }
   }
-  document.getElementById('retry-prompt-preview').addEventListener('click', () => ensurePromptPreview().catch(() => {}));
+  document.getElementById('retry-prompt-preview')?.addEventListener('click', () => ensurePromptPreview().catch(() => {}));
   window.productionPrompt = {strip:stripReferenceRules, sync:syncReferencePrompt,
     get ruleVersion() { return generationForm.dataset.promptRuleVersion; },
     get templateId() { return generationForm.dataset.promptTemplateId || null; },
@@ -838,7 +807,7 @@
   let draft = null, draftName = null, dirtyVersion = 0, savedVersion = 0, saveTimer, savePromise = null, pendingSubmission = null;
   const templatesReady = new Promise(resolve => window.addEventListener('production-templates-ready', resolve, {once:true}));
   const modelsReady = new Promise(resolve => window.addEventListener('model-settings-loaded', resolve, {once:true}));
-  const defaultMask = maskValues(), defaultPrompt = generationForm.elements.namedItem('prompt').value;
+  const defaultMask = maskValues(), defaultPrompt = promptInput.value;
 
   async function api(path, method = 'GET', body, options = {}) {
     const response = await fetch((options.adminRecords ? '/api/admin/task-records' : '/api/production') + path, {
@@ -914,7 +883,7 @@
       return;
     }
     // Only legacy admin cloud imports may lack a tenant-local person ID.
-    if (window.currentAccount && window.currentAccount.role !== 'admin' && !window.currentAccount.is_admin) {
+    if (window.currentAccount && !['admin','super_admin'].includes(window.currentAccount.role) && !window.currentAccount.is_admin) {
       throw new Error('请从当前账号的人物库选择素材。');
     }
     await window.portraitPeople.selectGroup(asset.portrait.group_id, asset.person_type || 'LivenessFace');
@@ -1054,9 +1023,12 @@
     const videoFile = sourceItem(), faceFiles = [...imageFiles.face], clothingFiles = [...imageFiles.clothing];
     const extraFiles = Object.fromEntries(extraKinds.map(kind=>[kind,[...imageFiles[kind]]]));
     const selectedPerson = window.portraitPeople?.selected || null;
-    const values = {source_clip:window.generationOptions?.sourceClip?.() || null,target_duration:window.generationOptions?.targetDuration?.() ?? null,person_input_policy:personInputPolicy,person_reference_mode:personMode,person_video_asset_id:personVideo?.id || null,person_id:selectedPerson, name:draftName || draft?.name || '未命名视频', prompt:generationForm.elements.namedItem('prompt').value, mask:maskValues(), model:publicModel()};
+    const values = {source_clip:window.generationOptions?.sourceClip?.() || null,target_duration:window.generationOptions?.targetDuration?.() ?? null,person_input_policy:personInputPolicy,person_reference_mode:personMode,person_video_asset_id:personVideo?.id || null,person_id:selectedPerson, name:draftName || draft?.name || '未命名视频', prompt:promptInput.value, mask:maskValues(), model:publicModel()};
     values.prompt_template_id = window.productionPrompt.templateId;
     values.prompt_rule_version = window.productionPrompt.ruleVersion;
+    if (!promptEditable) {
+      delete values.prompt; delete values.prompt_template_id; delete values.prompt_rule_version;
+    }
     for (const kind of extraKinds) values[kind+'_enabled'] = document.getElementById(kind+'-enabled').checked;
     values.scene_description = document.getElementById('scene-description').value;
     values.hairstyle_mask = hairMaskValues();
@@ -1123,7 +1095,7 @@
       document.getElementById('accessory-references').open = Object.keys(accessoryLabels).some(k=>imageFiles[k].length);
       draft = item; draftName=item.name; drafts.set(item.id,item); syncTaskName();
       window.portraitPeople?.restore(item.person_id);
-      generationForm.elements.namedItem('prompt').value = item.prompt ?? defaultPrompt;
+      promptInput.value = item.prompt ?? defaultPrompt;
       window.productionPrompt.select({id:item.prompt_template_id,rule_version:item.prompt_rule_version});
       window.dispatchEvent(new CustomEvent('production-prompt-restored',{detail:item}));
       applyMask({...defaultMask,...item.mask}); savedMask = maskValues();
@@ -1135,7 +1107,7 @@
       ['production-prompt-draft-v1','studio-redaction-settings','active-v1-job'].forEach(key=>localStorage.removeItem(key));
       showSave('已保存到本机');
     } finally { restoring = false; refreshPhotoInputs(); }
-    if (sessionReady && item.prompt !== generationForm.elements.namedItem('prompt').value) changed();
+    if (sessionReady && promptEditable && item.prompt !== promptInput.value) changed();
   }
   function draftControls(disabled) {
     ['draft-recover'].forEach(id => document.getElementById(id).disabled = disabled);
@@ -1147,6 +1119,12 @@
       await flushDraft();
       const item = await action();
       if (pageInactive) return;
+      if (item.delegated_user) {
+        const next = new URL(window.location.href);
+        next.searchParams.set('delegate_user', item.delegated_user.id);
+        next.searchParams.set('draft', item.id);
+        window.location.assign(next.toString()); return;
+      }
       await restoreDraft(item);
       document.dispatchEvent(new Event('production-draft-selected'));
     } catch (error) { showSave(error.message, true); }
@@ -1171,9 +1149,9 @@
     } catch (error) { if (!pageInactive) showSave('恢复失败：'+error.message,true); }
     finally { draftControls(false); lock(false); }
   });
-  generationForm.elements.namedItem('prompt').addEventListener('input',changed);
-  generationForm.elements.namedItem('prompt').addEventListener('blur',() => {
-    const input = generationForm.elements.namedItem('prompt'), before = input.value;
+  promptInput.addEventListener('input',changed);
+  promptInput.addEventListener('blur',() => {
+    const input = promptInput, before = input.value;
     syncReferencePrompt();
     if (input.value !== before) changed();
   });
@@ -1202,15 +1180,19 @@
       if (window.currentAccount) {
         currentKey += ':'+window.currentAccount.id; pendingKey += ':'+window.currentAccount.id;
       }
+      if (window.delegatedEditor?.userId) {
+        currentKey += ':delegate:'+window.delegatedEditor.userId;
+        pendingKey += ':delegate:'+window.delegatedEditor.userId;
+      }
       try { pendingSubmission = JSON.parse(localStorage.getItem(pendingKey) || 'null'); } catch (_) {}
       const [data] = await Promise.all([api('/drafts'),templatesReady,modelsReady,window.portraitPeople?.ready]);
       (data.items || []).forEach(item=>drafts.set(item.id,item));
-      const requested = localStorage.getItem(currentKey);
+      const requested = window.delegatedEditor?.draftId || localStorage.getItem(currentKey);
       const selected = drafts.get(requested) || data.items?.[0];
       const item = selected ? await api('/drafts/'+encodeURIComponent(selected.id)) : await api('/drafts','POST',{person_input_policy:'auto_virtual'});
       if (pageInactive) return;
       await restoreDraft(item); sessionReady=true;
-      if ((item.person_id || null) !== (window.portraitPeople?.selected || null) || item.prompt !== generationForm.elements.namedItem('prompt').value) changed();
+      if ((item.person_id || null) !== (window.portraitPeople?.selected || null) || (promptEditable && item.prompt !== promptInput.value)) changed();
       if (pendingSubmission) status.textContent='上次提交结果尚未确认，点击确认可安全恢复。';
     } catch (error) { if (!pageInactive) showSave('恢复失败：'+error.message,true); }
     finally { draftControls(false); lock(false); }

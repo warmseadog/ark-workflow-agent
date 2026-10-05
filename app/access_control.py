@@ -5,6 +5,7 @@ import re
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse, RedirectResponse
 from . import tenancy
+from .permissions import is_admin, is_super_admin
 
 
 def public_request(path, method):
@@ -53,6 +54,17 @@ def same_origin(request):
     return not origin or origin.rstrip('/') == allowed
 
 
+def administrator_allowed(path, method):
+    """Operational management is distinct from system configuration."""
+    if ordinary_allowed(path, method):
+        return True
+    return (path == '/admin/users' or path == '/admin/templates'
+            or (path in {'/admin/settings', '/api/admin/scheduling'} and method in {'GET','HEAD'})
+            or path.startswith(('/api/admin/users', '/api/admin/tasks', '/api/admin/task-records', '/api/admin/audit',
+                                '/api/admin/delegated/', '/api/admin/prompt-templates',
+                                '/api/admin/portrait', '/api/admin/support')))
+
+
 def install(app, settings_getter):
     @app.middleware('http')
     async def protect(request, call_next):
@@ -81,15 +93,24 @@ def install(app, settings_getter):
             return RedirectResponse('/login',status_code=303,headers={'Cache-Control':'no-store'})
         user = session['user']
         request.state.user, request.state.session = user, session
-        if user['role'] != 'admin' and not ordinary_allowed(path,method):
+        if not is_admin(user) and not ordinary_allowed(path,method):
             return error(403,'此操作仅管理员可用。')
+        if is_admin(user) and not is_super_admin(user) and not administrator_allowed(path, method):
+            return error(403,'系统设置仅超级管理员可用。')
         if not user.get('legacy_owner') and (path.startswith(('/api/jobs','/api/discovery','/api/workflow')) or '/legacy-' in path):
             return error(403,'历史任务属于初始管理员。')
         if method not in {'GET','HEAD','OPTIONS'}:
             csrf = request.headers.get('x-csrf-token','')
             if not csrf or not hmac.compare_digest(csrf,session['csrf_token']):
                 return error(403,'安全校验失败，请刷新页面后重试。')
-        context = tenancy._request_settings.set(tenancy.user_settings(settings_getter(),user))
+        from fastapi import HTTPException
+        from .delegated_tasks import resolve_request
+        try:
+            effective = resolve_request(request, tenancy.root_settings(settings_getter()), user)
+        except HTTPException as exc:
+            return error(exc.status_code, exc.detail)
+        context = tenancy._request_settings.set(effective or tenancy.user_settings(settings_getter(),user))
+        actor_context = tenancy._request_user.set(user)
         try:
             response = await call_next(request)
             response.headers['Cache-Control']='no-store'
@@ -106,4 +127,5 @@ def install(app, settings_getter):
                 accounts.audit(user['id'],method+' '+path)
             return response
         finally:
+            tenancy._request_user.reset(actor_context)
             tenancy._request_settings.reset(context)

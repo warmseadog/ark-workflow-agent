@@ -14,7 +14,7 @@
   function stopTaskTimer() { clearTimeout(taskTimer); taskTimer = null; }
   function canRefreshTasks() {
     const account = window.currentAccount;
-    return !document.hidden && window.adminEmbedVisible !== false && taskAccountId !== null && account?.id === taskAccountId && (account.is_admin || account.role === 'admin');
+    return !document.hidden && window.adminEmbedVisible !== false && taskAccountId !== null && account?.id === taskAccountId && ['admin', 'super_admin'].includes(account.role);
   }
   const statusLabels = {queued:'排队中', running:'生成中', succeeded:'已完成', failed:'失败', needs_attention:'需要处理', cancelled:'已取消'};
   function element(tag, value, className) {
@@ -60,11 +60,15 @@
     if (!users.length) empty(body, 7, '暂无用户。创建第一个工作账号。');
     for (const user of users) {
       const row = element('tr');
-      cell(row, user.username);
+      cell(row, user.username + (user.deleted_at ? '（已删除）' : ''));
       const role = document.createElement('select'); role.className = 'role-select';
       role.setAttribute('aria-label', `${user.username}的角色`);
-      role.add(new Option('普通用户', 'user')); role.add(new Option('管理员', 'admin'));
-      role.value = user.role === 'admin' || user.is_admin ? 'admin' : 'user';
+      role.add(new Option('普通用户', 'user'));
+      if (window.currentAccount?.role === 'super_admin') {
+        role.add(new Option('管理员', 'admin')); role.add(new Option('超级管理员', 'super_admin'));
+      }
+      role.value = user.role;
+      role.disabled = window.currentAccount?.role !== 'super_admin' || !!user.deleted_at;
       cell(row, role);
       const enabled = document.createElement('input'); enabled.type = 'checkbox'; enabled.checked = user.enabled !== false;
       enabled.setAttribute('aria-label', `启用账号 ${user.username}`);
@@ -73,6 +77,9 @@
       const queued = quota(user.max_queued, 'max_queued', user.username);
       cell(row, concurrent); cell(row, queued);
       const save = button('保存'); cell(row, save);
+      if (user.deleted_at) {
+        enabled.disabled = concurrent.disabled = queued.disabled = save.disabled = true;
+      }
       save.addEventListener('click', async () => {
         if (!concurrent.reportValidity() || !queued.reportValidity()) return;
         save.disabled = true; message('users-status', '');
@@ -90,6 +97,7 @@
       const password = document.createElement('input'); password.type = 'password'; password.autocomplete = 'new-password'; password.minLength = 6; password.maxLength = 1024; password.required = true; password.placeholder = '新密码（至少 6 位）';
       password.setAttribute('aria-label', `重置 ${user.username} 的密码`);
       const reset = button('重置'); reset.type = 'submit';
+      password.disabled = reset.disabled = !!user.deleted_at;
       resetForm.append(password, reset); cell(row, resetForm);
       resetForm.addEventListener('submit', async event => {
         event.preventDefault(); if (reset.disabled) return;
@@ -101,6 +109,20 @@
           void loadAudit();
         } catch (error) { password.value = ''; message('users-status', error.message); }
         finally { reset.disabled = false; }
+      });
+      const lifecycle = button(user.deleted_at ? '恢复账号' : '删除账号');
+      lifecycle.disabled = !!user.deleted_at && window.currentAccount?.role !== 'super_admin';
+      resetForm.parentElement.append(lifecycle);
+      lifecycle.addEventListener('click', async () => {
+        if (!user.deleted_at && !window.confirm(`删除 ${user.username}？会退出全部登录会话并取消排队任务，草稿和历史记录会保留。`)) return;
+        lifecycle.disabled = true;
+        try {
+          const path = `/api/admin/users/${encodeURIComponent(user.id)}`;
+          await request(user.deleted_at ? path + '/restore' : path, user.deleted_at ? 'POST' : 'DELETE');
+          message('users-status', user.deleted_at ? '账号已恢复，可重新登录。' : '账号已删除，历史记录已保留。', true);
+          if (user.id === window.currentAccount?.id) { window.accountUI.finishSession(); return; }
+          await Promise.all([loadUsers(), loadAudit(), loadTasks()]);
+        } catch (error) { message('users-status', error.message); lifecycle.disabled = false; }
       });
       body.append(row);
     }
@@ -298,10 +320,18 @@
   });
   window.addEventListener('pagehide', () => { taskAccountId = null; stopTaskTimer(); reads.forEach(controller => controller.abort()); reads.clear(); });
   window.accountReady.then(async account => {
-    if (!account.auth_enabled || !(account.user?.is_admin || account.user?.role === 'admin')) {
+    if (!account.auth_enabled || !['admin', 'super_admin'].includes(account.user?.role)) {
       message('users-access-error', '此页面仅供已登录的管理员使用。'); return;
     }
     $('users-workspace').hidden = false;
+    if (account.user.role !== 'super_admin') {
+      $('create-role').replaceChildren(new Option('普通用户', 'user'));
+      $('create-role').disabled = true;
+    }
+    const authority = $('users-authority');
+    if (authority) authority.textContent = account.user.role === 'super_admin'
+      ? '当前权限：超级管理员 · 可管理全部账号、恢复删除账号并配置系统。'
+      : '当前权限：管理员 · 可管理普通用户、查看其任务并维护运营提示词。';
     taskAccountId = account.user.id;
     await Promise.all([loadUsers(), loadTasks(), loadAudit()]);
   }).catch(error => { message('users-access-error', error.message); });

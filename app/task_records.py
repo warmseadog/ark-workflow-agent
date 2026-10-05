@@ -70,6 +70,11 @@ def get_router(settings_getter, admin):
         user = next((u for u in Accounts(settings_getter().storage_dir).list_users() if u['id']==user_id), None)
         if not user:
             raise HTTPException(404, '用户不存在。')
+        from .prompt_visibility import actor
+        from .permissions import can_manage
+        current = actor()
+        if not current or (current['id'] != user['id'] and not can_manage(current, user)):
+            raise HTTPException(403, '无权查看该账号的任务。')
         settings = tenancy.user_settings(settings_getter(), user)
         return user, settings, ProductionStore(settings.storage_dir)
 
@@ -95,6 +100,12 @@ def get_router(settings_getter, admin):
 
     def decorate(user, settings, run, actor):
         run.update(user_id=user['id'], username=user['username'], read_only=user['id']!=actor['id'])
+        from .permissions import can_manage
+        run['can_restore_draft'] = bool(run['read_only'] and can_manage(actor,user) and user['enabled']
+                                        and not user.get('deleted_at') and not run.get('legacy')
+                                        and run.get('error_kind') != 'submission_uncertain')
+        if run['can_restore_draft']:
+            run['restore_url'] = base(user,run)+'/restore-draft'
         if run['read_only']:
             for key in ('can_cancel','can_resume','can_delete','can_retry_preparation','can_retry_without_audio'):
                 run[key] = False
@@ -109,6 +120,8 @@ def get_router(settings_getter, admin):
     def records(request: Request, user_id: str='', page: int=Query(1,ge=1,le=1000000), page_size: int=Query(10,ge=1,le=50)):
         actor = admin(request)
         tenants = tenancy.tenant_settings(settings_getter(), include_disabled=True)
+        from .permissions import can_manage
+        tenants = [(u,s) for u,s in tenants if u['id']==actor['id'] or can_manage(actor,u)]
         users = [{key:u[key] for key in ('id','username','enabled')} for u,_ in tenants]
         if user_id:
             tenants = [(u,s) for u,s in tenants if u['id']==user_id]
@@ -127,6 +140,12 @@ def get_router(settings_getter, admin):
         items = [decorate(user,settings,item,actor) for item,user,settings in candidates[(page-1)*page_size:page*page_size]]
         # List polling does not add audit noise; opening individual records is audited.
         return dict(items=items,users=users,total=total,active_count=active,page=page,pages=pages,page_size=page_size)
+
+    @router.post('/{user_id}/{run_id}/restore-draft')
+    def restore(request: Request, user_id: str, run_id: str, payload: dict):
+        from .delegated_tasks import restore_draft
+        return guarded(lambda: restore_draft(settings_getter(), admin(request), user_id, run_id,
+                                             payload.get('idempotency_key')))
 
     @router.get('/{user_id}/{run_id}')
     def detail(request: Request, user_id: str, run_id: str):

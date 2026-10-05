@@ -149,6 +149,7 @@
         </details>
     </div>
     <div class="reference-summary"><p id="reference-count" class="field-hint reference-count" role="status" aria-live="polite">本次参考图 0 / 9 张</p><button id="clear-reference-images" type="button" class="secondary" disabled title="清空本次已选参考图，保留视频、提示词和素材库">清空参考图</button></div>
+    {% if prompt_editor_visible(request) %}
     <details class="compact-prompt" id="flow-stage-generation">
       <summary>提示词与模板 <span id="prompt-reference-status">已启用严格参考</span></summary>
       <div class="prompt-templates" id="prompt-template-list" aria-label="提示词模板"></div>
@@ -180,6 +181,7 @@
       <p class="field-hint">默认严格遵循参考：视频控制动作，人物控制身份，服装控制穿着；独立发型、场景与配饰按各自参考执行。下方规则自动更新，文字只补充细节。参考图上限以本次模型的计数提示为准。</p>
       <p class="input-requirement" data-input-requirement="prompt">正在读取提示词要求…</p>
     </details>
+    {% endif %}
     <h3 class="generation-settings-heading" id="generation-settings-heading">生成设置</h3>
     <p class="billing-notice" data-billing-notice>正在读取费用说明…</p>
     <div class="generation-action" id="generation-settings" aria-labelledby="generation-settings-heading">

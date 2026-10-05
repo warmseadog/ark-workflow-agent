@@ -18,6 +18,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool, StrictInt
 
 from .accounts import Accounts, AccountError, SESSION_SECONDS
+from .permissions import is_admin, is_super_admin, can_manage
 
 
 COOKIE_NAME = 'ark_session'
@@ -97,14 +98,14 @@ class _Register(_Login):
 
 class _CreateUser(_Login):
     password: SecretStr = Field(min_length=6, max_length=1024)
-    role: Literal['admin', 'user'] = 'user'
+    role: Literal['super_admin', 'admin', 'user'] = 'user'
     max_concurrent: StrictInt = Field(default=1, ge=1, le=10000)
     max_queued: StrictInt = Field(default=10, ge=0, le=10000)
 
 
 class _UpdateUser(_Input):
     # PATCH passes only explicitly supplied fields; omission preserves the role.
-    role: Literal['admin', 'user'] = 'user'
+    role: Literal['super_admin', 'admin', 'user'] = 'user'
     enabled: StrictBool | None = None
     max_concurrent: StrictInt | None = Field(default=None, ge=1, le=10000)
     max_queued: StrictInt | None = Field(default=None, ge=0, le=10000)
@@ -137,9 +138,9 @@ def get_router(settings_getter, templates) -> APIRouter:
             user = accounts().get_user(user['id'])
         except AccountError:
             raise AccountError(401, '请先登录。') from None
-        if not user['enabled']:
+        if not user['enabled'] or user.get('deleted_at'):
             raise AccountError(401, '请先登录。')
-        if admin and user['role'] != 'admin':
+        if admin and not is_admin(user):
             raise AccountError(403, '需要管理员权限。')
         return user
 
@@ -211,8 +212,8 @@ def get_router(settings_getter, templates) -> APIRouter:
 
     @router.get('/api/admin/users')
     def list_users(request: Request):
-        current_user(request, admin=True)
-        return {'items': accounts().list_users()}
+        actor = current_user(request, admin=True)
+        return {'items': [user for user in accounts().list_users() if can_manage(actor, user)]}
 
     @router.post('/api/admin/users', status_code=201)
     def create_user(request: Request, payload: _CreateUser):
@@ -231,13 +232,27 @@ def get_router(settings_getter, templates) -> APIRouter:
         actor = current_user(request, admin=True)
         return {'user': accounts().reset_password(user_id, payload.password.get_secret_value(), actor['id'])}
 
+    @router.delete('/api/admin/users/{user_id}')
+    def delete_user(user_id: str, request: Request):
+        actor = current_user(request, admin=True)
+        return {'user': accounts().delete_user(user_id, actor['id'])}
+
+    @router.post('/api/admin/users/{user_id}/restore')
+    def restore_user(user_id: str, request: Request):
+        actor = current_user(request, admin=True)
+        return {'user': accounts().restore_user(user_id, actor['id'])}
+
     @router.get('/api/admin/audit')
     def list_audit(request: Request, limit: int | None = Query(default=None, ge=1, le=1000),
                    page: int = Query(default=1, ge=1), page_size: int = Query(default=10, ge=1, le=200),
                    scope: str = Query(default='important', pattern='^(important|all)$'), user_id: str = ''):
-        current_user(request, admin=True)
+        actor = current_user(request, admin=True)
         if user_id:
-            accounts().get_user(user_id)
+            if not can_manage(actor, accounts().get_user(user_id)):
+                raise AccountError(403, '此账号不在你的管理权限范围内。')
+        if not is_super_admin(actor):
+            visible = [user['id'] for user in accounts().list_users() if can_manage(actor, user)]
+            return accounts().audit_page(page, page_size, scope, user_id, allowed_users=visible)
         if limit is not None and not user_id:  # Preserve unfiltered legacy callers.
             return {'items': accounts().list_audit(limit)}
         return accounts().audit_page(page, page_size, scope, user_id)

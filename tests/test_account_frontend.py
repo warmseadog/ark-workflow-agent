@@ -7,6 +7,7 @@ from urllib.parse import urlparse, parse_qs
 
 import pytest
 from jinja2 import Environment, FileSystemLoader
+from tests.browser_template_fixture import serve_editor_rules, EDITOR_RULES_PATH
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,7 +39,7 @@ def test_account_scripts_do_not_render_html_or_persist_secrets():
 def test_existing_application_scripts_remain_in_order():
     text = (TEMPLATES / 'production.html').read_text(encoding='utf-8')
     scripts = re.findall(r'<script src="/static/([^?]+)', text)
-    assert scripts == ['account.js', 'mira/mira-materials.js', 'production-shell.js', 'portrait-photos.js', 'portrait-people.js', 'production-runs.js', 'production.js', 'generation-options.js', 'link-templates.js']
+    assert scripts == ['account.js', 'delegated-editor.js', 'mira/mira-materials.js', 'production-shell.js', 'portrait-photos.js', 'portrait-people.js', 'video-comparison.js', 'production-runs.js', 'production.js', 'generation-options.js', 'link-templates.js']
 
 
 @pytest.fixture(scope='module')
@@ -63,6 +64,7 @@ def studio(browser):
     page = context.new_page()
     env = Environment(loader=FileSystemLoader(TEMPLATES), autoescape=True)
     state = {'account': json.loads(json.dumps(ACCOUNT)), 'calls': [], 'replies': {}, 'held': [], 'hold_me': False, 'headers': {}}
+    env.globals['prompt_editor_visible'] = lambda request: not state['account']['auth_enabled'] or (state['account'].get('user') or {}).get('role') in {'admin','super_admin'}
     template_routes = {'/': 'production.html', '/login': 'login.html', '/account/password': 'password.html', '/admin/users': 'users.html', '/admin/settings': 'admin_settings.html'}
 
     def handle(route):
@@ -71,6 +73,8 @@ def studio(browser):
         if path.startswith('/static/'):
             file = STATIC / path.removeprefix('/static/')
             route.fulfill(status=200, content_type=mimetypes.guess_type(file)[0] or 'application/octet-stream', body=file.read_bytes())
+        elif path == EDITOR_RULES_PATH:
+            serve_editor_rules(route, ROOT, state['account'])
         elif path.startswith('/api/'):
             state['calls'].append({'path': path, 'method': request.method, 'url': request.url, 'headers': request.headers, 'body': request.post_data})
             if path == '/api/auth/me' and state['hold_me']:
@@ -307,9 +311,9 @@ def test_password_confirmation_and_reauthentication(studio):
 
 def test_admin_users_mutations_filters_stats_and_safe_rendering(studio):
     page, state, _ = studio
-    state['account']['user']['role'] = 'admin'
+    state['account']['user']['role'] = 'super_admin'
     username = '<img src=x onerror=alert(1)>'
-    state['replies'][('GET', '/api/admin/users')] = (200, {'items': [{'id': 'internal-id', 'username': username, 'enabled': True, 'max_concurrent': 2, 'max_queued': 5}]})
+    state['replies'][('GET', '/api/admin/users')] = (200, {'items': [{'id': 'internal-id', 'username': username, 'role': 'user', 'enabled': True, 'max_concurrent': 2, 'max_queued': 5}]})
     state['replies'][('GET', '/api/admin/tasks')] = (200, {'items': [{'name': '<script>bad()</script>', 'username': username, 'status': 'succeeded', 'created_at': '2026-09-28T08:00:00Z', 'duration': 8, 'storage_bytes': 2048}], 'stats': {'submitted': 3, 'succeeded': 2, 'failed': 1, 'generated_seconds': 16, 'storage_bytes': 2048}})
     state['replies'][('GET', '/api/admin/audit')] = (200, {'items': [{'actor_username': username, 'action': 'user.create', 'created_at': '2026-09-28T08:00:00Z', 'password': 'must-not-render'}]})
     open_page(page, '/admin/users')
@@ -359,6 +363,44 @@ def test_normal_user_does_not_fetch_admin_data(studio):
     assert not any(call['path'].startswith('/api/admin/') for call in state['calls'])
 
 
+def test_admin_can_delete_user_but_cannot_promote_or_restore(studio):
+    page, state, _ = studio
+    state['account']['user']['role'] = 'admin'
+    state['replies'][('GET', '/api/admin/users')] = (200, {'items': [
+        {'id':'person', 'username':'ordinary', 'role':'user', 'enabled':True},
+        {'id':'deleted', 'username':'deleted', 'role':'user', 'enabled':False, 'deleted_at':123},
+    ]})
+    open_page(page, '/admin/users')
+    page.wait_for_selector('#users-list tr')
+    assert page.locator('#create-role option').all_text_contents() == ['普通用户']
+    assert page.locator('#users-list select').first.is_disabled()
+    assert page.get_by_role('button', name='恢复账号').is_disabled()
+    assert '管理员' in page.locator('#users-authority').inner_text()
+    page.on('dialog', lambda dialog: dialog.accept())
+    page.get_by_role('button', name='删除账号').click()
+    page.wait_for_function("document.querySelector('#users-status').dataset.state === 'success'")
+    assert any(call['method']=='DELETE' and call['path']=='/api/admin/users/person' for call in state['calls'])
+
+
+def test_super_can_restore_and_new_username_length_is_enforced(studio):
+    page, state, _ = studio
+    state['account']['user']['role'] = 'super_admin'
+    state['replies'][('GET', '/api/admin/users')] = (200, {'items': [
+        {'id':'deleted', 'username':'deleted', 'role':'admin', 'enabled':False, 'deleted_at':123},
+    ]})
+    open_page(page, '/admin/users')
+    page.wait_for_selector('#users-list tr')
+    assert page.locator('#create-role option').all_text_contents() == ['普通用户','管理员','超级管理员']
+    assert page.locator('#users-list input[type=password]').is_disabled()
+    page.get_by_role('button', name='恢复账号').click()
+    page.wait_for_function("document.querySelector('#users-status').dataset.state === 'success'")
+    assert any(call['method']=='POST' and call['path']=='/api/admin/users/deleted/restore' for call in state['calls'])
+    page.locator('#create-username').fill('x')
+    page.locator('#create-password').fill('123456')
+    page.locator('#create-user-form button').click()
+    assert not any(call['method']=='POST' and call['path']=='/api/admin/users' for call in state['calls'])
+
+
 def test_voluntary_password_page_always_allows_return_and_six_digits(studio):
     page, state, _ = studio
     state['account']['user']['must_change_password'] = True
@@ -373,10 +415,10 @@ def test_voluntary_password_page_always_allows_return_and_six_digits(studio):
     page.wait_for_url('http://studio.test/', timeout=5000)
 
 
-@pytest.mark.parametrize('role', ['user', 'admin'])
+@pytest.mark.parametrize('role', ['user', 'admin', 'super_admin'])
 def test_create_role_choice_and_numeric_password(studio, role):
     page, state, _ = studio
-    state['account']['user']['role'] = 'admin'
+    state['account']['user']['role'] = 'super_admin'
     open_page(page, '/admin/users')
     assert page.locator('#create-role').count() == 1
     assert page.locator('#create-role').input_value() == 'user'
@@ -397,7 +439,7 @@ def test_create_role_choice_and_numeric_password(studio, role):
 @pytest.mark.parametrize('status', [200, 401])
 def test_role_change_revoked_session_exits_admin_ui(studio, status):
     page, state, _ = studio
-    state['account']['user']['role'] = 'admin'
+    state['account']['user']['role'] = 'super_admin'
     state['replies'][('GET', '/api/admin/users')] = (200, {'items': [dict(state['account']['user'])]})
     open_page(page, '/admin/users')
     assert page.locator('#users-list select').count() == 1

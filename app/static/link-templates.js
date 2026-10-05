@@ -6,8 +6,17 @@
   const list = byId('prompt-template-list'), templateStatus = byId('prompt-template-status');
   const source = document.querySelector('[name="video_url"]');
   const key = byId('tikhub-api-key'), keyStatus = byId('link-settings-status');
-  let items = [], selected = null, saving = false, loaded = false;
   let configured = false, inspectVersion = 0, timer;
+  const busy = () => form.getAttribute('aria-busy') === 'true';
+  function message(element, text, error = false) { if (element) { element.textContent=text; element.dataset.error=String(error); } }
+  async function request(url, method='GET', body) {
+    const response=await fetch(url,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+    const data=await response.json();
+    if (!response.ok) throw new Error(typeof data.detail==='string'?data.detail:'请求失败，请重试。');
+    return data;
+  }
+  if (prompt && name) {
+  let items = [], selected = null, saving = false, loaded = false;
   const draftKey = 'production-prompt-draft-v1';
   let baseline = {name:name.value, content:prompt.value};
   const reusablePrompt = () => window.productionPrompt?.strip(prompt.value) ?? prompt.value;
@@ -128,6 +137,8 @@
   form.addEventListener('submit', event => {
     if (saving) { event.preventDefault(); event.stopImmediatePropagation(); message(templateStatus, '模板正在保存，请稍候再生成。'); }
   }, true);
+
+  } else { queueMicrotask(() => window.dispatchEvent(new Event('production-templates-ready'))); }
 
   function keyState(data) {
     configured = data.has_api_key;

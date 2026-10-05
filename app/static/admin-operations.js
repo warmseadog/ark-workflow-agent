@@ -1,0 +1,60 @@
+(() => {
+  const $=id=>document.getElementById(id), select=$('operations-template'), form=$('operations-template-form');
+  const status=$('operations-template-status'), name=$('operations-template-name'), content=$('operations-template-content');
+  let items=[], selected=null, version='exclusive-v2', busy=false;
+  let baseline={name:'',content:''};
+  const dirty=()=>name.value!==baseline.name || content.value!==baseline.content;
+  const mayDiscard=()=>!dirty() || confirm('当前模板有未保存的修改，确定放弃这些修改？');
+  function setBusy(value) {
+    busy=value;form.setAttribute('aria-busy',String(value));
+    form.querySelectorAll('button,input,textarea').forEach(control=>control.disabled=value);
+    select.disabled=value;$('operations-template-delete').disabled=value || !selected;
+  }
+  async function request(url,method='GET',payload) {
+    return window.accountUI.readJSON(await fetch(url,{method,headers:payload?{'Content-Type':'application/json'}:{},body:payload?JSON.stringify(payload):undefined}));
+  }
+  function apply() {
+    const item=items.find(item=>item.id===select.value); selected=item?.id || null;
+    name.value=item?.name || '';content.value=item?.content || '';version=item?.rule_version || version;
+    $('operations-template-rule').textContent='规则：'+(version==='exclusive-v2'?'独立参考优先':'原版')+(item?.is_default?' · 新任务默认':'');
+    baseline={name:name.value,content:content.value};
+    $('operations-template-delete').disabled=busy || !selected;
+  }
+  async function load(preferred=selected) {
+    const data=await request('/api/admin/prompt-templates'); items=data.items;
+    select.replaceChildren(...items.map(item=>new Option(item.name,item.id)));
+    if(items.some(item=>item.id===preferred))select.value=preferred;
+    apply();
+  }
+  async function operate(action) {
+    if(busy)return;
+    setBusy(true);
+    try {await action();status.textContent='已保存';}
+    catch(error){status.textContent=error.message;}
+    finally {setBusy(false);}
+  }
+  function save(copy) {
+    if(busy || !form.reportValidity())return;
+    return operate(async()=>{
+      const item=await request('/api/admin/prompt-templates'+(!copy&&selected?'/'+selected:''),!copy&&selected?'PUT':'POST',
+        {name:name.value.trim(),content:content.value.trim(),rule_version:version});
+      await load(item.id);
+    });
+  }
+  form.addEventListener('submit',event=>{event.preventDefault();save(false);});
+  select.addEventListener('change',()=>{
+    if(busy || !mayDiscard()){select.value=selected || '';return;}
+    apply();status.textContent='';
+  });
+  $('operations-template-copy').addEventListener('click',()=>save(true));
+  $('operations-template-new').addEventListener('click',()=>{
+    if(busy || !mayDiscard())return;
+    selected=null;select.selectedIndex=-1;apply();status.textContent='';name.focus();
+  });
+  $('operations-template-delete').addEventListener('click',()=>{
+    if(!busy && selected && confirm('确认删除这个共享模板？未保存的编辑将丢弃，现有草稿和任务保持不变。'))operate(async()=>{await request('/api/admin/prompt-templates/'+selected,'DELETE');await load(null);});
+  });
+  window.addEventListener('beforeunload',event=>{if(dirty()){event.preventDefault();event.returnValue='';}});
+  setBusy(true);
+  window.accountReady.then(()=>load()).catch(error=>status.textContent=error.message).finally(()=>setBusy(false));
+})();

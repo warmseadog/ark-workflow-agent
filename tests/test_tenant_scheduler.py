@@ -1,5 +1,6 @@
 """Scheduler contracts with local SQLite stores and a dynamic account directory."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 import importlib
 from pathlib import Path
@@ -56,6 +57,17 @@ def tenants(tmp_path, monkeypatch):
     monkeypatch.setattr(tenancy, 'tenant_settings', accounts, raising=False)
     monkeypatch.setattr(tenancy, 'enabled', lambda: True, raising=False)
     monkeypatch.setenv('APP_AUTH_ENABLED', 'true')
+    # Claims now recheck lifecycle/quota atomically against the account directory.
+    # Keep this scheduler-focused directory double consistent at both boundaries;
+    # real account locking/deletion is exercised by test_scheduling_api.
+    from app.accounts import Accounts, AccountError
+    @contextmanager
+    def active_user(self, ident):
+        user = next(user for user, _ in rows if user['id'] == ident)
+        if not user['enabled'] or user.get('deleted_at'):
+            raise AccountError(403, 'Account unavailable')
+        yield dict(user)
+    monkeypatch.setattr(Accounts, 'active_user', active_user)
     a, b = add('alice'), add('bob')
     return SimpleNamespace(base=base, a=a, b=b, rows=rows, add=add,
                            tenancy=tenancy)

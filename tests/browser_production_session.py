@@ -10,7 +10,7 @@ from PIL import Image
 import json
 from pathlib import Path
 from urllib.parse import urlsplit
-from jinja2 import Environment, FileSystemLoader
+from tests.browser_template_fixture import template_environment, serve_editor_rules, LOCAL_ACCOUNT, EDITOR_RULES_PATH
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,7 +40,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         return copy.deepcopy(item)
     new_draft()
     drafts['d1']['prompt'] = '服务器保存的提示词'
-    html = Environment(loader=FileSystemLoader(ROOT / 'app/templates')).get_template('production.html').render()
+    html = template_environment(ROOT, LOCAL_ACCOUNT).get_template('production.html').render()
     with sync_playwright() as p:
         browser = p.chromium.launch(channel='msedge')
         context = browser.new_context(viewport={'width': width, 'height': 1000})
@@ -54,6 +54,8 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
             body = req.post_data_json if req.method in ('POST','PUT') and 'application/json' in req.headers.get('content-type','') else {}
             if path.startswith('/static/'):
                 route.fulfill(path=str(ROOT / 'app' / path.lstrip('/')))
+            elif path == '/api/auth/me': route.fulfill(json=LOCAL_ACCOUNT)
+            elif path == EDITOR_RULES_PATH: serve_editor_rules(route, ROOT, LOCAL_ACCOUNT)
             elif path == '/': route.fulfill(content_type='text/html', body=html)
             elif path == '/api/portrait/people': route.fulfill(json={'items':people if portrait_people else []})
             elif path.startswith('/api/portrait/people/') and path.endswith('/photos'):

@@ -52,7 +52,8 @@ def get_router(settings_getter, local_guard):
         if not config.ready: raise HTTPException(409,config.problem())
         return (portrait_service.ArkPortraitClient(config) if person_type=='LivenessFace' else portrait_service.ArkPortraitClient(config,person_type=person_type)),config
     def guarded(operation):
-        try: return operation()
+        from .prompt_visibility import project
+        try: return project(operation(), settings_getter())
         except HTTPException: raise
         except PermissionError as exc: raise HTTPException(403,str(exc)) from None
         except LookupError as exc: raise HTTPException(404,str(exc)) from None

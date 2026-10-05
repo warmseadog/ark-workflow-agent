@@ -3,7 +3,8 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
   const list=document.getElementById('production-run-list'), status=document.getElementById('runs-status');
   const previous=document.getElementById('runs-previous'), next=document.getElementById('runs-next'), pageLabel=document.getElementById('runs-page');
   const userControls=document.getElementById('runs-user-controls'), userFilter=document.getElementById('runs-user-filter');
-  const isAdmin=()=>window.currentAccount?.role==='admin';
+  const isAdmin=()=>['admin','super_admin'].includes(window.currentAccount?.role);
+  const delegatedUser=()=>window.delegatedEditor?.userId || '';
   const rowKey=item=>(item.user_id||'')+':'+item.id;
   const readRun=(item,suffix='',options={})=>item.user_id
     ? api('/'+encodeURIComponent(item.user_id)+'/'+encodeURIComponent(item.id)+suffix,'GET',undefined,{...options,adminRecords:true})
@@ -16,6 +17,28 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
   const node=(tag,text,cls)=>{const el=document.createElement(tag);if(text)el.textContent=text;if(cls)el.className=cls;return el;};
   const button=(label,fn,cls='run-text-button')=>{const el=node('button',label,cls);el.type='button';el.addEventListener('click',fn);return el;};
   const notice=error=>{status.textContent=error.message || String(error);};
+  const comparison=window.createVideoComparison?.({readRun,onError:notice});
+  const restoreKeys=new Map(),restoringTasks=new Set();
+  async function restoreTask(item){
+    const key='production-restore:'+String(window.currentAccount?.id||'local')+':'+rowKey(item);
+    if(restoringTasks.has(key))return;
+    restoringTasks.add(key);
+    try{
+      let id=restoreKeys.get(key);
+      if(!id){try{id=localStorage.getItem(key);}catch(_){}id ||= crypto.randomUUID();restoreKeys.set(key,id);}
+      try{localStorage.setItem(key,id);}catch(_){}
+      await changeDraft(async()=>{
+        const response=await fetch(item.restore_url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:id})});
+        const data=await response.json();
+        if(!response.ok){
+          if(response.status<500){restoreKeys.delete(key);try{localStorage.removeItem(key);}catch(_){}}
+          throw new Error(typeof data.detail==='string'?data.detail:'恢复草稿失败，请重试。');
+        }
+        restoreKeys.delete(key);try{localStorage.removeItem(key);}catch(_){}
+        return data;
+      });
+    }finally{restoringTasks.delete(key);}
+  }
   function elapsed(seconds){
     if(seconds==null || !Number.isFinite(seconds))return '未记录';
     const value=Math.max(0,Math.floor(seconds)),hours=Math.floor(value/3600),minutes=Math.floor(value%3600/60),rest=value%60;
@@ -27,11 +50,25 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     const label=timing.is_live||item.status==='needs_attention'?'已耗时 ':'总耗时 ';
     return label+elapsed(timing.total_seconds)+(item.status==='needs_attention'?'（待处理）':'');
   }
+  const phaseLabels={waiting:'排队',masking:'打码',upload:'上传',model:'模型生成',other:'其他处理'};
+  function phaseTime(phase){
+    if(phase?.cached)return '复用缓存'+(phase.seconds>0?'（'+elapsed(phase.seconds)+'）':'');
+    if(!phase||phase.status==='unknown'||phase.seconds==null)return '未记录';
+    if(phase.status==='pending')return '尚未执行';
+    return elapsed(phase.seconds)+(phase.status==='running'?'（进行中）':'');
+  }
+  function phaseSummary(item){
+    if(!item.timing?.phases)return '';
+    return ['masking','model'].map(key=>phaseLabels[key]+' '+phaseTime(item.timing.phases[key])).join(' · ');
+  }
   function timingDetails(holder,item){
     holder.replaceChildren();
     const timing=item.timing;
     if(!timing?.available){holder.append(node('p','历史记录未采集耗时。'));return;}
     holder.append(node('p',wallTime(item)),node('p','排队 '+elapsed(timing.queue_seconds)+' · 执行 '+elapsed(timing.execution_seconds)+' · 等待处理 '+elapsed(timing.paused_seconds)));
+    const phases=node('ul','','run-phase-details');
+    for(const [key,label] of Object.entries(phaseLabels))phases.append(node('li',label+'：'+phaseTime(timing.phases?.[key])));
+    holder.append(phases);
     const date=value=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});
     if(timing.started_at)holder.append(node('p','首次开始（北京时间）：'+date(timing.started_at)));
     if(timing.finished_at)holder.append(node('p','结束（北京时间）：'+date(timing.finished_at)));
@@ -40,6 +77,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
   }
   function updateTiming(row,item){
     row.querySelector('.run-wall-time').textContent=wallTime(item);
+    row.querySelector('.run-phase-summary').textContent=phaseSummary(item);
     const details=row.querySelector('.run-timing-details');if(details)timingDetails(details,item);
     // Open detail/media panels survive polls, while their state and timing stay current.
     row.dataset.state=item.status;
@@ -53,7 +91,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
   function refreshPreparedPeople(){
     const directory=window.portraitPeople;if(!directory||refreshingPeople)return;
     const known=new Set(directory.items.map(person=>person.id));
-    const missing=items.filter(item=>!item.read_only).map(item=>item.person_preparation?.person_id).filter(id=>id&&!known.has(id)&&!observedPreparationPeople.has(id));
+    const missing=items.filter(item=>delegatedUser() ? item.user_id===delegatedUser() : !item.read_only).map(item=>item.person_preparation?.person_id).filter(id=>id&&!known.has(id)&&!observedPreparationPeople.has(id));
     if(!missing.length)return;
     refreshingPeople=true;let succeeded=false;
     // One directory read for newly resolved identities; never select or change a draft.
@@ -72,17 +110,19 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     const token=++sequence;loading=true;previous.disabled=next.disabled=true;
     try {
       await window.accountReady;if(suspended||token!==sequence)return;
-      if(userControls)userControls.hidden=!isAdmin();
-      const data=await api((isAdmin()?'':'/runs')+'?page='+target+'&page_size=10'+(isAdmin()?'&user_id='+encodeURIComponent(userFilter?.value||''):''),'GET',undefined,{adminRecords:isAdmin()});if(suspended||token!==sequence||list.querySelector('.run-name-edit'))return;
-      if(isAdmin()&&userFilter){
+      const owner=delegatedUser();
+      if(userControls)userControls.hidden=!isAdmin() || Boolean(owner);
+      const data=await api((isAdmin()?'':'/runs')+'?page='+target+'&page_size=10'+(isAdmin()?'&user_id='+encodeURIComponent(owner || userFilter?.value || ''):''),'GET',undefined,{adminRecords:isAdmin()});if(suspended||token!==sequence||list.querySelector('.run-name-edit'))return;
+      if(isAdmin()&&userFilter&&!owner){
         const selected=userFilter.value,version=JSON.stringify(data.users||[]);
         if(userFilter.dataset.version!==version){
           userFilter.replaceChildren(new Option('全部用户',''),...(data.users||[]).map(user=>new Option(user.username+(user.enabled?'':'（已停用）'),user.id)));
           userFilter.value=selected;userFilter.dataset.version=version;
         }
       }
-      items=data.items||[];page=data.page||target;pages=data.pages||1;total=data.total??items.length;active=data.active_count??items.filter(x=>['queued','running'].includes(x.status)).length;
-      render();refreshPreparedPeople();status.textContent=total?'共 '+total+' 个任务，最新创建的排在前面。':'还没有生成任务。';
+      items=owner ? (data.items||[]).filter(item=>item.user_id===owner).map(item=>({...item,read_only:true})) : data.items||[];
+      page=data.page||target;pages=data.pages||1;total=data.total??items.length;active=data.active_count??items.filter(x=>['queued','running'].includes(x.status)).length;
+      render();refreshPreparedPeople();status.textContent=(owner?'当前代操作用户：':'')+(total?'共 '+total+' 个任务，最新创建的排在前面。':'还没有生成任务。');
     } catch(error){if(!suspended&&token===sequence&&error.name!=='AbortError')notice(error);}
     finally{if(token===sequence){loading=false;previous.disabled=page<=1;next.disabled=page>=pages;schedule();}}
   }
@@ -111,8 +151,9 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     const model=node('span',window.generationOptions?.label?.(item.model)||item.model||'未记录','run-model');
     const duration=node('span','','run-duration');
     duration.append(node('span',item.target_duration ? `目标 ${item.target_duration} 秒` : item.source_clip ? `片段 ${item.source_clip.start}–${Number((item.source_clip.start + item.source_clip.duration).toFixed(3))} 秒 · ${item.source_clip.duration} 秒` : item.duration===-1?'视频跟随原片':item.duration>0?'视频 '+item.duration+' 秒':'视频时长未记录'),node('small',wallTime(item),'run-wall-time'));
+    duration.append(node('small',phaseSummary(item),'run-phase-summary'));
     const actions=node('div','','run-actions');
-    if(item.download_url){const play=button('播放',()=>openPlayer(item));play.dataset.runAction='play';actions.append(play);const download=node('a','下载','run-text-button');download.href=item.download_url;download.download='';actions.append(download);}
+    if(item.download_url){const play=button('播放',()=>openPlayer(item));play.dataset.runAction='play';actions.append(play);if(comparison){const compare=button('对比',()=>{if(dialog.open)dialog.close();comparison.open(item);});compare.dataset.runAction='comparison';actions.append(compare);}const download=node('a','下载','run-text-button');download.href=item.download_url;download.download='';actions.append(download);}
     const more=node('details','','run-menu');more.append(node('summary','更多'));
     const menu=node('div','','run-menu-items');more.append(menu);
     const panel=node('details','','run-detail-panel');panel.append(node('summary','任务详情'));panel.hidden=true;
@@ -128,6 +169,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     }
     const add=(action,label,fn,disabled=false)=>{const b=button(label,async()=>{more.open=false;try{await fn();}catch(error){notice(error);}});b.dataset.runAction=action;b.disabled=disabled;menu.append(b);};
     add('details','查看详情',showDetails);
+    if(item.can_restore_draft&&item.restore_url)add('restore','恢复为新草稿',()=>restoreTask(item));
     if(!item.read_only){
     add('copy','复制为草稿',()=>changeDraft(()=>api('/runs/'+encodeURIComponent(item.id)+'/copy','POST',{})));
     if(item.can_cancel)add('cancel','取消排队',async()=>{await api('/runs/'+item.id+'/cancel','POST',{});await refresh();});
@@ -135,7 +177,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     if(item.can_retry_preparation)add('retry-preparation','重新检查人物准备',async()=>{await api('/runs/'+item.id+'/person-preparation/retry','POST',{});await refresh();});
     add('delete','删除任务',async()=>{
       if(!window.confirm('删除这条任务记录？草稿和原始视频文件会保留。'+(item.status==='needs_attention'?' 此操作不会取消服务商端的任务。':'')))return;
-      await api('/runs/'+item.id,'DELETE');if(playerRun?.id===item.id)dialog.close();await refresh();
+      await api('/runs/'+item.id,'DELETE');if(playerRun?.id===item.id)dialog.close();if(comparison?.isOpen(item))comparison.close();await refresh();
     },item.can_delete===false);
     }
     actions.append(more);row.append(title,time,state,model,duration,actions);
@@ -248,12 +290,17 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     }catch(error){if(token!==playerToken||!dialog.open)return;playerStatus.textContent='预览状态读取失败，当前播放原片。';if(initial)playQuality('original');}
   }
   async function openPlayer(item){
+    comparison?.close();
     clearTimeout(playbackTimer);playerRead?.abort();playerRead=new AbortController();playerRun=item;playback=null;quality='smooth';const token=++playerToken;playerTitle.textContent=item.name||'视频播放';playerStatus.textContent='正在准备播放…';
     video.pause();video.removeAttribute('src');video.load();qualityButtons.forEach(b=>b.disabled=true);
     document.getElementById('run-player-download').href=item.download_url;dialog.showModal();
     qualityButtons[1].disabled=false;await checkPlayback(token,true);
   }
   qualityButtons.forEach(b=>b.addEventListener('click',()=>playQuality(b.dataset.playQuality,true)));
+  if(comparison){
+    const switchComparison=button('对比原片',()=>{const item=playerRun;if(!item)return;dialog.close();comparison.open(item);});
+    switchComparison.id='run-player-comparison';dialog.querySelector('.run-player-tools').append(switchComparison);
+  }
   document.getElementById('run-player-close').addEventListener('click',()=>dialog.close());
   dialog.addEventListener('close',()=>{playerToken++;playerRead?.abort();clearTimeout(playbackTimer);video.pause();video.removeAttribute('src');video.load();playerRun=null;});
   video.addEventListener('error',()=>{if(dialog.open)playerStatus.textContent='视频暂时无法播放，可以切换原画或下载查看。';});
@@ -262,9 +309,10 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
   userFilter?.addEventListener('change',()=>{
     if(list.querySelector('.run-name-edit')){userFilter.value=userFilter.dataset.applied||'';notice('请先保存或取消正在修改的名称。');return;}
     userFilter.dataset.applied=userFilter.value;if(dialog.open)dialog.close();
+    comparison?.close();
     list.querySelectorAll('video').forEach(media.releaseVideo);list.replaceChildren();
     status.textContent='正在读取任务…';refresh(1);
   });
   document.addEventListener('click',event=>{list.querySelectorAll('.run-menu[open]').forEach(menu=>{if(!menu.contains(event.target))menu.open=false;});});
-  return {refresh,submitted:()=>refresh(1),suspend(){suspended=true;sequence++;clearTimeout(pollTimer);playerToken++;playerRead?.abort();clearTimeout(playbackTimer);if(dialog.open)dialog.close();list.querySelectorAll('video').forEach(media.releaseVideo);}};
+  return {refresh,submitted:()=>refresh(1),suspend(){suspended=true;sequence++;clearTimeout(pollTimer);playerToken++;playerRead?.abort();clearTimeout(playbackTimer);if(dialog.open)dialog.close();comparison?.close();list.querySelectorAll('video').forEach(media.releaseVideo);}};
 };

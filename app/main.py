@@ -20,6 +20,7 @@ from .video_links import LABELS, platform_for_url
 
 from .config import settings
 from . import tenancy
+from . import prompt_visibility
 from .generation_settings import PRESETS, load_config, save_config, resolve_config
 from .model_connection import test_connection
 from .reference_media import get_video
@@ -54,6 +55,8 @@ APP_DIR = Path(__file__).resolve().parent
 RELEASE_ROOT = APP_DIR.parent
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
+templates.env.globals['prompt_editor_visible'] = lambda request: (not tenancy.enabled() or
+    (getattr(request.state, 'user', None) or {}).get('role') in {'admin', 'super_admin'})
 
 # Versioned workflow API; legacy /api/jobs routes remain compatible.
 app.include_router(get_workflow_router())
@@ -95,6 +98,8 @@ from .authentication import get_router as get_auth_router
 app.include_router(get_auth_router(lambda:settings,templates))
 from .user_admin import get_router as get_user_admin_router
 app.include_router(get_user_admin_router(lambda:settings,templates))
+from .scheduling_settings import get_router as get_scheduling_router
+app.include_router(get_scheduling_router(lambda:settings))
 from .support import get_router as get_support_router
 app.include_router(get_support_router(lambda:settings,templates))
 from .preview_router import get_router as get_preview_router
@@ -184,6 +189,7 @@ def import_video_link(request: Request, payload: LinkInput):
 @app.get('/api/prompt-templates')
 def get_prompt_templates(request: Request):
     _local_config_request(request)
+    prompt_visibility.require_editor(tenancy.current_settings(settings))
     return {'items': local_preferences.list_templates(tenancy.current_settings(settings))}
 
 def _save_prompt(payload, template_id=None, *, shared=False):
@@ -200,16 +206,19 @@ def _save_prompt(payload, template_id=None, *, shared=False):
 @app.post('/api/prompt-templates')
 def create_prompt_template(request: Request, payload: PromptTemplateInput):
     _local_config_request(request)
+    prompt_visibility.require_editor(tenancy.current_settings(settings))
     return _save_prompt(payload)
 
 @app.put('/api/prompt-templates/{template_id}')
 def update_prompt_template(request: Request, template_id: str, payload: PromptTemplateInput):
     _local_config_request(request)
+    prompt_visibility.require_editor(tenancy.current_settings(settings))
     return _save_prompt(payload, template_id)
 
 @app.delete('/api/prompt-templates/{template_id}')
 def delete_prompt_template(request: Request, template_id: str):
     _local_config_request(request)
+    prompt_visibility.require_editor(tenancy.current_settings(settings))
     try:
         local_preferences.delete_template(tenancy.current_settings(settings), template_id)
     except PermissionError as exc:
@@ -219,6 +228,14 @@ def delete_prompt_template(request: Request, template_id: str):
     except ValueError as exc:
         raise HTTPException(422,str(exc)) from None
     return {'deleted': True}
+
+
+@app.get('/api/admin/prompt-templates/editor-rules.js')
+def prompt_editor_rules(request: Request):
+    _local_config_request(request)
+    prompt_visibility.require_editor(tenancy.current_settings(settings))
+    return FileResponse(APP_DIR / 'editor_assets' / 'legacy-prompt-rules.js',
+                        media_type='application/javascript', headers={'Cache-Control':'private, no-store'})
 
 
 @app.get('/api/admin/prompt-templates')
@@ -290,9 +307,12 @@ def put_model_settings(request: Request, payload: dict):
 
 
 @app.get('/admin/settings', response_class=HTMLResponse)
+@app.get('/admin/templates', response_class=HTMLResponse)
 def admin_page(request: Request):
     _local_config_request(request)
-    return templates.TemplateResponse(request=request, name='admin_settings.html', context={})
+    actor = getattr(request.state, 'user', None)
+    page = 'admin_operations.html' if tenancy.enabled() and actor and actor['role']=='admin' else 'admin_settings.html'
+    return templates.TemplateResponse(request=request, name=page, context={})
 
 
 @app.get('/api/admin/overview')

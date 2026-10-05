@@ -14,7 +14,7 @@ from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit
 
 import imageio_ffmpeg
-from jinja2 import Environment, FileSystemLoader
+from tests.browser_template_fixture import template_environment, serve_editor_rules, LOCAL_ACCOUNT, EDITOR_RULES_PATH
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
 from tests.browser_model_fixture import options as model_options
@@ -49,7 +49,7 @@ def check(width=1440, sole_real=False, legacy=False, bound=False):
                                    url='/api/production/assets/bound/file', sha256='bound',
                                    portrait={'status': 'Active', 'remote_asset_id': 'asset-bound', 'group_id': 'group-real'})
         new_draft({'face_asset_ids': ['bound'], 'assets': [assets['bound']]} if bound else {})
-    html = Environment(loader=FileSystemLoader(ROOT / 'app/templates')).get_template('production.html').render()
+    html = template_environment(ROOT, LOCAL_ACCOUNT).get_template('production.html').render()
     with TemporaryDirectory(prefix='auto-virtual-browser-') as tmp:
         clip = Path(tmp) / 'person.mp4'
         subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-y', '-f', 'lavfi', '-i',
@@ -68,6 +68,12 @@ def check(width=1440, sole_real=False, legacy=False, bound=False):
                 calls.append((req.method, path, body))
                 if path == '/':
                     route.fulfill(content_type='text/html', body=html)
+                elif path == '/api/auth/me':
+                    route.fulfill(json=LOCAL_ACCOUNT)
+                elif path == '/api/support/config':
+                    route.fulfill(json={'input_requirements': {}, 'billing_notice': '离线测试，不提交付费请求。'})
+                elif path == EDITOR_RULES_PATH:
+                    serve_editor_rules(route, ROOT, LOCAL_ACCOUNT)
                 elif path.startswith('/static/'):
                     route.fulfill(path=str(ROOT / 'app' / path.lstrip('/')))
                 elif path == '/api/portrait/people':

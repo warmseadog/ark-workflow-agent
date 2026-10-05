@@ -27,24 +27,29 @@ def test_secondary_admin_shared_template_form(browser, accounts_clients, width):
     page.on('dialog', lambda dialog: dialog.accept())
     try:
         page.goto('http://testserver/admin/settings#prompts')
-        form = page.locator('#prompt-form')
-        expect(form.locator('fieldset')).to_be_enabled()
-        expect(page.locator('#admin-template-select option[value="'+personal['id']+'"]')).to_have_count(0)
-        form.locator('[name=name]').fill('Shared browser template')
-        form.locator('[name=content]').fill('shared browser content')
+        form = page.locator('#operations-template-form')
+        content = page.locator('#operations-template-content')
+        expect(content).to_be_enabled()
+        expect(page.locator('#operations-template option[value="'+personal['id']+'"]')).to_have_count(0)
+        page.locator('#operations-template-new').click()
+        page.locator('#operations-template-name').fill('Shared browser template')
+        content.fill('shared browser content')
         form.locator('button[type=submit]').click()
-        expect(page.locator('#prompt-status')).to_contain_text('模板已保存')
-        ident = page.locator('#admin-template-select').input_value()
+        expect(content).to_be_enabled()
+        expect(page.locator('#operations-template-status')).to_contain_text('已保存')
+        ident = page.locator('#operations-template').input_value()
         assert ident
-        shared = next(x for x in bob.get('/api/prompt-templates').json()['items'] if x['id']=='system:'+ident)
+        assert bob.get('/api/prompt-templates').status_code == 403
+        shared = next(x for x in legacy.get('/api/prompt-templates').json()['items'] if x['id']=='system:'+ident)
         assert shared['read_only'] and shared['content']=='shared browser content'
-        form.locator('[name=content]').fill('updated shared content')
+        content.fill('updated shared content')
         form.locator('button[type=submit]').click()
-        expect(form.locator('fieldset')).to_be_enabled()
-        assert next(x for x in bob.get('/api/prompt-templates').json()['items'] if x['id']=='system:'+ident)['content']=='updated shared content'
-        page.locator('#delete-template').click()
-        expect(page.locator('#prompt-status')).to_contain_text('模板已删除')
-        assert all(x['id']!='system:'+ident for x in bob.get('/api/prompt-templates').json()['items'])
+        expect(content).to_be_enabled()
+        assert next(x for x in legacy.get('/api/prompt-templates').json()['items'] if x['id']=='system:'+ident)['content']=='updated shared content'
+        page.locator('#operations-template-delete').click()
+        expect(content).to_be_enabled()
+        expect(page.locator('#operations-template-status')).to_contain_text('已保存')
+        assert all(x['id']!='system:'+ident for x in legacy.get('/api/prompt-templates').json()['items'])
         assert any(x['id']==personal['id'] for x in alice.get('/api/prompt-templates').json()['items'])
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         assert not errors, errors

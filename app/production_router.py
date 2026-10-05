@@ -1,6 +1,7 @@
 """Local production API: durable media, editable drafts and immutable runs."""
 from __future__ import annotations
 from dataclasses import asdict
+from contextlib import contextmanager
 import mimetypes
 from pathlib import Path
 import re
@@ -20,6 +21,8 @@ from .model_catalog import TASK_FIELDS, task_values, resolve_task_config, editor
 from . import tenancy
 from . import queue_admission
 from . import input_limits
+from . import prompt_visibility
+from .accounts import AccountError
 
 _MODEL_FIELDS = {'provider','protocol','mode','base_url','model','duration','fps','resolution','ratio','public_base_url','generate_audio'}
 _DRAFT_FIELDS = {'source_clip','person_reference_mode','person_video_asset_id','name','person_id','source_asset_id','face_asset_ids','clothing_asset_ids','hairstyle_asset_ids','scene_asset_ids','hairstyle_enabled','hairstyle_mask','scene_enabled','scene_description','prompt','mask','model'}
@@ -49,12 +52,23 @@ def get_router(settings_getter, local_guard):
     def public_model():
         return editor_options(settings_getter())['defaults']
 
+    @contextmanager
+    def active_quota():
+        if not tenancy.enabled():
+            yield None
+            return
+        from .accounts import Accounts
+        effective = settings_getter()
+        with Accounts(tenancy.config_root(effective)).active_user(effective.user_id) as user:
+            yield user['max_queued']
+
     @router.get('/model-options')
     def model_options():
         return editor_options(settings_getter())
     def guarded(operation):
-        try: return operation()
+        try: return prompt_visibility.project(operation(), settings_getter())
         except HTTPException: raise
+        except AccountError as exc: raise HTTPException(exc.status_code, exc.detail) from None
         except queue_admission.CapacityError as exc:
             raise HTTPException(429,str(exc),headers={'Retry-After':'2'}) from None
         except PermissionError as exc: raise HTTPException(403,str(exc)) from None
@@ -251,6 +265,7 @@ def get_router(settings_getter, local_guard):
 
     @router.post('/prompt-preview')
     def prompt_preview(payload: dict):
+        prompt_visibility.require_editor(settings_getter())
         def operation():
             from .reference_prompt import compose_exclusive_prompt
             from .prompt_templates import EXCLUSIVE_RULE_VERSION
@@ -269,6 +284,8 @@ def get_router(settings_getter, local_guard):
     @router.post('/drafts')
     def create_draft(payload: dict):
         def operation():
+            if not prompt_visibility.can_edit(settings_getter()) and prompt_visibility.PROMPT_FIELDS.intersection(payload):
+                raise HTTPException(403, '提示词由管理员管理。')
             values={}
             if payload.get('copy_from') is not None and not isinstance(payload['copy_from'],str): raise ValueError('草稿标识不正确。')
             if payload.get('copy_from'):
@@ -302,10 +319,12 @@ def get_router(settings_getter, local_guard):
             revision=payload.get('revision')
             if type(revision) is not int: raise ValueError('缺少草稿版本，请重新打开草稿。')
             current=store().get_draft(ident)
+            if not prompt_visibility.can_edit(settings_getter()) and prompt_visibility.PROMPT_FIELDS.intersection(payload):
+                raise HTTPException(403, '提示词由管理员管理。')
             if tenancy.enabled() and 'mask' in payload and payload['mask'] != current.get('mask'):
                 from .accounts import Accounts
                 effective=settings_getter()
-                if Accounts(tenancy.config_root(effective)).get_user(effective.user_id)['role']!='admin':
+                if not prompt_visibility.can_edit(effective):
                     # Equivalent alias/default normalization is harmless; actual configuration is admin-owned.
                     try: same=production_worker.mask_options(payload['mask']) == production_worker.mask_options(current.get('mask',{}))
                     except (ValueError,TypeError): same=False
@@ -370,6 +389,10 @@ def get_router(settings_getter, local_guard):
             continuation_intent = continuation_preflight(settings_getter(),store(),draft,config)
             from .portrait_generation import prepare
             private={'generation':asdict(config),'storage':asdict(storage)}
+            actor = prompt_visibility.actor(settings_getter())
+            if actor and actor['id'] != settings_getter().user_id:
+                private['delegation'] = {'actor_id':actor['id'],'owner_id':settings_getter().user_id,
+                                         'source_run_id':draft.get('delegation',{}).get('source_run_id')}
             if continuation_intent:
                 private['continuation'] = continuation_intent
             if policy == 'auto_virtual':
@@ -377,8 +400,18 @@ def get_router(settings_getter, local_guard):
             else:
                 portrait=prepare(settings_getter(),store(),draft,config)
                 if portrait: private['portrait']=portrait
-            run=store().create_run(draft_id,revision,key,private,max_queued=queue_limit())
+            if tenancy.enabled():
+                from .accounts import Accounts
+                effective = settings_getter()
+                with Accounts(tenancy.config_root(effective)).active_user(effective.user_id) as owner:
+                    run=store().create_run(draft_id,revision,key,private,max_queued=owner['max_queued'])
+            else:
+                run=store().create_run(draft_id,revision,key,private,max_queued=queue_limit())
             production_worker.wake(settings_getter())
+            if private.get('delegation'):
+                from .accounts import Accounts
+                Accounts(tenancy.config_root(settings_getter())).audit(actor['id'], 'submit_user_run',
+                    settings_getter().user_id+':'+run['id'], {'resource':draft_id})
             return decorate_run(run)
         return guarded(operation)
 
@@ -470,7 +503,8 @@ def get_router(settings_getter, local_guard):
     def resume_run(ident: str):
         def operation():
             store().require_visible(ident)
-            run=store().resume_run(ident,max_queued=queue_limit())
+            with active_quota() as quota:
+                run=store().resume_run(ident,max_queued=quota)
             production_worker.wake(settings_getter())
             return decorate_run(run)
         return guarded(operation)
@@ -479,7 +513,8 @@ def get_router(settings_getter, local_guard):
     def retry_person_preparation(ident: str):
         def operation():
             store().require_visible(ident)
-            run = store().retry_preparation(ident,max_queued=queue_limit())
+            with active_quota() as quota:
+                run = store().retry_preparation(ident,max_queued=quota)
             production_worker.wake(settings_getter())
             return decorate_run(run)
         return guarded(operation)

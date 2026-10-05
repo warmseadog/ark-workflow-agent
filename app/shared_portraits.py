@@ -46,7 +46,7 @@ class SharedPortraitCatalog:
         self.user_id = getattr(settings,'user_id','')
         self.accounts = Accounts(tenancy.config_root(settings)) if tenancy.enabled() else None
         self.user = self.accounts.get_user(self.user_id) if self.accounts and self.user_id else None
-        self.admin = not tenancy.enabled() or bool(self.user and self.user['enabled'] and self.user['role']=='admin')
+        self.admin = not tenancy.enabled() or bool(self.user and self.user['enabled'] and self.user['role'] in {'admin','super_admin'})
         self._libraries=None
         self._index=None
         self._photos_index={}

@@ -53,7 +53,7 @@ def accounts_clients(protected,monkeypatch):
     for user in users:
         client=TestClient(main.app)
         response=client.post('/api/auth/login',headers={'Origin':'http://testserver'},json={
-            'username':user['username'],'password':'changed-admin-password' if user['role']=='admin' else 'changed-user-password'})
+            'username':user['username'],'password':'changed-admin-password' if user['id']==admin['id'] else 'changed-user-password'})
         assert response.status_code == 200,response.text
         client.headers['X-CSRF-Token']=response.json()['csrf_token']
         clients.append(client)
@@ -81,9 +81,8 @@ def test_two_accounts_cannot_read_or_mutate_each_others_objects(accounts_clients
     assert other.status_code==200,other.text
     assert other.json()['id']!=run['id']
     assert a.get(draft['assets'][0]['url']).headers['cache-control']=='no-store'
-    template=a.post('/api/prompt-templates',json={'name':'alice only','content':'test'}).json()
-    assert template['id'] not in [x['id'] for x in b.get('/api/prompt-templates').json()['items']]
-    assert b.delete('/api/prompt-templates/'+template['id']).status_code==404
+    assert a.post('/api/prompt-templates',json={'name':'alice only','content':'test'}).status_code==403
+    assert b.get('/api/prompt-templates').status_code==403
 
 
 def test_completed_video_library_and_posters_stay_with_owner(accounts_clients):

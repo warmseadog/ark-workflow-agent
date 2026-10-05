@@ -82,10 +82,10 @@ def test_candidate_requires_review_and_v1_handoff_is_idempotent(client, monkeypa
     }).status_code == 409
 
 
-def test_approved_candidate_allows_local_upload_when_platform_download_fails(client, monkeypatch):
+def test_approved_candidate_allows_local_upload_when_platform_download_fails(client, monkeypatch, tmp_path):
     from app import main
     from dataclasses import replace
-    monkeypatch.setattr(main, 'settings', replace(main.settings, storage_dir=__import__('pathlib').Path(client.__dict__.get('_unused', 'storage'))))
+    monkeypatch.setattr(main, 'settings', replace(main.settings, storage_dir=tmp_path))
     item = client.post('/api/discovery/import', json={'links': ['https://www.douyin.com/video/11111111']}).json()['imported'][0]
     client.post(f"/api/discovery/candidates/{item['id']}/review", json={'decision': 'approved'})
     class HeldThread:

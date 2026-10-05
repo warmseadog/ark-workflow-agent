@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from .accounts import Accounts
 from .production_store import ProductionStore
 from . import tenancy
+from .permissions import is_admin, can_manage
 
 
 def disk_usage(root):
@@ -22,7 +23,7 @@ def get_router(settings_getter,templates):
     router=APIRouter()
     def admin(request):
         user=getattr(request.state,'user',None)
-        if not tenancy.enabled() or not user or user['role']!='admin':
+        if not tenancy.enabled() or not is_admin(user):
             raise HTTPException(403,'此操作仅管理员可用。')
         return user
 
@@ -37,7 +38,7 @@ def get_router(settings_getter,templates):
         if status and status not in {'queued','running','succeeded','failed','needs_attention','cancelled'}:
             raise HTTPException(422,'任务状态无效。')
         accounts=Accounts(settings_getter().storage_dir)
-        tenants=tenancy.tenant_settings(settings_getter(),include_disabled=True)
+        tenants=[item for item in tenancy.tenant_settings(settings_getter(),include_disabled=True) if can_manage(actor,item[0])]
         if user_id:
             tenants=[item for item in tenants if item[0]['id']==user_id]
             if not tenants:raise HTTPException(404,'用户不存在。')
@@ -92,6 +93,8 @@ def get_router(settings_getter,templates):
         actor=admin(request)
         accounts=Accounts(settings_getter().storage_dir)
         user=accounts.get_user(user_id)
+        if not can_manage(actor,user):
+            raise HTTPException(403,'此账号不在你的管理权限范围内。')
         effective=tenancy.user_settings(settings_getter(),user)
         store=ProductionStore(effective.storage_dir)
         try:

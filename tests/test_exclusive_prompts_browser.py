@@ -69,6 +69,7 @@ def test_exclusive_default_reference_changes_restore_and_legacy_switch(browser,c
 
 def test_stale_preview_cannot_replace_current_and_failure_blocks_submit(browser,client):
     draft=complete_draft(client)
+    existing_runs = {run['id'] for run in client.get('/api/production/runs').json()['items']}
     context=browser.new_context(viewport={'width':1440,'height':1000})
     page=context.new_page();held=[];runs=[]
     state={'fail':False}
@@ -108,6 +109,6 @@ def test_stale_preview_cannot_replace_current_and_failure_blocks_submit(browser,
         page.locator('#studio-generate-submit').click()
         expect(page.locator('#production-status')).to_contain_text('测试预览失败')
         assert not runs
-        assert not client.get('/api/production/runs').json()['items']
+        assert {run['id'] for run in client.get('/api/production/runs').json()['items']} == existing_runs
     finally:
         context.close()

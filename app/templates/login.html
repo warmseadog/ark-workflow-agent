@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <link rel="stylesheet" href="/static/account.css?v=20260929-navigation-people-1">
-<script src="/static/account.js?v=20261005-register-1"></script>
+<script src="/static/account.js?v=20261005-admin-workflow-1"></script>
 <link rel="stylesheet" href="/static/support.css?v=20261005-support-2">
 <script src="/static/support-ui.js?v=20261005-support-1"></script>
 <title>mira — 氛围感 AI 时尚总监</title>
@@ -48,8 +48,8 @@
   <p class="auth-switch"><span data-i18n="noAccount">还没有账号？</span><button id="switch-register" type="button" data-auth-mode="register" data-i18n="registerNow">立即注册</button></p>
  </form>
  <form id="register-form" hidden>
-  <label class="login-field" for="register-username"><span data-i18n="username">用户名</span><input id="register-username" name="username" autocomplete="username" spellcheck="false" required maxlength="64" aria-describedby="register-username-hint"></label>
-  <p class="auth-hint" id="register-username-hint" data-i18n="usernameHint">1–64 位，可使用中文、字母、数字和 . @ + _ -。</p>
+  <label class="login-field" for="register-username"><span data-i18n="username">用户名</span><input id="register-username" name="username" autocomplete="username" spellcheck="false" required minlength="2" maxlength="20" aria-describedby="register-username-hint"></label>
+  <p class="auth-hint" id="register-username-hint" data-i18n="usernameHint">2–20 位，可使用中文、字母、数字和 . @ + _ -。</p>
   <label class="login-field" for="register-password"><span data-i18n="newPassword">设置密码</span><input id="register-password" name="password" type="password" autocomplete="new-password" required minlength="6" maxlength="1024" aria-describedby="register-password-hint"></label>
   <p class="auth-hint" id="register-password-hint" data-i18n="passwordHint">至少 6 位，可使用纯数字。</p>
   <label class="login-field" for="register-confirm-password"><span data-i18n="confirmPassword">确认密码</span><input id="register-confirm-password" name="confirm_password" type="password" autocomplete="new-password" required minlength="6" maxlength="1024"></label>
@@ -90,6 +90,6 @@
 </dialog>
 <dialog id="info-dialog" aria-labelledby="info-title"><div class="dialog-top"><h2 id="info-title"></h2><button class="close" data-action="close" data-i18n-label="close">×</button></div><p class="info-copy" id="info-copy"></p><button class="mira-action" data-action="close" data-i18n="ok">知道了</button></dialog>
 <script src="/static/mira/mira-cases-data.js?v=20261005-cases-1"></script>
-<script src="/static/mira/mira-cover.js?v=20261005-register-1"></script>
+<script src="/static/mira/mira-cover.js?v=20261005-admin-workflow-1"></script>
 <script src="/static/login.js?v=20261005-register-1"></script>
 </body></html>

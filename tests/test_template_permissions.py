@@ -17,16 +17,15 @@ def login(client, username, password):
 def test_demoted_legacy_owner_cannot_write_existing_shared_template(accounts_clients, method, prefix):
     accounts, users, (legacy, alice, bob) = accounts_clients
     original = local_preferences.save_template(main.settings, 'Existing shared', 'original')
-    accounts.update_user(users[1]['id'], users[0]['id'], role='admin')
+    accounts.update_user(users[1]['id'], users[0]['id'], role='super_admin')
     accounts.update_user(users[0]['id'], users[1]['id'], role='user')
     assert legacy.get('/api/auth/me').status_code == 401
     login(legacy, 'admin', 'changed-admin-password')
     response = legacy.request(method, '/api/prompt-templates/'+prefix+original['id'],
                               json={'name': 'Changed', 'content': 'tampered'})
     assert response.status_code == 403, response.text
-    shared = next(x for x in bob.get('/api/prompt-templates').json()['items']
-                  if x['id'] == 'system:'+original['id'])
-    assert shared['content'] == 'original' and shared['read_only']
+    assert bob.get('/api/prompt-templates').status_code == 403
+    assert next(x for x in local_preferences.list_templates(main.settings) if x['id']==original['id'])['content']=='original'
 
 
 def test_legacy_owner_personal_templates_remain_private_across_role_changes(accounts_clients):
@@ -34,15 +33,18 @@ def test_legacy_owner_personal_templates_remain_private_across_role_changes(acco
     created = legacy.post('/api/prompt-templates', json={'name': 'Private', 'content': 'only me'})
     assert created.status_code == 200
     ident = created.json()['id']
-    assert all(x['content'] != 'only me' for x in bob.get('/api/prompt-templates').json()['items'])
-    accounts.update_user(users[1]['id'], users[0]['id'], role='admin')
+    assert bob.get('/api/prompt-templates').status_code == 403
+    accounts.update_user(users[1]['id'], users[0]['id'], role='super_admin')
     accounts.update_user(users[0]['id'], users[1]['id'], role='user')
     login(legacy, 'admin', 'changed-admin-password')
-    assert legacy.put('/api/prompt-templates/'+ident, json={'name': 'Private', 'content': 'updated'}).status_code == 200
+    assert legacy.put('/api/prompt-templates/'+ident, json={'name': 'Private', 'content': 'updated'}).status_code == 403
     copy = legacy.post('/api/prompt-templates', json={'name': 'Copy', 'content': 'still private'})
-    assert copy.status_code == 200
-    assert all(x['content'] not in {'updated', 'still private'} for x in bob.get('/api/prompt-templates').json()['items'])
-    assert legacy.delete('/api/prompt-templates/'+ident).status_code == 200
+    assert copy.status_code == 403
+    assert bob.get('/api/prompt-templates').status_code == 403
+    assert legacy.delete('/api/prompt-templates/'+ident).status_code == 403
+    accounts.update_user(users[0]['id'], users[1]['id'], role='admin')
+    login(legacy, 'admin', 'changed-admin-password')
+    assert any(x['id']==ident and x['content']=='only me' for x in legacy.get('/api/prompt-templates').json()['items'])
     assert accounts.get_user(users[0]['id'])['legacy_owner'] is True
 
 
@@ -57,7 +59,7 @@ def test_any_current_admin_can_manage_shared_templates_without_exposing_personal
     assert created.status_code == 200, created.text
     ident = created.json()['id']
     assert all(x['id'] != personal['id'] for x in alice.get(endpoint).json()['items'])
-    for client in (legacy, alice, bob):
+    for client in (legacy, alice):
         item = next(x for x in client.get('/api/prompt-templates').json()['items'] if x['id']=='system:'+ident)
         assert item['read_only'] and item['scope']=='shared'
     assert alice.put(endpoint+'/'+ident, json={'name': 'Updated', 'content': 'new shared'}).status_code == 200
@@ -75,7 +77,7 @@ def test_shared_template_service_rechecks_role_and_enabled_state(accounts_client
     from app.tenancy import user_settings
     accounts, users, _ = accounts_clients
     caller = user_settings(main.settings, users[0])
-    accounts.update_user(users[1]['id'], users[0]['id'], role='admin')
+    accounts.update_user(users[1]['id'], users[0]['id'], role='super_admin')
     accounts.update_user(users[0]['id'], users[1]['id'], role='user')
     with pytest.raises(PermissionError):
         local_preferences.save_shared_template(caller, 'Denied', 'denied')

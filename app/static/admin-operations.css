@@ -1,0 +1,12 @@
+.operations-page .page-header{max-width:1216px;margin:auto;padding:30px 44px 22px;border-bottom:1px solid var(--hair);display:flex;gap:20px;justify-content:space-between;align-items:center}
+.operations-page .page-header h1{margin:0;font-size:26px;letter-spacing:0}
+.operations-page .page-header nav{display:flex;align-items:center;gap:12px;font-size:13px}
+.operations-page .page-header a:hover{color:var(--accent)}
+.operations-page .content{padding-top:24px}
+.operations-page .section{margin-top:24px}
+.operations-page .section>h2{margin-bottom:16px}
+.operations-page .section>p{line-height:1.8;color:var(--muted);font-size:13px}
+.operations-page textarea{line-height:1.8;resize:vertical}
+.operations-page .actions{justify-content:flex-start}
+.operations-page .actions .danger{margin-left:auto;margin-right:0}
+@media(max-width:720px){.operations-page .page-header{padding:22px 20px 16px;display:block}.operations-page .page-header nav{margin-top:12px;padding:0}.operations-page .page-header nav a{padding:6px 0}.operations-page .actions button{flex:1 1 calc(50% - 10px);min-width:120px}.operations-page .actions .danger{margin-left:0}.operations-page .card{padding:18px}}

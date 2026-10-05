@@ -17,6 +17,7 @@ import sqlite3
 import time
 import unicodedata
 from uuid import uuid4
+from .permissions import is_admin, is_super_admin, can_manage
 
 from argon2 import PasswordHasher, Type
 from argon2.exceptions import InvalidHashError, VerificationError
@@ -32,7 +33,7 @@ _HASHER = PasswordHasher(type=Type.ID)
 _DUMMY_HASH = _HASHER.hash(secrets.token_urlsafe(32))
 _PUBLIC_FIELDS = (
     'id', 'username', 'role', 'enabled', 'must_change_password',
-    'max_concurrent', 'max_queued', 'legacy_owner', 'created_at',
+    'max_concurrent', 'max_queued', 'legacy_owner', 'created_at', 'deleted_at',
 )
 
 
@@ -43,12 +44,14 @@ class AccountError(Exception):
         super().__init__(detail)
 
 
-def _username(value: str) -> str:
+def _username(value: str, *, new=False) -> str:
     if not isinstance(value, str) or len(value) > 256:
         raise AccountError(422, '用户名需为 1–64 个字母、数字或 . @ + _ - 字符。')
     value = unicodedata.normalize('NFKC', value).strip().casefold()
     if not re.fullmatch(r'[\w.@+-]{1,64}', value):
         raise AccountError(422, '用户名需为 1–64 个字母、数字或 . @ + _ - 字符。')
+    if new and not 2 <= len(value) <= 20:
+        raise AccountError(422, '新用户名需为 2–20 个字符。')
     return value
 
 
@@ -59,8 +62,8 @@ def _password(value: str) -> str:
 
 
 def _role(value: str) -> str:
-    if not isinstance(value, str) or value not in ('admin', 'user'):
-        raise AccountError(422, '角色必须为 admin（管理员）或 user（普通用户）。')
+    if not isinstance(value, str) or value not in ('super_admin', 'admin', 'user'):
+        raise AccountError(422, '角色必须为 super_admin（超级管理员）、admin（管理员）或 user（普通用户）。')
     return value
 
 
@@ -77,6 +80,8 @@ def _public(row) -> dict:
         result[key] = bool(result[key])
     # Retain the response field for old clients, but never revive the retired policy.
     result['must_change_password'] = False
+    result['is_admin'] = is_admin(result)
+    result['is_super_admin'] = is_super_admin(result)
     return result
 
 
@@ -91,7 +96,8 @@ def _details(details) -> dict:
     if not isinstance(details, dict):
         return result
     for key in ('username', 'role', 'previous_role', 'remote_ip', 'reason', 'enabled',
-                'must_change_password', 'legacy_owner', 'max_concurrent', 'max_queued', 'resource'):
+                'must_change_password', 'legacy_owner', 'max_concurrent', 'max_queued', 'resource',
+                'previous', 'global_concurrency'):
         value = details.get(key)
         if isinstance(value, (str, int, bool)):
             result[key] = _text(value, 128) if isinstance(value, str) else value
@@ -118,13 +124,14 @@ class Accounts:
                     id TEXT PRIMARY KEY,
                     username TEXT NOT NULL UNIQUE,
                     password_hash TEXT NOT NULL,
-                    role TEXT NOT NULL CHECK(role IN ('admin', 'user')),
+                    role TEXT NOT NULL CHECK(role IN ('super_admin', 'admin', 'user')),
                     enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
                     must_change_password INTEGER NOT NULL DEFAULT 0 CHECK(must_change_password IN (0, 1)),
                     max_concurrent INTEGER NOT NULL DEFAULT 1 CHECK(max_concurrent >= 1),
                     max_queued INTEGER NOT NULL DEFAULT 10 CHECK(max_queued >= 0),
                     legacy_owner INTEGER NOT NULL DEFAULT 0 CHECK(legacy_owner IN (0, 1)),
-                    created_at REAL NOT NULL
+                    created_at REAL NOT NULL,
+                    deleted_at REAL
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS one_legacy_owner ON users(legacy_owner) WHERE legacy_owner = 1;
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -159,6 +166,7 @@ class Accounts:
                 );
                 CREATE INDEX IF NOT EXISTS audit_access_lookup ON audit(actor_id,action,target,created_at);
             ''')
+            self._migrate_roles(conn)
             # Idempotent compatibility migration; never touch password hashes or
             # sessions. Explicit INSERT values below also handle old DEFAULT 1 schemas.
             if conn.execute('SELECT 1 FROM users WHERE must_change_password!=0 LIMIT 1').fetchone():
@@ -166,6 +174,47 @@ class Accounts:
         if os.name != 'nt':
             private.chmod(0o700)
             self.db_path.chmod(0o600)
+
+    @staticmethod
+    def _migrate_roles(conn):
+        if (conn.execute("SELECT 1 FROM sqlite_master WHERE name='account_migrations'").fetchone()
+                and conn.execute("SELECT 1 FROM account_migrations WHERE name='three_roles'").fetchone()):
+            return
+        # Foreign keys are disabled outside this atomic schema replacement so
+        # sessions retain their original users(id) references and token hashes.
+        conn.execute('PRAGMA foreign_keys=OFF')
+        conn.execute('BEGIN IMMEDIATE')
+        try:
+            conn.execute('CREATE TABLE IF NOT EXISTS account_migrations(name TEXT PRIMARY KEY)')
+            if not conn.execute("SELECT 1 FROM account_migrations WHERE name='three_roles'").fetchone():
+                columns = {row[1] for row in conn.execute('PRAGMA table_info(users)')}
+                conn.execute("""CREATE TABLE users_v3 (
+                    id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL CHECK(role IN ('super_admin', 'admin', 'user')),
+                    enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+                    must_change_password INTEGER NOT NULL DEFAULT 0 CHECK(must_change_password IN (0,1)),
+                    max_concurrent INTEGER NOT NULL DEFAULT 1 CHECK(max_concurrent>=1),
+                    max_queued INTEGER NOT NULL DEFAULT 10 CHECK(max_queued>=0),
+                    legacy_owner INTEGER NOT NULL DEFAULT 0 CHECK(legacy_owner IN (0,1)),
+                    created_at REAL NOT NULL, deleted_at REAL)""")
+                fields = 'id,username,password_hash,role,enabled,must_change_password,max_concurrent,max_queued,legacy_owner,created_at'
+                conn.execute('INSERT INTO users_v3 SELECT '+fields+(',deleted_at' if 'deleted_at' in columns else ',NULL')+' FROM users')
+                conn.execute('DROP TABLE users')
+                conn.execute('ALTER TABLE users_v3 RENAME TO users')
+                conn.execute('CREATE UNIQUE INDEX one_legacy_owner ON users(legacy_owner) WHERE legacy_owner=1')
+                # The original owner may have been disabled or demoted under
+                # the old two-role policy. Preserve one active system manager
+                # without re-enabling or re-promoting that unavailable owner.
+                conn.execute("""UPDATE users SET role='super_admin' WHERE id=(
+                    SELECT id FROM users WHERE enabled=1 AND role='admin' AND deleted_at IS NULL
+                    ORDER BY legacy_owner DESC,created_at,id LIMIT 1)""")
+                conn.execute("INSERT INTO account_migrations VALUES('three_roles')")
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            conn.execute('PRAGMA foreign_keys=ON')
 
     @contextmanager
     def _connect(self, *, write=False):
@@ -194,9 +243,15 @@ class Accounts:
 
     @staticmethod
     def _admin(conn, actor_id):
-        row = conn.execute('SELECT role, enabled FROM users WHERE id=?', (actor_id,)).fetchone()
-        if row is None or not row['enabled'] or row['role'] != 'admin':
+        row = conn.execute('SELECT * FROM users WHERE id=?', (actor_id,)).fetchone()
+        if row is None or not row['enabled'] or row['deleted_at'] or not is_admin(dict(row)):
             raise AccountError(403, '需要管理员权限。')
+        return dict(row)
+
+    @staticmethod
+    def _managed(actor, user):
+        if not can_manage(actor, dict(user)):
+            raise AccountError(403, '此账号不在你的管理权限范围内。')
 
     @staticmethod
     def _audit(conn, actor_id, action, target='', details=None):
@@ -210,10 +265,10 @@ class Accounts:
             existing = conn.execute('SELECT * FROM users ORDER BY created_at, id LIMIT 1').fetchone()
             if existing is not None:
                 return _public(existing)
-            username, password = _username(username), _password(password)
+            username, password = _username(username, new=True), _password(password)
             user_id = uuid4().hex
             conn.execute('''INSERT INTO users(id,username,password_hash,role,legacy_owner,must_change_password,created_at)
-                            VALUES(?,?,?,'admin',1,0,?)''',
+                            VALUES(?,?,?,'super_admin',1,0,?)''',
                          (user_id, username, _HASHER.hash(password), time.time()))
             self._audit(conn, user_id, 'user.init_admin', user_id, {'username': username})
             return _public(self._user(conn, user_id))
@@ -221,9 +276,11 @@ class Accounts:
     def create_user(self, username: str, password: str, actor_id: str,
                     max_concurrent: int = 1, max_queued: int = 10, role: str = 'user') -> dict:
         with self._connect(write=True) as conn:
-            self._admin(conn, actor_id)
-            username, password = _username(username), _password(password)
+            actor = self._admin(conn, actor_id)
+            username, password = _username(username, new=True), _password(password)
             role = _role(role)
+            if not can_manage(actor, {'role': role}):
+                raise AccountError(403, '仅超级管理员可以管理管理员账号。')
             max_concurrent = _quota(max_concurrent, 1, 'max_concurrent')
             max_queued = _quota(max_queued, 0, 'max_queued')
             user_id = uuid4().hex
@@ -239,12 +296,12 @@ class Accounts:
 
     def register(self, username: str, password: str, remote_ip: str) -> dict:
         """Create an ordinary account and its session atomically; never bootstrap admins."""
-        username, password = _username(username), _password(password)
+        username, password = _username(username, new=True), _password(password)
         remote_ip = _text(remote_ip, 128) or 'unknown'
         now = time.time()
         result = None
         with self._connect(write=True) as conn:
-            if not conn.execute("SELECT 1 FROM users WHERE role='admin' AND enabled=1 LIMIT 1").fetchone():
+            if not conn.execute("SELECT 1 FROM users WHERE role='super_admin' AND enabled=1 AND deleted_at IS NULL LIMIT 1").fetchone():
                 raise AccountError(503, '工作台尚未完成账号初始化，请联系管理员。')
             conn.execute('DELETE FROM registration_attempts WHERE created_at<=?',
                          (now - REGISTRATION_WINDOW_SECONDS,))
@@ -280,8 +337,11 @@ class Accounts:
                     max_concurrent: int | None = None, max_queued: int | None = None,
                     role: str | None = None) -> dict:
         with self._connect(write=True) as conn:
-            self._admin(conn, actor_id)
+            actor = self._admin(conn, actor_id)
             user = self._user(conn, user_id)
+            self._managed(actor, user)
+            if user['deleted_at']:
+                raise AccountError(409, '账号已删除，请由超级管理员恢复。')
             changes = {}
             if enabled is not None:
                 if type(enabled) is not bool:
@@ -289,19 +349,21 @@ class Accounts:
                 changes['enabled'] = enabled
             if role is not None:
                 changes['role'] = _role(role)
+                if not can_manage(actor, {'role': role}):
+                    raise AccountError(403, '仅超级管理员可以设置管理员角色。')
             if max_concurrent is not None:
                 changes['max_concurrent'] = _quota(max_concurrent, 1, 'max_concurrent')
             if max_queued is not None:
                 changes['max_queued'] = _quota(max_queued, 0, 'max_queued')
             # Check the resulting role AND enabled state under BEGIN IMMEDIATE,
             # so concurrent demotions/disables cannot both remove the last admin.
-            if (user['role'] == 'admin' and user['enabled']
-                    and (changes.get('role', user['role']) != 'admin'
+            if (user['role'] == 'super_admin' and user['enabled']
+                    and (changes.get('role', user['role']) != 'super_admin'
                          or not changes.get('enabled', user['enabled']))):
-                others = conn.execute("SELECT COUNT(*) FROM users WHERE role='admin' AND enabled=1 AND id<>?",
+                others = conn.execute("SELECT COUNT(*) FROM users WHERE role='super_admin' AND enabled=1 AND deleted_at IS NULL AND id<>?",
                                       (user_id,)).fetchone()[0]
                 if not others:
-                    raise AccountError(409, '不能降级或停用最后一个已启用的管理员账号。')
+                    raise AccountError(409, '不能降级或停用最后一个已启用的超级管理员账号。')
             if changes:
                 # Column names come exclusively from the fixed mapping above.
                 assignments = ','.join(f'{key}=?' for key in changes)
@@ -313,10 +375,59 @@ class Accounts:
                 self._audit(conn, actor_id, 'user.update', user_id, details)
             return _public(self._user(conn, user_id))
 
+    @contextmanager
+    def active_user(self, user_id):
+        """Hold the lifecycle lock while submitting/claiming work (account then production DB)."""
+        with self._connect(write=True) as conn:
+            user = self._user(conn, user_id)
+            if not user['enabled'] or user['deleted_at']:
+                raise AccountError(403, '账号已停用或删除，无法创建或领取任务。')
+            yield _public(user)
+
+    def delete_user(self, user_id, actor_id):
+        from .production_store import ProductionStore, now
+        with self._connect(write=True) as conn:
+            actor = self._admin(conn, actor_id)
+            user = self._user(conn, user_id)
+            self._managed(actor, user)
+            if user['deleted_at']:
+                return _public(user)
+            if user['role'] == 'super_admin' and user['enabled']:
+                if not conn.execute("SELECT 1 FROM users WHERE role='super_admin' AND enabled=1 AND deleted_at IS NULL AND id<>?", (user_id,)).fetchone():
+                    raise AccountError(409, '不能删除最后一个已启用的超级管理员账号。')
+            root = self.root if user['legacy_owner'] else self.root / 'users' / user_id
+            store = ProductionStore(root)
+            with store.connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                if db.execute("SELECT 1 FROM production_runs WHERE status='running' OR (status='queued' AND (provider_task_id IS NOT NULL OR result_url IS NOT NULL)) LIMIT 1").fetchone():
+                    raise AccountError(409, '账号仍有正在执行或恢复中的任务，请等待完成后再删除。')
+                stamp = now()
+                for row in db.execute("SELECT id FROM production_runs WHERE status='queued'").fetchall():
+                    store._transition_timing(db, row['id'], 'cancelled', stamp)
+                db.execute("UPDATE production_runs SET status='cancelled',message='账号已删除，取消排队',updated_at=? WHERE status='queued'", (stamp,))
+            conn.execute('UPDATE users SET enabled=0,deleted_at=? WHERE id=?', (time.time(), user_id))
+            conn.execute('DELETE FROM sessions WHERE user_id=?', (user_id,))
+            self._audit(conn, actor_id, 'user.delete', user_id)
+            return _public(self._user(conn, user_id))
+
+    def restore_user(self, user_id, actor_id):
+        with self._connect(write=True) as conn:
+            actor = self._admin(conn, actor_id)
+            if not is_super_admin(actor):
+                raise AccountError(403, '仅超级管理员可以恢复账号。')
+            user = self._user(conn, user_id)
+            if user['deleted_at']:
+                conn.execute('UPDATE users SET enabled=1,deleted_at=NULL WHERE id=?', (user_id,))
+                self._audit(conn, actor_id, 'user.restore', user_id)
+            return _public(self._user(conn, user_id))
+
     def reset_password(self, user_id: str, password: str, actor_id: str) -> dict:
         with self._connect(write=True) as conn:
-            self._admin(conn, actor_id)
-            self._user(conn, user_id)
+            actor = self._admin(conn, actor_id)
+            user = self._user(conn, user_id)
+            self._managed(actor, user)
+            if user['deleted_at']:
+                raise AccountError(409, '账号已删除，请先恢复。')
             encoded = _HASHER.hash(_password(password))
             conn.execute('UPDATE users SET password_hash=?,must_change_password=0 WHERE id=?', (encoded, user_id))
             conn.execute('DELETE FROM sessions WHERE user_id=?', (user_id,))
@@ -326,7 +437,7 @@ class Accounts:
     def change_password(self, user_id: str, current: str, new: str) -> dict:
         with self._connect(write=True) as conn:
             user = self._user(conn, user_id)
-            if (not user['enabled'] or not isinstance(current, str) or len(current) > 1024
+            if (not user['enabled'] or user['deleted_at'] or not isinstance(current, str) or len(current) > 1024
                     or not _verify(user['password_hash'], current)):
                 raise AccountError(401, '当前密码不正确，或账号不可用。')
             new = _password(new)
@@ -365,7 +476,7 @@ class Accounts:
             user = conn.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone()
             encoded = user['password_hash'] if user else _DUMMY_HASH
             valid = isinstance(password, str) and len(password) <= 1024 and _verify(encoded, password)
-            if user is None or not valid or not user['enabled']:
+            if user is None or not valid or not user['enabled'] or user['deleted_at']:
                 conn.execute('INSERT INTO login_attempts(username,remote_ip,created_at) VALUES(?,?,?)',
                              (username, remote_ip, now))
                 self._audit(conn, '', 'auth.login_failed', details={'username': username, 'remote_ip': remote_ip})
@@ -383,7 +494,7 @@ class Accounts:
         with self._connect() as conn:
             row = conn.execute('''SELECT users.*,sessions.csrf_token,sessions.expires_at
                                   FROM sessions JOIN users ON users.id=sessions.user_id
-                                  WHERE token_hash=? AND expires_at>? AND users.enabled=1''',
+                                  WHERE token_hash=? AND expires_at>? AND users.enabled=1 AND users.deleted_at IS NULL''',
                                (hashlib.sha256(token.encode()).hexdigest(), time.time())).fetchone()
             if row is None:
                 raise AccountError(401, '请先登录，或重新登录已过期的会话。')
@@ -411,7 +522,8 @@ class Accounts:
         details = _details({'resource': resource})
         encoded = json.dumps(details, ensure_ascii=False)
         with self._connect(write=True) as conn:
-            self._admin(conn, actor_id)
+            actor = self._admin(conn, actor_id)
+            self._managed(actor, self._user(conn, owner_id))
             # The same write transaction serializes concurrent Range/HEAD requests.
             recent = conn.execute('''SELECT 1 FROM audit WHERE actor_id=? AND action='view_user_media'
                 AND target=? AND details=? AND created_at>? LIMIT 1''',
@@ -426,7 +538,7 @@ class Accounts:
             rows = conn.execute('SELECT * FROM audit ORDER BY id DESC LIMIT ?', (limit,)).fetchall()
             return [{**dict(row), 'details': json.loads(row['details'])} for row in rows]
 
-    def audit_page(self, page=1, page_size=10, scope='important', user_id='') -> dict:
+    def audit_page(self, page=1, page_size=10, scope='important', user_id='', allowed_users=None) -> dict:
         # Keep the complete trail. Only the default presentation hides routine
         # reads, autosaves, uploads and duplicate HTTP entries for semantic events.
         where = '' if scope == 'all' else """WHERE
@@ -448,6 +560,13 @@ class Accounts:
             important = where.removeprefix('WHERE').strip()
             where = ('WHERE (' + important + ') AND ' if important else 'WHERE ') + "(actor_id=? OR target=? OR substr(target,1,length(?)+1)=?||':')"
             params = (user_id, user_id, user_id, user_id)
+        if allowed_users is not None:
+            marks = ','.join('?' for _ in allowed_users) or 'NULL'
+            # An ordinary-user operation or an operation targeting an ordinary
+            # user's resource is visible; administrator-to-administrator events are not.
+            clause = f"(actor_id IN ({marks}) OR target IN ({marks}) OR substr(target,1,32) IN ({marks}))"
+            where += (' AND ' if where else 'WHERE ') + clause
+            params += tuple(allowed_users) * 3
         with self._connect() as conn:
             total = conn.execute('SELECT COUNT(*) FROM audit ' + where, params).fetchone()[0]
             pages = max(1, (total + page_size - 1) // page_size)

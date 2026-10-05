@@ -1,0 +1,27 @@
+#generation-duration-reset { position:absolute; top:58px; right:0; appearance:none; border:0; background:transparent; color:var(--accent,#526c49); font:inherit; font-size:11px; padding:0 0 0 6px; min-height:18px; line-height:18px; white-space:nowrap; cursor:pointer; }
+#generation-duration-reset:disabled { opacity:.45; cursor:default; }
+@media(min-width:1101px) { .production-view #generation-duration-reset { top:62px; } }
+@media(max-width:1100px) { #generation-duration-reset { position:static; padding-left:0; } }
+.video-comparison-dialog { box-sizing:border-box; width:min(1120px,calc(100vw - 24px)); max-height:calc(100dvh - 24px); border:1px solid #deded7; border-radius:16px; padding:20px; color:#262923; background:#fafbf8; overflow:auto; }
+.video-comparison-dialog::backdrop { background:rgba(15,20,15,.65); }
+.comparison-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.comparison-heading h3 { margin:0 0 16px; font-size:18px; overflow-wrap:anywhere; }
+.comparison-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }
+.comparison-grid figure { min-width:0; margin:0; }
+.comparison-grid figcaption { text-align:center; margin-bottom:8px; font-size:13px; }
+.comparison-grid video { display:block; width:100%; height:min(52dvh,480px); background:#10130f; object-fit:contain; border-radius:8px; }
+.comparison-controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:16px; }
+.comparison-controls input[type=range] { flex:1; width:100px; min-width:80px; }
+.comparison-controls select,.comparison-controls button,.comparison-heading button { min-height:36px; padding:6px 10px; border:1px solid #d5dbd0; border-radius:7px; background:white; font:inherit; font-size:13px; }
+.comparison-controls output { font-variant-numeric:tabular-nums; font-size:12px; }
+#comparison-status { font-size:12px; color:#62685d; line-height:1.5; }
+.run-phase-summary { display:block; font-size:11px; color:var(--muted,#697164); line-height:1.6; }
+.run-phase-details { display:flex; flex-wrap:wrap; gap:8px 18px; padding:0; list-style:none; }
+@media(max-width:600px) {
+  .video-comparison-dialog { width:calc(100vw - 16px); padding:12px; }
+  .comparison-heading h3 { font-size:15px; }
+  .comparison-grid { gap:6px; }
+  .comparison-grid video { height:36dvh; }
+  .comparison-controls { gap:8px; }
+  #comparison-seek { flex-basis:calc(100% - 108px); }
+}

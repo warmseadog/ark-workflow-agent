@@ -149,7 +149,7 @@
     sessionController = new AbortController();
     byId('assets').replaceChildren();
     byId('settings').open = false;
-    const ordinary=window.currentAccount && window.currentAccount.role!=='admin';
+    const ordinary=window.currentAccount && !['admin','super_admin'].includes(window.currentAccount.role);
     byId('settings').hidden=Boolean(ordinary);
     byId('assets').closest('section').hidden=Boolean(ordinary);
     dialog.showModal();

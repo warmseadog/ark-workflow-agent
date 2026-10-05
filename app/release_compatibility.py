@@ -46,6 +46,12 @@ def assert_rollback_compatible(target_release,storage_root,*,database_paths=(),e
                     columns={row[1] for row in db.execute('PRAGMA table_info('+quote+')')}
                     if table=='prompt_templates' and 'rule_version' in columns:
                         required.add('exclusive-prompts-v2')
+                    if table=='users' and 'deleted_at' in columns:
+                        required.add('three-tier-accounts-v1')
+                    if table=='production_run_phases':
+                        required.add('explicit-run-phases-v1')
+                    if table=='scheduling' and 'global_concurrency' in columns:
+                        required.add('global-scheduling-v1')
                     if 'status' in columns:
                         if db.execute('SELECT 1 FROM '+quote+" WHERE status='restore_held' LIMIT 1").fetchone():
                             required.add('restore-hold-v1')

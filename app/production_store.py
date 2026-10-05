@@ -11,6 +11,7 @@ from threading import RLock
 from .audio_policy import decorate_audio_failure
 from .model_catalog import capabilities
 from .queue_admission import queued_write, check_capacity, positive_setting
+from . import run_phases
 
 _connection_setup_lock = RLock()
 
@@ -27,7 +28,7 @@ def unknown_timing():
     """No historical durations are inferred from mutable updated_at values."""
     return dict(available=False, started_at=None, finished_at=None, paused_at=None,
                 queue_seconds=None, execution_seconds=None, paused_seconds=None,
-                total_seconds=None, is_live=False, interrupted=False)
+                total_seconds=None, is_live=False, interrupted=False, phases=run_phases.unknown())
 
 
 def _elapsed(start, end):
@@ -78,6 +79,9 @@ class ProductionStore:
                 started_at TEXT, finished_at TEXT, state TEXT NOT NULL, state_since TEXT NOT NULL,
                 queue_seconds REAL NOT NULL DEFAULT 0, execution_seconds REAL DEFAULT 0,
                 paused_seconds REAL NOT NULL DEFAULT 0, interrupted INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS production_run_phases (
+                run_id TEXT PRIMARY KEY, data TEXT NOT NULL, phase TEXT,
+                since TEXT NOT NULL, state TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS production_runs_order ON production_runs(created_at DESC,id DESC);
             CREATE INDEX IF NOT EXISTS production_runs_status ON production_runs(status);
             """)
@@ -147,6 +151,9 @@ class ProductionStore:
                         paused_seconds=round(row['paused_seconds'], 3),
                         total_seconds=round(_elapsed(row['created_at'], end), 3),
                         is_live=live, interrupted=bool(row['interrupted']))
+            phases = run_phases.summaries(db, ids, stamp)
+            for ident in ids:
+                result[ident]['phases'] = phases[ident]
         return result
 
     def run_timing(self, ident):
@@ -156,6 +163,7 @@ class ProductionStore:
     def _transition_timing(db, ident, state, stamp, *, interrupted=False):
         # Call in the SAME write transaction as the state change. Old records
         # deliberately have no timing row, and are never silently backfilled.
+        run_phases.state_transition(db, ident, state, stamp, interrupted=interrupted)
         row = db.execute('SELECT * FROM production_run_timing WHERE run_id=?', (ident,)).fetchone()
         if row is None or row['state'] == state:
             return
@@ -324,6 +332,7 @@ class ProductionStore:
                  'queued','queued','等待处理',stamp,stamp))
             db.execute('INSERT INTO production_run_timing (run_id,created_at,state,state_since) VALUES (?,?,?,?)',
                        (ident, stamp, 'queued', stamp))
+            run_phases.create(db, ident, stamp)
             if private.get('person_preparation'):
                 intent = private['person_preparation']
                 data = {'state': 'pending', 'account': intent['account'],
@@ -498,6 +507,11 @@ class ProductionStore:
             state.update(changes)
             db.execute('INSERT OR REPLACE INTO production_continuations VALUES (?,?)', (ident,json.dumps(state,ensure_ascii=False)))
         return state
+
+    def set_phase(self, ident, phase, *, cached=False):
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            run_phases.transition(db, ident, phase, now(), cached=cached)
 
     def update_run(self, ident, **changes):
         allowed = {'status','stage','message','progress','error','error_kind','request_id','provider_task_id','result_url'}
