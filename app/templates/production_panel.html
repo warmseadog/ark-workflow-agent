@@ -4,20 +4,20 @@
   <form id="studio-generate-form" class="creation-workspace">
     <div class="asset-grid">
       <article class="asset-entry" id="flow-stage-source">
-        <div class="asset-heading"><span>01</span><h3>参考视频</h3><small>必填 · 动作与场景</small></div>
+        <div class="asset-heading"><span>01</span><h3>参考视频</h3></div>
         <div class="asset-picker" id="video-picker">
           <span class="asset-empty"><b>＋</b><strong>上传参考视频</strong><small>点击选择视频文件</small></span>
           <span class="asset-thumbnails" id="video-reference-preview"></span>
           <input id="studio-source-video" type="file" name="video" form="studio-job-form" accept="video/*" data-requirement-input="source_video" aria-label="上传参考视频" aria-describedby="source-upload-requirement">
         </div>
-        <div class="asset-footer"><span id="source-file-name">建议 5–15 秒</span><span class="asset-edit-actions"><button type="button" id="replace-source-video" data-asset-edit hidden>更换视频</button><button type="button" id="remove-source-video" data-asset-edit hidden>移除视频</button></span></div>
+        <div class="asset-footer"><span id="source-file-name"></span><span class="asset-edit-actions"><button type="button" id="replace-source-video" data-asset-edit hidden>更换视频</button><button type="button" id="remove-source-video" data-asset-edit hidden>移除视频</button></span></div>
         <div id="video-url-entry" class="video-link-card">
           <label class="video-link-title" for="source-video-url"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4M8 16l-1 1a4.2 4.2 0 0 1-6-6l4-4a4.2 4.2 0 0 1 6 0m2 10a4.2 4.2 0 0 0 6 0l4-4a4.2 4.2 0 0 0-6-6l-1 1" transform="translate(0 0) scale(.95)"/></svg><span>粘贴视频链接</span></label>
           <p class="video-link-description">无需先下载，粘贴分享链接即可导入</p>
           <textarea id="source-video-url" name="video_url" form="studio-job-form" rows="2" maxlength="10000" placeholder="在这里粘贴视频链接，或整段分享文案…" aria-label="参考视频链接" aria-describedby="video-link-platforms video-link-status" spellcheck="false"></textarea>
           <div class="link-import-actions"><button type="button" class="primary" id="confirm-video-url" disabled>导入视频</button></div>
           <p id="video-link-platforms" class="field-hint">支持抖音 · 小红书 · 快手 · B 站</p>
-          <p id="video-link-status" class="field-hint" role="status" aria-live="polite">自动识别链接，点击导入或按回车确认。</p>
+          <p id="video-link-status" class="field-hint" role="status" aria-live="polite"></p>
           <p class="billing-notice" data-billing-notice>正在读取费用说明…</p>
           <details id="link-settings" class="link-settings">
             <summary>⚙ 链接解析设置 · TikHub <span id="link-key-state">TikHub</span></summary>
@@ -35,18 +35,18 @@
         <details class="source-redaction-preview" id="flow-stage-redaction"><summary>预览打码效果</summary><button type="button" class="secondary" id="studio-preview-submit" disabled>预览打码视频</button><p id="studio-preview-status" role="status">选择参考视频后可预览</p><div id="studio-preview" hidden><video id="studio-defaced-video" controls playsinline preload="none"></video></div></details>
       </article>
       <article class="asset-entry" id="flow-stage-references">
-        <div class="asset-heading"><span>02</span><h3>衣服参考图</h3><small>必填 · 款式与材质</small></div>
+        <div class="asset-heading"><span>02</span><h3>穿搭参考图</h3></div>
         <div class="asset-picker" id="clothing-picker">
-          <span class="asset-empty"><b>＋</b><strong>上传衣服参考图</strong><small>支持选择多张图片</small></span>
+          <span class="asset-empty"><b>＋</b><strong>上传穿搭参考图</strong><small>支持选择多张图片</small></span>
           <span class="asset-thumbnails" id="clothing-reference-preview"></span>
-          <input id="studio-clothing-image" type="file" name="clothing_image" accept="image/*" data-requirement-input="image" multiple required aria-label="上传衣服参考图" aria-describedby="image-upload-requirement">
+          <input id="studio-clothing-image" type="file" name="clothing_image" accept="image/*" data-requirement-input="image" multiple required aria-label="上传穿搭参考图" aria-describedby="image-upload-requirement">
         </div>
-        <div class="asset-footer"><span id="clothing-file-name">款式清晰、完整展示</span><button type="button" data-add-images="clothing" data-asset-edit>＋ 添加</button></div>
+        <div class="asset-footer"><span id="clothing-file-name"></span><button type="button" data-add-images="clothing" data-asset-edit>＋ 添加</button></div>
         <p id="image-upload-requirement" class="input-requirement" data-input-requirement="image">正在读取图片要求…</p>
 
       </article>
       <article class="asset-entry" id="person-reference-card">
-        <div class="asset-heading person-reference-heading"><span>03</span><h3>人物参考</h3><small>必填</small>
+        <div class="asset-heading person-reference-heading"><span>03</span><h3>人物参考</h3>
           <details id="person-picker" class="person-picker">
             <summary aria-label="从人物库选择" aria-haspopup="dialog">从人物库选择</summary>
             <div class="person-menu" aria-label="人物选择面板">
@@ -62,7 +62,7 @@
           <span class="asset-thumbnails" id="face-reference-preview"></span>
           <input id="studio-face-image" type="file" name="face_image" accept="image/*" data-requirement-input="portrait_photo" multiple required aria-label="上传人物参考图" aria-describedby="portrait-upload-requirement">
         </div>
-        <div class="asset-footer"><span id="face-file-name">清晰正脸、光线自然</span><button type="button" data-add-images="face" data-asset-edit>添加参考图</button></div>
+        <div class="asset-footer"><span id="face-file-name"></span><button type="button" data-add-images="face" data-asset-edit>添加参考图</button></div>
         <p id="portrait-upload-requirement" class="input-requirement" data-input-requirement="portrait_photo">正在读取人物照片要求…</p>
         <p id="person-photo-status" class="field-hint" role="status" aria-live="polite">上传人物参考图，生成时自动准备。</p>
         <div class="portrait-entry"><button type="button" id="person-photo-retry" hidden>重试校验</button></div>
@@ -83,48 +83,25 @@
 
     </div>
     <div class="optional-reference-group" aria-label="可选调整">
-<details class="asset-entry scene-references" id="scene-references">
-        <summary class="asset-heading"><h3>场景设置</h3><small id="scene-reference-state">保留原视频场景</small></summary>
+<article class="reference-module asset-entry scene-references" id="scene-references">
+        <div class="asset-heading"><h3>场景设置</h3><span id="scene-reference-state" hidden></span></div><p class="optional-reference-note">如需要可添加</p>
         <div class="optional-reference-body">
-          <label class="optional-enable scene-switch"><input id="scene-enabled" type="checkbox" aria-controls="scene-custom-fields"> 更换场景（关闭时保留原视频场景）</label>
-          <div id="scene-custom-fields" hidden><div class="asset-picker" id="scene-picker">
+          <div id="scene-custom-fields"><div class="asset-picker" id="scene-picker">
             <span class="asset-empty"><b>＋</b><strong>上传场景参考图</strong><small>可选，上传一张图片</small></span>
             <span class="asset-thumbnails" id="scene-reference-preview"></span>
             <input id="studio-scene-image" type="file" name="scene_image" accept="image/*" aria-label="上传场景参考图">
           </div>
           <div class="asset-footer"><span id="scene-file-name">未设置</span></div>
+          <label class="optional-enable scene-switch"><input id="scene-enabled" type="checkbox" aria-controls="scene-custom-fields"> 本次使用场景参考</label>
           <label class="scene-description-label" for="scene-description">场景补充（可选）</label>
           <textarea id="scene-description" rows="3" maxlength="2000" placeholder="补充光线、氛围或需要保留的细节"></textarea>
           <p class="field-hint">可上传场景图或仅填写场景描述；启用时替换背景，不使用时保留原视频场景。</p>
           <p class="input-requirement" data-input-requirement="image">正在读取图片要求…</p>
           </div>
         </div>
-      </details>
-<details class="hairstyle-references" id="hairstyle-references">
-          <summary>发型参考 <span id="hairstyle-reference-state">可选</span></summary>
-          <div class="optional-reference-body"><div class="asset-picker" id="hairstyle-picker">
-            <span class="asset-empty"><b>＋</b><strong>上传发型参考图</strong><small>可选，上传一张图片</small></span>
-            <span class="asset-thumbnails" id="hairstyle-reference-preview"></span>
-            <input id="studio-hairstyle-image" type="file" name="hairstyle_image" accept="image/*" aria-label="上传发型参考图">
-          </div>
-          <div class="asset-footer"><span id="hairstyle-file-name">未设置</span></div>
-          <label class="optional-enable"><input id="hairstyle-enabled" type="checkbox"> 使用发型参考图</label>
-            <p class="field-hint">只参考发型和发色，人物身份仍使用上方人物参考。不上传则沿用人物参考的发型。</p>
-            <p class="input-requirement" data-input-requirement="image">正在读取图片要求…</p>
-            <div id="hairstyle-mask-panel" hidden>
-              <p class="field-hint">自动遮挡人脸，尽量保留发型。生成使用下方打码图。</p>
-              <details class="hairstyle-mask-options"><summary>调整打码范围 <span id="hairstyle-mask-summary">1.0 倍</span></summary>
-                <div class="hairstyle-mask-fields"><label>遮罩倍数<input id="hairstyle-mask-scale" type="number" min="1" max="2" step="0.05" value="1"></label><label>检测阈值<input id="hairstyle-mask-threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.2"></label></div>
-                <p class="field-hint">默认 1.0 倍、阈值 0.2。脸部边缘没盖全可试 1.05；漏检人脸可试阈值 0.15。</p>
-              </details>
-              <p id="hairstyle-mask-status" class="field-hint" role="status" aria-live="polite"></p>
-              <img id="hairstyle-mask-preview" class="hairstyle-mask-preview" alt="发型参考图人脸打码预览" hidden>
-              <button type="button" id="hairstyle-mask-retry" class="secondary" hidden>重新预览</button>
-            </div>
-          </div>
-        </details>
-<details class="accessory-references" id="accessory-references">
-          <summary>更多搭配 <span id="accessory-count">可选</span></summary>
+      </article>
+<article class="reference-module accessory-references" id="accessory-references">
+          <div class="asset-heading"><h3>更多搭配</h3><span id="accessory-count" hidden></span></div><p class="optional-reference-note">如需要可添加</p>
           <p class="field-hint">点击类别上传对应图片，每类一张；关闭“本次使用”可暂时停用。</p>
           <p class="input-requirement" data-input-requirement="image">正在读取图片要求…</p>
           <div class="accessory-buttons">
@@ -146,7 +123,30 @@
           </div>
           {% endfor %}
           </div>
-        </details>
+        </article>
+<article class="reference-module hairstyle-references" id="hairstyle-references">
+          <div class="asset-heading"><h3>发型参考</h3><span id="hairstyle-reference-state" hidden></span></div><p class="optional-reference-note">如需要可添加</p>
+          <div class="optional-reference-body"><div class="asset-picker" id="hairstyle-picker">
+            <span class="asset-empty"><b>＋</b><strong>上传发型参考图</strong><small>可选，上传一张图片</small></span>
+            <span class="asset-thumbnails" id="hairstyle-reference-preview"></span>
+            <input id="studio-hairstyle-image" type="file" name="hairstyle_image" accept="image/*" aria-label="上传发型参考图">
+          </div>
+          <div class="asset-footer"><span id="hairstyle-file-name">未设置</span></div>
+          <label class="optional-enable"><input id="hairstyle-enabled" type="checkbox"> 使用发型参考图</label>
+            <p class="field-hint">只参考发型和发色，人物身份仍使用上方人物参考。不上传则沿用人物参考的发型。</p>
+            <p class="input-requirement" data-input-requirement="image">正在读取图片要求…</p>
+            <div id="hairstyle-mask-panel" hidden>
+              <p class="field-hint">自动遮挡人脸，尽量保留发型。生成使用下方打码图。</p>
+              <details class="hairstyle-mask-options"><summary>调整打码范围 <span id="hairstyle-mask-summary">1.0 倍</span></summary>
+                <div class="hairstyle-mask-fields"><label>遮罩倍数<input id="hairstyle-mask-scale" type="number" min="1" max="2" step="0.05" value="1"></label><label>检测阈值<input id="hairstyle-mask-threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.2"></label></div>
+                <p class="field-hint">默认 1.0 倍、阈值 0.2。脸部边缘没盖全可试 1.05；漏检人脸可试阈值 0.15。</p>
+              </details>
+              <p id="hairstyle-mask-status" class="field-hint" role="status" aria-live="polite"></p>
+              <img id="hairstyle-mask-preview" class="hairstyle-mask-preview" alt="发型参考图人脸打码预览" hidden>
+              <button type="button" id="hairstyle-mask-retry" class="secondary" hidden>重新预览</button>
+            </div>
+          </div>
+        </article>
     </div>
     <div class="reference-summary"><p id="reference-count" class="field-hint reference-count" role="status" aria-live="polite">本次参考图 0 / 9 张</p><button id="clear-reference-images" type="button" class="secondary" disabled title="清空本次已选参考图，保留视频、提示词和素材库">清空参考图</button></div>
     {% if prompt_editor_visible(request) %}

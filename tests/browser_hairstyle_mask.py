@@ -32,7 +32,7 @@ def check(width):
                     r.fulfill(status=response.status_code,body=response.content,headers={k:v for k,v in response.headers.items() if k.lower() not in {'content-length','content-encoding','transfer-encoding'}})
                 page.route('**/*',route);page.goto('http://127.0.0.1:18749/')
                 expect(page.locator('#draft-save-status')).to_contain_text('已保存')
-                page.locator('#hairstyle-references > summary').click()
+                expect(page.locator('#hairstyle-picker')).to_be_visible()
                 page.locator('#studio-hairstyle-image').set_input_files({'name':'发型参考.png','mimeType':'image/png','buffer':picture})
                 expect(page.locator('#hairstyle-mask-preview')).to_be_visible()
                 expect(page.locator('#hairstyle-mask-status')).to_contain_text('已遮挡 1 张人脸')
@@ -51,7 +51,7 @@ def check(width):
                 assert draft['hairstyle_mask']=={'mask_scale':1.05,'threshold':.15}
                 assert draft['mask']['mask_scale']==1.4
                 page.reload();expect(page.locator('#draft-save-status')).to_contain_text('已保存')
-                page.locator('#hairstyle-references > summary').click()
+                expect(page.locator('#hairstyle-picker')).to_be_visible()
                 expect(page.locator('#hairstyle-mask-preview')).to_be_visible()
                 expect(page.locator('#hairstyle-mask-summary')).to_have_text('1.05 倍')
                 page.locator('#hairstyle-references').screenshot(path=str(ROOT/'storage'/f'hairstyle-mask-{width}.png'))

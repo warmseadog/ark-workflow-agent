@@ -161,7 +161,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         if accessories:
             expect(page.locator('#scene-picker')).to_be_visible()
             assert page.locator('#scene-references').evaluate('(el)=>el.tagName')=='ARTICLE'
-            page.locator('#accessory-references > summary').click()
+            expect(page.locator('.accessory-buttons')).to_be_visible()
             kinds={'bag':'包包','hat':'帽子','watch':'手表','shoes':'鞋子','necklace':'项链','glasses':'眼镜'}
             for kind,label in kinds.items():
                 with page.expect_file_chooser() as chooser:
@@ -171,7 +171,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
                 expect(page.locator('#'+kind+'-enabled')).to_be_checked()
             expect(page.locator('#reference-count')).to_contain_text('8 / 9')
             assert '@Image8 眼镜参考' in page.locator('#generation-prompt').input_value()
-            page.locator('#hairstyle-references > summary').click()
+            expect(page.locator('#hairstyle-picker')).to_be_visible()
             for kind in ['hairstyle','scene']:
                 page.locator('[name='+kind+'_image]').set_input_files({'name':kind+'.png','mimeType':'image/png','buffer':image_bytes})
             expect(page.locator('#reference-count')).to_contain_text('10 / 9')
@@ -188,9 +188,9 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
             expect(page.locator('#hat-enabled')).not_to_be_checked()
             expect(page.locator('#hat-reference-preview img')).to_have_count(1)
             expect(page.locator('#reference-count')).to_contain_text('9 / 9')
-            page.locator('#accessory-references > summary').click()
+            expect(page.locator('.accessory-buttons')).to_be_visible()
             expect(page.locator('#reference-count')).to_contain_text('9 / 9')
-            page.locator('#accessory-references > summary').click()
+            expect(page.locator('.accessory-buttons')).to_be_visible()
             page.locator('#glasses-reference-preview button[aria-label="删除第 1 张图片"]').click()
             expect(page.locator('#glasses-references')).to_be_hidden()
             expect(page.locator('#reference-count')).to_contain_text('8 / 9')
@@ -249,7 +249,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
                 assert page.locator('#generation-prompt').input_value().count('【素材联动】')==1
 
             expect(page.locator('#scene-picker')).to_be_visible()
-            page.locator('#hairstyle-references > summary').click()
+            expect(page.locator('#hairstyle-picker')).to_be_visible()
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
             page.locator('#studio-generate-submit').click()
             expect(page.locator('[data-run-id]')).to_have_count(1)
@@ -311,7 +311,7 @@ def check(width=1440, portrait_people=False, extra_references=False, prompt_sync
         first_card=page.locator('[data-run-id=r1]')
         first_card.locator('.run-menu > summary').click(); first_card.locator('[data-run-action=details]').click()
         expect(first_card.locator('.run-detail-assets figure')).to_have_count(3)
-        expect(first_card.locator('.run-detail-assets figcaption')).to_have_text(['动作参考视频','人物参考图','衣服参考图'])
+        expect(first_card.locator('.run-detail-assets figcaption')).to_have_text(['动作参考视频','人物参考图','穿搭参考图'])
         detail_text=first_card.locator('.run-detail-panel').inner_text()
         assert not any(x in detail_text for x in ['任务编号','服务商任务编号','Request ID','模型参数','打码参数','base_url','provider'])
         expect(first_card.locator('details pre')).to_have_count(0)

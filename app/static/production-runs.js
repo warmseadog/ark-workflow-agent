@@ -244,7 +244,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     }
     if(item.error){const error=node('details','','run-error-detail');error.append(node('summary','错误详情'),node('p',item.error));window.supportUI?.appendContext(error,item);panel.append(error);}
     const assets=item.snapshot?.assets||[],materials=node('div','','run-detail-assets');
-    const labels={video:'动作参考视频',person_video:'人物参考视频',face:'人物参考图',clothing:'衣服参考图',hairstyle:'发型参考图',scene:'场景参考图',...accessoryLabels};
+    const labels={video:'动作参考视频',person_video:'人物参考视频',face:'人物参考图',clothing:'穿搭参考图',hairstyle:'发型参考图',scene:'场景参考图',...accessoryLabels};
     for(const [kind,label] of Object.entries(labels)){
       const sources=assets.filter(x=>x.kind===kind);if(!sources.length)continue;
       const figure=node('figure');figure.dataset.sourceKind=kind;figure.append(node('figcaption',label));

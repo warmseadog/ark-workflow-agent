@@ -46,7 +46,7 @@ def check(browser, path, width, height):
     expect(page.get_by_role('heading', name='制作流程', exact=True)).to_be_visible()
     expect(page.locator('#create-view')).to_be_visible()
     expect(page.locator('.asset-entry')).to_have_count(3)
-    for name in ['上传参考视频', '上传衣服参考图', '上传人物参考图']:
+    for name in ['上传参考视频', '上传穿搭参考图', '上传人物参考图']:
         expect(page.get_by_label(name, exact=True)).to_be_attached()
     expect(page.locator('#studio-generate-submit')).to_be_disabled()
 

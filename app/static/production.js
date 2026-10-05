@@ -286,7 +286,7 @@
     else if (!sessionReady) { message = saveStatus?.dataset.error === 'true' ? '素材恢复失败，请重试' : '正在恢复素材…'; target = 'save-notice'; }
     else if (pendingSubmission) message = '上次提交结果待确认，可安全恢复';
     else if (!present.video) { message = '还缺参考视频'; target = 'flow-stage-source'; action = '去添加'; }
-    else if (!present.clothing) { message = '还缺服装参考'; target = 'flow-stage-references'; action = '去添加'; }
+    else if (!present.clothing) { message = '还缺穿搭参考'; target = 'flow-stage-references'; action = '去添加'; }
     else if (!present.person) { message = '还缺人物参考'; target = 'person-reference-card'; action = '去添加'; }
     else if (saveStatus.dataset.error === 'true') { message = '素材尚未保存，请重试'; target = 'save-notice'; }
     else if (referenceOverLimit()) { message = '参考图超过模型上限'; target = 'reference-count'; }
@@ -430,7 +430,7 @@
     }));
     document.getElementById(`${kind}-picker`).classList.toggle('has-media', urls.length > 0);
     const name = document.getElementById(kind === 'video' ? 'source-file-name' : `${kind}-file-name`);
-    name.textContent = files.length ? kind === 'video' ? files[0].name : `已选 ${files.length} 张 · 第一张为主参考` : kind === 'video' ? '建议 5–15 秒' : '可选择一张或多张图片';
+    name.textContent = files.length ? kind === 'video' ? files[0].name : `已选 ${files.length} 张` : '';
   }
   function syncImages(kind) {
     const input = imageInputs[kind];
@@ -637,14 +637,14 @@
       document.getElementById(kind+'-reference-state').textContent = !present ? '可选' : enabled.checked ? '已设置' : '未启用';
       if (kind === 'scene') {
         const description = document.getElementById('scene-description').value.trim();
-        document.getElementById('scene-custom-fields').hidden = !enabled.checked;
+        document.getElementById('scene-custom-fields').hidden = false;
         document.getElementById('scene-reference-state').textContent = !enabled.checked ? '保留原视频场景' : !present ? '更换场景 · 待添加参考' : `更换场景 · ${imageFiles.scene.length && description ? '图片和描述' : description ? '文字描述' : '已添加图片'}`;
       }
       if (accessoryLabels[kind]) {
         document.getElementById(kind+'-references').hidden = !imageFiles[kind].length;
         document.getElementById(kind+'-add').classList.toggle('has-reference',Boolean(imageFiles[kind].length));
       }
-      if (!imageFiles[kind].length) document.getElementById(kind+'-file-name').textContent = '未设置';
+      if (!imageFiles[kind].length) document.getElementById(kind+'-file-name').textContent = '';
       else document.getElementById(kind+'-file-name').textContent = imageFiles[kind][0].name;
     }
     document.getElementById('accessory-count').textContent = `${Object.keys(accessoryLabels).filter(k=>imageFiles[k].length && document.getElementById(k+'-enabled').checked).length} 项已启用`;
@@ -664,7 +664,7 @@
     const message = document.getElementById('hairstyle-mask-status'), retry = document.getElementById('hairstyle-mask-retry');
     image.hidden = true; image.removeAttribute('src'); retry.hidden = true;
     panel.hidden = !file || !document.getElementById('hairstyle-enabled').checked;
-    if (panel.hidden || !document.getElementById('hairstyle-references').open || pageInactive) return;
+    if (panel.hidden || pageInactive) return;
     const params = hairMaskValues();
     document.getElementById('hairstyle-mask-summary').textContent = params.mask_scale.toFixed(2).replace(/0$/,'')+' 倍';
     if (!['hairstyle-mask-scale','hairstyle-mask-threshold'].every(id => document.getElementById(id).checkValidity())) {
@@ -685,7 +685,6 @@
       }
     },400);
   }
-  document.getElementById('hairstyle-references').addEventListener('toggle', scheduleHairPreview);
   for (const id of ['hairstyle-mask-scale','hairstyle-mask-threshold']) document.getElementById(id).addEventListener('input',() => { changed(); scheduleHairPreview(); });
   document.getElementById('hairstyle-mask-retry').addEventListener('click',() => { if (!busy) scheduleHairPreview(); });
 
@@ -1091,8 +1090,6 @@
       document.getElementById('scene-description').value = item.scene_description || '';
       document.getElementById('hairstyle-mask-scale').value = item.hairstyle_mask?.mask_scale ?? 1;
       document.getElementById('hairstyle-mask-threshold').value = item.hairstyle_mask?.threshold ?? 0.2;
-      document.getElementById('hairstyle-references').open = false;
-      document.getElementById('accessory-references').open = Object.keys(accessoryLabels).some(k=>imageFiles[k].length);
       draft = item; draftName=item.name; drafts.set(item.id,item); syncTaskName();
       window.portraitPeople?.restore(item.person_id);
       promptInput.value = item.prompt ?? defaultPrompt;

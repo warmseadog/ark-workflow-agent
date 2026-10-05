@@ -180,7 +180,7 @@
   async function inspect() {
     if (busy()) return;
     const version = ++inspectVersion, text = source.value.trim(), status = byId('video-link-status');
-    if (!text) { message(status, '自动识别链接，点击导入或按回车确认。'); return; }
+    if (!text) { message(status, ''); return; }
     message(status, '正在识别链接…');
     try {
       const data = await request('/api/video-link/inspect', 'POST', {text});

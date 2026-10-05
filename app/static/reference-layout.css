@@ -1,0 +1,33 @@
+/* Six persistent reference modules; optional inputs stay visible when unused. */
+.creation-workspace .optional-reference-group{align-items:stretch;gap:18px}
+.creation-workspace .optional-reference-group>.reference-module{margin:0;padding:20px;border:1px solid var(--hair);border-radius:16px;background:#fff;min-width:0;align-self:stretch}
+.creation-workspace .reference-module>.asset-heading{margin:0 0 6px;min-height:24px;align-items:center}
+.creation-workspace .reference-module>.asset-heading h3{font-size:16px;font-weight:550}
+.creation-workspace .optional-reference-note{margin:0 0 20px;color:var(--muted);font-size:12px;line-height:1.5}
+.creation-workspace .reference-module .optional-reference-body{padding-top:0}
+.creation-workspace .reference-module .scene-switch{min-height:32px;margin:0 0 12px}
+.creation-workspace .reference-module .asset-picker{min-height:220px}
+.creation-workspace .accessory-buttons{margin-top:0}
+.creation-workspace .accessory-buttons button:not(.has-reference)>span{display:none}
+.creation-workspace .asset-footer>span:empty{display:none}
+.creation-workspace :is(.asset-grid,.optional-reference-group) .input-requirement,
+.creation-workspace :is(.asset-grid,.optional-reference-group) .asset-empty>small,
+.creation-workspace :is(.asset-grid,.optional-reference-group) p.field-hint:not([role]),
+.creation-workspace :is(.video-link-description,.billing-notice),
+.creation-workspace #video-link-platforms,
+.creation-workspace #person-photos-hint,
+.creation-workspace #person-video-duration,
+.creation-workspace #person-photo-status:not([data-error="true"]){display:none}
+.creation-workspace #video-link-status:empty{display:none}
+.creation-workspace .video-link-card{margin-top:14px}
+.creation-workspace .scene-description-label{font-size:12px}
+.creation-workspace .reference-module .asset-heading>[hidden]{display:none!important}
+@media(min-width:721px){
+  .creation-workspace .asset-grid,.creation-workspace .optional-reference-group{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+  .creation-workspace .asset-grid>.asset-entry{grid-column:auto}
+}
+@media(max-width:720px){
+  .creation-workspace .asset-grid,.creation-workspace .optional-reference-group{grid-template-columns:minmax(0,1fr);gap:14px}
+  .creation-workspace .optional-reference-group>.reference-module{padding:16px}
+  .creation-workspace .reference-module .asset-picker{min-height:160px}
+}
