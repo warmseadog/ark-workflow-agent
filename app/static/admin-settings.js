@@ -212,6 +212,9 @@
     const selected = templates.find(item => item.id === id);
     templateId = selected?.id || ''; byId('admin-template-select').value = templateId;
     prompts.elements.namedItem('name').value = selected?.name || ''; prompts.elements.content.value = selected?.content || '';
+    byId('admin-prompt-rule').textContent = selected?.rule_version === 'exclusive-v2'
+      ? '独立参考优先：未启用独立发型时沿用主人物发型；已启用的元素只采用各自参考。'+(selected.is_default ? '此模板用于新建任务。' : '')
+      : '原版素材联动规则；已保存的草稿保留原内容。';
     byId('delete-template').disabled = !selected; promptBaseline = promptValue();
   }
   async function loadTemplates(selected = '') {

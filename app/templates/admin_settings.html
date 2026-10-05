@@ -91,7 +91,8 @@
           <label>已有模板<select id="admin-template-select"><option value="">新建模板</option></select></label>
           <label>模板名称<input name="name" required maxlength="60" placeholder="例如：自然换装"></label>
           <label>提示词内容<textarea name="content" required maxlength="10000" rows="7" placeholder="描述希望保留的动作、场景与生成要求"></textarea></label>
-          <p class="hint">@Video1 为参考视频，@Image1 为人物，@Image2 为衣服。</p>
+          <p class="hint" id="admin-prompt-rule">选择模板可查看生效规则。</p>
+          <p class="hint">新版正文可使用“主人物参考”“服装参考”等角色名称。具体素材编号与独立元素规则由制作页自动生成，请勿写死配饰图片编号。</p>
           <div class="actions"><button type="button" id="delete-template" class="danger">删除模板</button><button type="button" id="new-template" class="secondary">新建模板</button><button type="submit" class="primary">保存模板</button></div>
         </fieldset></form><p id="prompt-status" class="notice" role="status" hidden></p></div>
       </section>
@@ -140,7 +141,7 @@
   <script src="/static/model-settings.js?v=20260930-settings-simple-1"></script>
   <script src="/static/model-catalog.js?v=20260930-settings-simple-1"></script>
   <script src="/static/continuation-settings.js?v=20260930-continuation-1"></script>
-  <script src="/static/admin-settings.js?v=20260930-continuation-1"></script>
+  <script src="/static/admin-settings.js?v=20261005-exclusive-prompts-1"></script>
   <script src="/static/virtual-library.js?v=20261005-support-1"></script>
   <script src="/static/portrait.js?v=20260928-account-1"></script>
 </body>

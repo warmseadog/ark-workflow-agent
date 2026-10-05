@@ -170,6 +170,13 @@
       </div>
       <label class="sr-only" for="generation-prompt">生成提示词</label>
       <textarea id="generation-prompt" name="prompt" rows="4">保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图中的脸和身份；应用@Image2衣服参考图中的服装款式、颜色和材质，保持全片自然稳定。</textarea>
+      <div id="exclusive-prompt-preview" hidden>
+        <label for="final-generation-prompt">本次完整提示词（随参考素材自动更新）</label>
+        <p id="exclusive-prompt-status" class="field-hint" role="status" aria-live="polite"></p>
+        <textarea id="final-generation-prompt" rows="12" readonly aria-label="本次完整提示词"></textarea>
+        <button type="button" class="secondary" id="retry-prompt-preview">刷新提示词预览</button>
+        <p class="field-hint">未启用独立发型时沿用主人物发型；已启用的场景和配饰只采用各自参考。编辑上方正文，下方显示实际提交内容。</p>
+      </div>
       <p class="field-hint">默认严格遵循参考：视频控制动作，人物控制身份，服装控制穿着；独立发型、场景与配饰按各自参考执行。下方规则自动更新，文字只补充细节。参考图上限以本次模型的计数提示为准。</p>
       <p class="input-requirement" data-input-requirement="prompt">正在读取提示词要求…</p>
     </details>

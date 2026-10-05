@@ -108,6 +108,7 @@ def personal_people(request:Request):
 class PromptTemplateInput(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     content: str = Field(min_length=1, max_length=10000)
+    rule_version: str | None = None
 
 class LinkSettingsInput(BaseModel):
     api_key: str = Field(default='', max_length=2048)
@@ -188,7 +189,7 @@ def get_prompt_templates(request: Request):
 def _save_prompt(payload, template_id=None, *, shared=False):
     try:
         save = local_preferences.save_shared_template if shared else local_preferences.save_template
-        return save(tenancy.current_settings(settings), payload.name, payload.content, template_id)
+        return save(tenancy.current_settings(settings), payload.name, payload.content, template_id, payload.rule_version)
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from None
     except ValueError as exc:

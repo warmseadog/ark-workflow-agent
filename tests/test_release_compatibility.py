@@ -59,3 +59,11 @@ def test_explicit_missing_database_fails_closed(tmp_path):
     guard=api(); data=tmp_path/'data';data.mkdir(); target=tmp_path/'old';target.mkdir()
     with pytest.raises(ValueError):
         guard.assert_rollback_compatible(target,data,database_paths=[data/'missing.db'])
+
+
+def test_old_reader_rejects_versioned_prompt_templates(tmp_path):
+    data=tmp_path/'data';data.mkdir();target=tmp_path/'old';target.mkdir()
+    with sqlite3.connect(data/'local-preferences.db') as db:
+        db.execute('CREATE TABLE prompt_templates(id TEXT,rule_version TEXT)')
+    with pytest.raises(ValueError,match='exclusive-prompts-v2'):
+        api().assert_rollback_compatible(target,data)

@@ -50,6 +50,7 @@
         if (busy() || saving) return;
         if (dirty() && !confirm('当前提示词有未保存的修改，确认切换模板？')) return;
         selected = item.id; name.value = item.name; prompt.value = item.content;
+        window.productionPrompt?.select(item);
         baseline = {name:item.name, content:item.content};
         byId('template-delete-confirm').hidden = true;
         stash(true); renderList(); message(templateStatus, item.read_only ? '已应用系统模板；修改后可另存为个人模板。' : '已应用模板，可编辑名称和提示词后保存修改。');
@@ -67,6 +68,7 @@
   byId('template-new').addEventListener('click', () => {
     if (busy() || saving) return;
     selected = null; name.value = ''; byId('template-delete-confirm').hidden = true;
+    window.productionPrompt?.select({rule_version:window.productionPrompt.ruleVersion});
     stash(true); renderList(); name.focus();
     message(templateStatus, '输入模板名称，编辑下方提示词，再点击“另存为新模板”。');
   });
@@ -77,9 +79,10 @@
     saving = true; controls();
     try {
       const url = asNew ? '/api/prompt-templates' : '/api/prompt-templates/' + encodeURIComponent(selected);
-      const item = await request(url, asNew ? 'POST' : 'PUT', {name:name.value.trim(), content:reusablePrompt().trim()});
+      const item = await request(url, asNew ? 'POST' : 'PUT', {name:name.value.trim(), content:reusablePrompt().trim(),rule_version:window.productionPrompt?.ruleVersion || 'legacy-v1'});
       if (asNew) items.push(item); else items = items.map(old => old.id === item.id ? item : old);
       selected = item.id; name.value = item.name; prompt.value = item.content;
+      window.productionPrompt?.select(item);
       baseline = {name:item.name, content:item.content};
       stash(true); renderList(); message(templateStatus, '已保存到本机，刷新页面或重启服务后仍可使用。');
     } catch (error) { message(templateStatus, error.message, true); }
@@ -95,6 +98,7 @@
     try {
       await request('/api/prompt-templates/' + encodeURIComponent(selected), 'DELETE');
       items = items.filter(item => item.id !== selected); selected = null; name.value = '';
+      window.productionPrompt?.select({rule_version:window.productionPrompt.ruleVersion});
       byId('template-delete-confirm').hidden = true;
       stash(true); renderList(); message(templateStatus, '模板已删除；下方当前提示词仍可继续编辑或使用。');
     } catch (error) { message(templateStatus, error.message, true); }
@@ -114,6 +118,13 @@
     renderList(); message(templateStatus, '选择模板可应用；也可以编辑下方提示词并另存为新模板。');
   }).catch(error => message(templateStatus, '模板读取失败：' + error.message + ' 刷新页面可重试。', true)).finally(() => window.dispatchEvent(new Event('production-templates-ready')));
   controls();
+  window.addEventListener('production-prompt-restored', event => {
+    const item = items.find(item => item.id === event.detail.prompt_template_id);
+    selected = item?.id || null; name.value = item?.name || '';
+    baseline = {name:name.value,content:item?.content ?? reusablePrompt()};
+    byId('template-delete-confirm').hidden = true;
+    renderList();
+  });
   form.addEventListener('submit', event => {
     if (saving) { event.preventDefault(); event.stopImmediatePropagation(); message(templateStatus, '模板正在保存，请稍候再生成。'); }
   }, true);

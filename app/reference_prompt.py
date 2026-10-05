@@ -2,6 +2,58 @@
 import re
 
 
+def compose_exclusive_prompt(prompt, roles, *, person_video=False, scene_description='', follow_source=False):
+    """One deterministic v2 composer for editor preview and actual provider text."""
+    from .reference_roles import ACCESSORY_LABELS, ACCESSORY_RULES
+    allowed = {'人物', '衣服', '人物补充', '衣服补充', '发型', '场景', *ACCESSORY_LABELS.values()}
+    if not isinstance(prompt, str) or len(prompt) > 14000 or len(strip_reference_rules(prompt)) > 10000:
+        raise ValueError('提示词正文最多 10000 字。')
+    if not isinstance(roles, list) or len(roles) > 69 or any(not isinstance(role,str) or role not in allowed for role in roles):
+        raise ValueError('参考素材类别不正确。')
+    if type(person_video) is not bool or type(follow_source) is not bool or not isinstance(scene_description,str) or len(scene_description)>2000:
+        raise ValueError('参考模式或场景描述不正确。')
+    primary = allowed - {'人物补充', '衣服补充'}
+    if any(roles.count(role)>1 for role in primary) or (person_video and any(role.startswith('人物') for role in roles)):
+        raise ValueError('主参考重复或人物模式冲突。')
+    refs = {role:f'@Image{i}' for i,role in enumerate(roles,1) if role in primary}
+    identity = '@Video2' if person_video else refs.get('人物')
+    rules = ['本次规则：独立参考优先（exclusive-v2）。以下来源分工优先于正文中的冲突描述。']
+    if follow_source:
+        rules.append('视频编辑任务：唯一编辑目标为 @Video1；保持原视频时长、画面比例、动作与镜头节奏，不延长或新增镜头。其他视频仅作人物身份参考。')
+    rules.append('动作来源：@Video1。严格遵循动作顺序、关键姿态、步态、移动方向、运镜、构图和节奏；不自行增加动作或镜头，不采用其中的人脸、发型和服装，不生成打码痕迹。')
+    if identity:
+        rules.append(f'人物来源：{identity}。锁定脸型、五官比例、肤色及人物身份，全片一致；忽略所有其他素材中的人物身份，不自行美化或重塑五官。')
+    if person_video:
+        rules.append('人物参考视频 @Video2 不提供动作、服装、背景、声音或台词；动作仅以 @Video1 为准。')
+    if '衣服' in refs:
+        rules.append(f'服装来源：{refs["衣服"]}。严格还原款式、剪裁、版型、颜色、材质、纹理、图案和可见细节；忽略 @Video1、人物参考和其他素材中的服装，不改款、不换色、不增加装饰。已启用的独立配饰由各自参考决定。')
+    for i,role in enumerate(roles,1):
+        if role in ('人物补充', '衣服补充'):
+            rules.append(f'@Image{i} 仅补充{role[:2]}角度和可见细节，冲突时以对应主参考为准；不提供其他类别元素。')
+    hair = refs.get('发型')
+    if hair:
+        rules.append(f'发型来源：{hair}。该图是发型的唯一外观来源，采用发长、轮廓、刘海、卷曲程度和发色；忽略 @Video1、人物参考、服装参考和其他素材中的发型，不采用发型图中的人脸、身份、穿着或背景。')
+    elif identity:
+        rules.append(f'发型来源：{identity}。本次未启用独立发型图，发型仅以主人物参考为准，保留发长、轮廓、刘海、卷曲程度和发色；忽略 @Video1、服装参考和其他素材中的发型。')
+    else:
+        rules.append('发型来源：待添加主人物参考。本次未启用独立发型图，不得回退使用 @Video1 的发型。')
+    if '场景' in refs:
+        rules.append(f'场景来源：{refs["场景"]}。该图是场景的唯一外观来源，以其空间布局、布景、光线和环境替换原视频背景；忽略 @Video1 和所有其他素材中的背景，不引入场景图的人物、动作、服装或配饰。')
+        if scene_description.strip():
+            rules.append('场景补充（只补充场景图未指定的细节，不覆盖可见布局和环境）：'+scene_description.strip())
+    elif scene_description.strip():
+        rules.append('场景来源：文字描述。按以下描述替换原视频背景，忽略其他素材中的背景，保留 @Video1 的动作与镜头：'+scene_description.strip())
+    else:
+        rules.append('场景来源：@Video1。本次未启用更换场景，保留原视频场景，不采用其他参考素材中的背景。')
+    for kind,label in ACCESSORY_LABELS.items():
+        if label in refs:
+            extra = '不保留或叠加旧包，不混合不同包款。' if kind=='bag' else '不继承旧元素，不混合款式，不额外叠加同类物品。'
+            rules.append(f'{label}来源：{refs[label]}。该图是{label}的唯一外观来源；{ACCESSORY_RULES[kind]}严格保留形状、款式、颜色、材质及可见细节；忽略 @Video1、人物参考、服装参考及其他参考素材中的{label}。{extra}只提取{label}，不带入图中人物、发型、服装、其他配饰或背景。')
+    rules.append('未启用的独立配饰不产生替换指令，沿用既有素材分工；不得凭空增加物品。保持全片身份和各元素连续一致，运动、佩戴、接触、遮挡和透视自然，不漂移、不闪烁、不穿模。禁止新增文字、水印或特效，未展示部分仅作最小且一致的补全。')
+    base = normalize_reference_mentions(strip_reference_rules(prompt), person_video)
+    return base + '\n\n【素材联动】\n' + '\n'.join(rules) + '\n【联动结束】'
+
+
 def strip_reference_rules(prompt: str) -> str:
     return re.sub(r"\n*【素材联动】[\s\S]*?【联动结束】", "", prompt).strip()
 

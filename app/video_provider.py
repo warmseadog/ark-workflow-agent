@@ -182,7 +182,8 @@ class VideoProvider:
                  person_video: Path | None = None, person_video_uri: str | None = None,
                  hairstyles: list[Path] | None = None, scenes: list[Path] | None = None,
                  scene_description: str = '', accessories: dict[str, list[Path]] | None = None,
-                 reference_roles: dict[int, str] | None = None) -> dict:
+                 reference_roles: dict[int, str] | None = None,
+                 prompt_rule_version: str = 'legacy-v1') -> dict:
         self._content_roles = reference_roles or {}
         # Recovery needs only the durable remote identity/result, never source files.
         if resume_result_url is not None:
@@ -241,6 +242,7 @@ class VideoProvider:
             if sum(p.stat().st_size for p, _ in references) > 45 * 1024 * 1024:
                 raise ProviderError('参考图片总大小过大，请压缩图片后重试。')
         from .reference_prompt import strip_reference_rules, normalize_reference_mentions, strict_reference_rules
+        original_prompt = prompt
         prompt = normalize_reference_mentions(strip_reference_rules(prompt), person_video is not None)
         mapping = '；'.join(f'@Image{i}（图片{i}）为{kind}参考图' for i, (_, kind) in enumerate(references, 1))
         # Existing saved templates may still contain the original scene instruction.
@@ -260,6 +262,14 @@ class VideoProvider:
         structured += '\n' + strict_reference_rules(references, person_video is not None)
         if limits['follow_source']:
             structured = '视频编辑任务：编辑 @Video1，按参考素材替换人物、服装及指定元素。唯一编辑目标为 @Video1，保持原视频时长、画面比例、动作与镜头节奏；其他视频仅作人物身份参考，不进行延长或新增镜头。\n' + structured
+        from .prompt_templates import EXCLUSIVE_RULE_VERSION, RULE_VERSIONS
+        if prompt_rule_version not in RULE_VERSIONS:
+            raise ProviderError('提示词规则版本不正确。', error_kind='configuration')
+        if prompt_rule_version == EXCLUSIVE_RULE_VERSION:
+            from .reference_prompt import compose_exclusive_prompt
+            structured = compose_exclusive_prompt(original_prompt, [role for _,role in references],
+                person_video=person_video is not None, scene_description=scene_description,
+                follow_source=limits['follow_source'])
         self.progress('正在上传参考素材', 65)
         if self.config.protocol == 'toapis':
             with video.open('rb') as source:

@@ -3,6 +3,7 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from uuid import uuid4
+from .prompt_templates import DEFAULT_TEMPLATE_ID, EXCLUSIVE_PROMPT, EXCLUSIVE_RULE_VERSION, LEGACY_RULE_VERSION, RULE_VERSIONS
 
 PREVIOUS_PROMPTS = [
     ('动作保留', '保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图中的脸、五官与身份；应用@Image2衣服参考图中的服装款式、颜色和材质。'),
@@ -32,18 +33,28 @@ def connection(settings):
     db.row_factory = sqlite3.Row
     try:
         with db:
+            # Serialize schema inspection and one-time migration across requests.
+            db.execute('BEGIN IMMEDIATE')
             db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS prompt_templates (id TEXT PRIMARY KEY, name TEXT NOT NULL, content TEXT NOT NULL)')
+            if 'rule_version' not in {r[1] for r in db.execute('PRAGMA table_info(prompt_templates)')}:
+                db.execute("ALTER TABLE prompt_templates ADD COLUMN rule_version TEXT NOT NULL DEFAULT 'legacy-v1'")
             cursor = db.execute("INSERT OR IGNORE INTO preferences VALUES ('prompts_initialized', '1')")
             if cursor.rowcount and (not getattr(settings,'user_id','') or settings.storage_dir == getattr(settings,'config_root',None)):
-                db.executemany('INSERT INTO prompt_templates VALUES (?, ?, ?)',
-                    [(f'default-{i}', name, text) for i, (name, text) in enumerate(DEFAULT_PROMPTS)])
+                db.executemany('INSERT INTO prompt_templates (id,name,content) VALUES (?, ?, ?)',
+                    [(f'default-{i}', name, text) for i, (name, text) in enumerate(DEFAULT_PROMPTS[:1])])
             # Upgrade only untouched bundled templates, once; never recreate deleted items.
             upgrade = db.execute("INSERT OR IGNORE INTO preferences VALUES ('prompts_material_roles_v1','1')")
             if upgrade.rowcount:
                 for i, (name, text) in enumerate(DEFAULT_PROMPTS):
                     db.execute('UPDATE prompt_templates SET content=? WHERE id=? AND name=? AND content IN (?,?)',
                                (text,f'default-{i}',name,PREVIOUS_PROMPTS[i][1],LEGACY_PROMPTS[i][1]))
+            migration = db.execute("INSERT OR IGNORE INTO preferences VALUES ('prompts_exclusive_v2','1')")
+            from .tenancy import config_root
+            if migration.rowcount and settings.storage_dir == config_root(settings):
+                db.execute('INSERT OR IGNORE INTO prompt_templates (id,name,content,rule_version) VALUES (?,?,?,?)',
+                           (DEFAULT_TEMPLATE_ID, '默认提示词', EXCLUSIVE_PROMPT, EXCLUSIVE_RULE_VERSION))
+                db.execute("UPDATE prompt_templates SET name='默认提示词2' WHERE id='default-0' AND name='动作保留'")
             yield db
     finally:
         db.close()
@@ -72,8 +83,8 @@ def list_shared_templates(settings):
     return list_templates(_shared_settings(settings))
 
 
-def save_shared_template(settings, name, content, template_id=None):
-    return save_template(_shared_settings(settings), name, content, template_id)
+def save_shared_template(settings, name, content, template_id=None, rule_version=None):
+    return save_template(_shared_settings(settings), name, content, template_id, rule_version)
 
 
 def delete_shared_template(settings, template_id):
@@ -83,7 +94,8 @@ def delete_shared_template(settings, template_id):
 def list_templates(settings):
     settings = _personal_settings(settings)
     with connection(settings) as db:
-        personal = [dict(row) for row in db.execute('SELECT * FROM prompt_templates ORDER BY rowid')]
+        personal = [{**dict(row), 'is_default':row['id'] == DEFAULT_TEMPLATE_ID} for row in db.execute(
+            'SELECT * FROM prompt_templates ORDER BY (id=?) DESC,rowid', (DEFAULT_TEMPLATE_ID,))]
     from .tenancy import root_settings, config_root
     if settings.storage_dir != config_root(settings):
         shared=[{**item,'id':'system:'+item['id'],'scope':'shared','read_only':True} for item in list_templates(root_settings(settings))]
@@ -104,20 +116,33 @@ def _template_write_settings(settings, template_id):
     return personal
 
 
-def save_template(settings, name, content, template_id=None):
+def save_template(settings, name, content, template_id=None, rule_version=None):
     settings = _template_write_settings(settings, template_id)
     from .reference_prompt import strip_reference_rules
     name, content = name.strip(), strip_reference_rules(content)
     if not name or len(name) > 60 or not content or len(content) > 10000:
         raise ValueError('模板名称需为 1–60 个字符，提示词需为 1–10000 个字符。')
+    if rule_version is not None and rule_version not in RULE_VERSIONS:
+        raise ValueError('提示词规则版本不正确。')
     with connection(settings) as db:
         if template_id:
-            if not db.execute('UPDATE prompt_templates SET name=?, content=? WHERE id=?', (name, content, template_id)).rowcount:
+            old = db.execute('SELECT rule_version FROM prompt_templates WHERE id=?', (template_id,)).fetchone()
+            rule_version = rule_version or (old['rule_version'] if old else LEGACY_RULE_VERSION)
+            if not db.execute('UPDATE prompt_templates SET name=?, content=?, rule_version=? WHERE id=?', (name, content, rule_version, template_id)).rowcount:
                 raise LookupError('模板不存在或已被删除，请刷新列表。')
         else:
             template_id = uuid4().hex
-            db.execute('INSERT INTO prompt_templates VALUES (?, ?, ?)', (template_id, name, content))
-    return {'id': template_id, 'name': name, 'content': content}
+            rule_version = rule_version or LEGACY_RULE_VERSION
+            db.execute('INSERT INTO prompt_templates (id,name,content,rule_version) VALUES (?, ?, ?, ?)', (template_id, name, content, rule_version))
+    return {'id': template_id, 'name': name, 'content': content, 'rule_version':rule_version, 'is_default':template_id == DEFAULT_TEMPLATE_ID}
+
+
+def default_prompt_values(settings):
+    selected = next((x for x in list_templates(settings) if x['is_default']), None)
+    if selected:
+        return {'prompt':selected['content'], 'prompt_template_id':selected['id'], 'prompt_rule_version':selected['rule_version']}
+    # Respect deletion: do not silently recreate or apply the removed template.
+    return {'prompt':'', 'prompt_template_id':None, 'prompt_rule_version':LEGACY_RULE_VERSION}
 
 def delete_template(settings, template_id):
     settings = _template_write_settings(settings, template_id)

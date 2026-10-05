@@ -73,6 +73,8 @@ def test_builtin_prompt_upgrade_preserves_custom_edits_and_deleted_templates(cli
     client.get('/api/prompt-templates')
     with sqlite3.connect(root/'local-preferences.db') as db:
         db.execute("DELETE FROM preferences WHERE key='prompts_material_roles_v1'")
+        db.execute("UPDATE prompt_templates SET name='动作保留' WHERE id='default-0'")
+        db.execute("INSERT OR IGNORE INTO prompt_templates (id,name,content) VALUES ('default-1','自然换装','保留我改过的模板')")
         db.execute("UPDATE prompt_templates SET content=? WHERE id='default-0'",('保持@Video1原视频的动作、镜头、场景和节奏；应用@Image1人物参考图中的脸、五官与身份；应用@Image2衣服参考图中的服装款式、颜色和材质。',))
         db.execute("UPDATE prompt_templates SET content='保留我改过的模板' WHERE id='default-1'")
         db.execute("DELETE FROM prompt_templates WHERE id='default-2'")

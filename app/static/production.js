@@ -13,6 +13,8 @@
   const previewStatus = document.getElementById('studio-preview-status');
   const generateButton = document.getElementById('studio-generate-submit');
   const status = document.getElementById('production-status');
+  generationForm.dataset.promptRuleVersion = 'legacy-v1';
+  let promptPreviewKey = '', promptPreviewPromise = null, promptPreviewResult = '', promptPreviewTimer;
   const assetFiles = new WeakMap();
   const uploadingFiles = new WeakMap();
   // Arrays contain real local Files or stored descriptors. A stored asset never
@@ -562,6 +564,15 @@
   }
   function syncReferencePrompt() {
     const input = generationForm.elements.namedItem('prompt');
+    const exclusive = generationForm.dataset.promptRuleVersion === 'exclusive-v2';
+    document.getElementById('exclusive-prompt-preview').hidden = !exclusive;
+    if (exclusive) {
+      const base = stripReferenceRules(input.value);
+      if (base !== input.value) input.value = base;
+      document.getElementById('prompt-reference-status').textContent = '独立参考优先';
+      schedulePromptPreview();
+      return;
+    }
     const rules = [
       '严格参考：参考素材在各自负责范围内优先于文字描述，文字仅补充未指定细节。',
       '@Video1 动作主参考：严格遵循动作顺序、关键姿态、移动方向、运镜、构图和节奏，不自行增加动作或镜头；不采用其中的人脸和服装，不生成打码痕迹。'
@@ -599,7 +610,57 @@
     const hint = document.getElementById('prompt-reference-status');
     if (hint) hint.textContent = '已启用严格参考';
   }
-  window.productionPrompt = {strip:stripReferenceRules, sync:syncReferencePrompt};
+  function exclusivePreviewPayload() {
+    const faces = personMode === 'video' ? 0 : imageFiles.face.length, clothes = imageFiles.clothing.length;
+    const roles = [...(faces ? ['人物'] : []), ...(clothes ? ['衣服'] : []),
+      ...Array(Math.max(0,faces-1)).fill('人物补充'), ...Array(Math.max(0,clothes-1)).fill('衣服补充')];
+    for (const [kind,label] of Object.entries({hairstyle:'发型',scene:'场景',...accessoryLabels})) {
+      if (imageFiles[kind].length && document.getElementById(kind+'-enabled').checked) roles.push(label);
+    }
+    const model = publicModel();
+    return {prompt:stripReferenceRules(generationForm.elements.namedItem('prompt').value),roles,
+      person_video:personMode === 'video',rule_version:generationForm.dataset.promptRuleVersion,
+      scene_description:document.getElementById('scene-enabled').checked ? document.getElementById('scene-description').value.trim() : '',
+      model:Object.fromEntries(['model','duration','resolution','ratio','generate_audio'].filter(key=>key in model).map(key=>[key,model[key]]))};
+  }
+  function schedulePromptPreview() {
+    clearTimeout(promptPreviewTimer);
+    if (generationForm.dataset.promptRuleVersion !== 'exclusive-v2') return;
+    const hint = document.getElementById('exclusive-prompt-status');
+    hint.textContent = '正在更新本次完整提示词…'; hint.dataset.error = 'false';
+    document.getElementById('final-generation-prompt').value = '';
+    promptPreviewTimer = setTimeout(() => ensurePromptPreview().catch(() => {}), 180);
+  }
+  async function ensurePromptPreview() {
+    if (generationForm.dataset.promptRuleVersion !== 'exclusive-v2') return null;
+    const payload = exclusivePreviewPayload(), key = JSON.stringify(payload);
+    const hint = document.getElementById('exclusive-prompt-status');
+    if (key !== promptPreviewKey || !promptPreviewPromise) {
+      promptPreviewKey = key;
+      promptPreviewPromise = api('/prompt-preview','POST',payload).then(result => result.prompt);
+    }
+    try {
+      const text = await promptPreviewPromise;
+      if (pageInactive || generationForm.dataset.promptRuleVersion !== 'exclusive-v2') return null;
+      if (key !== JSON.stringify(exclusivePreviewPayload())) return ensurePromptPreview();
+      promptPreviewResult = text;
+      document.getElementById('final-generation-prompt').value = text;
+      hint.textContent = '已按本次素材更新；生成时使用下方完整提示词。'; hint.dataset.error = 'false';
+      return text;
+    } catch (error) {
+      if (key === promptPreviewKey) {
+        promptPreviewPromise = null; promptPreviewResult = '';
+        hint.textContent = '提示词预览失败：'+error.message+'；请重试，预览成功后才能生成。'; hint.dataset.error = 'true';
+      }
+      throw error;
+    }
+  }
+  document.getElementById('retry-prompt-preview').addEventListener('click', () => ensurePromptPreview().catch(() => {}));
+  window.productionPrompt = {strip:stripReferenceRules, sync:syncReferencePrompt,
+    get ruleVersion() { return generationForm.dataset.promptRuleVersion; },
+    get templateId() { return generationForm.dataset.promptTemplateId || null; },
+    select(item) { generationForm.dataset.promptRuleVersion = item?.rule_version || 'legacy-v1'; generationForm.dataset.promptTemplateId = item?.id || ''; }
+  };
   function refreshExtraState() {
     for (const kind of extraKinds) {
       const enabled = document.getElementById(kind+'-enabled');
@@ -749,6 +810,7 @@
       if (!pendingSubmission) {
         acceptTaskName();
         const saved = await flushDraft();
+        await ensurePromptPreview();
         pendingSubmission = {draft_id: saved.id, revision: saved.revision, idempotency_key: crypto.randomUUID()};
         // Persist before the request: a lost response must retry the identical submission.
         localStorage.setItem(pendingKey, JSON.stringify(pendingSubmission));
@@ -800,6 +862,7 @@
   }
   function changed() {
     if (!sessionReady || restoring || pageInactive) return;
+    schedulePromptPreview();
     // Submission feedback belongs to the previous revision. Keep uncertain
     // submissions intact so their idempotency key can still be recovered.
     if (!busy && !pendingSubmission) status.textContent = '';
@@ -992,6 +1055,8 @@
     const extraFiles = Object.fromEntries(extraKinds.map(kind=>[kind,[...imageFiles[kind]]]));
     const selectedPerson = window.portraitPeople?.selected || null;
     const values = {source_clip:window.generationOptions?.sourceClip?.() || null,target_duration:window.generationOptions?.targetDuration?.() ?? null,person_input_policy:personInputPolicy,person_reference_mode:personMode,person_video_asset_id:personVideo?.id || null,person_id:selectedPerson, name:draftName || draft?.name || '未命名视频', prompt:generationForm.elements.namedItem('prompt').value, mask:maskValues(), model:publicModel()};
+    values.prompt_template_id = window.productionPrompt.templateId;
+    values.prompt_rule_version = window.productionPrompt.ruleVersion;
     for (const kind of extraKinds) values[kind+'_enabled'] = document.getElementById(kind+'-enabled').checked;
     values.scene_description = document.getElementById('scene-description').value;
     values.hairstyle_mask = hairMaskValues();
@@ -1059,6 +1124,8 @@
       draft = item; draftName=item.name; drafts.set(item.id,item); syncTaskName();
       window.portraitPeople?.restore(item.person_id);
       generationForm.elements.namedItem('prompt').value = item.prompt ?? defaultPrompt;
+      window.productionPrompt.select({id:item.prompt_template_id,rule_version:item.prompt_rule_version});
+      window.dispatchEvent(new CustomEvent('production-prompt-restored',{detail:item}));
       applyMask({...defaultMask,...item.mask}); savedMask = maskValues();
       window.generationOptions.restore(item.model, item.source_clip, item.target_duration);
       window.productionDraftModel = {...item.model};
@@ -1111,7 +1178,7 @@
     if (input.value !== before) changed();
   });
   window.addEventListener('production-prompt-changed',event => { if (event.detail?.applyTemplate) syncReferencePrompt(); changed(); });
-  window.addEventListener('model-settings-saved',() => { invalidate(); });
+  window.addEventListener('model-settings-saved',() => { invalidate(); schedulePromptPreview(); });
   window.addEventListener('beforeunload', event => {
     if (savedVersion !== dirtyVersion) { event.preventDefault(); event.returnValue = ''; }
   });

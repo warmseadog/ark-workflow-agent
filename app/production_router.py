@@ -25,6 +25,7 @@ _MODEL_FIELDS = {'provider','protocol','mode','base_url','model','duration','fps
 _DRAFT_FIELDS = {'source_clip','person_reference_mode','person_video_asset_id','name','person_id','source_asset_id','face_asset_ids','clothing_asset_ids','hairstyle_asset_ids','scene_asset_ids','hairstyle_enabled','hairstyle_mask','scene_enabled','scene_description','prompt','mask','model'}
 _DRAFT_FIELDS |= {kind+suffix for kind in ACCESSORY_LABELS for suffix in ('_asset_ids','_enabled')}
 _DRAFT_FIELDS.update({'person_input_policy','target_duration'})
+_DRAFT_FIELDS.update({'prompt_template_id','prompt_rule_version'})
 _MASK_FIELDS = {'blur_style','style','shape','mask_mode','robust_tracking','mask_scale','mosaic_size','threshold','detection_size','keep_audio'}
 
 
@@ -79,6 +80,11 @@ def get_router(settings_getter, local_guard):
     def validate_changes(values, current=None):
         if set(values)-_DRAFT_FIELDS:
             raise ValueError('草稿包含不支持的字段。')
+        from .prompt_templates import RULE_VERSIONS
+        if 'prompt_rule_version' in values and values['prompt_rule_version'] not in RULE_VERSIONS:
+            raise ValueError('提示词规则版本不正确。')
+        if values.get('prompt_template_id') is not None and (not isinstance(values['prompt_template_id'], str) or len(values['prompt_template_id'])>100):
+            raise ValueError('提示词模板标识不正确。')
         if 'target_duration' in values:
             from .continuation import normalize_target
             values['target_duration'] = normalize_target(values['target_duration'])
@@ -243,6 +249,23 @@ def get_router(settings_getter, local_guard):
         from .asset_preview import preview_response
         return guarded(lambda:preview_response(settings_getter(),ident))
 
+    @router.post('/prompt-preview')
+    def prompt_preview(payload: dict):
+        def operation():
+            from .reference_prompt import compose_exclusive_prompt
+            from .prompt_templates import EXCLUSIVE_RULE_VERSION
+            from .model_catalog import capabilities
+            if payload.get('rule_version') != EXCLUSIVE_RULE_VERSION:
+                raise ValueError('提示词规则版本不正确。')
+            model = payload.get('model', {})
+            if not isinstance(model,dict) or set(model)-TASK_FIELDS:
+                raise ValueError('预览模型参数不正确。')
+            config = resolve_task_config(settings_getter(), model)
+            return {'prompt':compose_exclusive_prompt(payload.get('prompt',''), payload.get('roles',[]),
+                person_video=payload.get('person_video',False), scene_description=payload.get('scene_description',''),
+                follow_source=capabilities(config.model,config.protocol)['follow_source'])}
+        return guarded(operation)
+
     @router.post('/drafts')
     def create_draft(payload: dict):
         def operation():
@@ -257,8 +280,9 @@ def get_router(settings_getter, local_guard):
                 values.pop('name', None)
                 if plain_name != source_name: values['name']=plain_name
             else:
+                from .local_preferences import default_prompt_values
                 values={'model':public_model(),'mask':redaction_settings.load_config(settings_getter()),
-                        'prompt':'保持@Video1原视频的动作、镜头和节奏；应用@Image1人物参考图；应用@Image2服装参考图，保持自然稳定。'}
+                        **default_prompt_values(settings_getter())}
             if 'name' in payload: values['name']=payload['name']
             if 'person_input_policy' in payload: values['person_input_policy']=payload['person_input_policy']
             validate_changes(values)

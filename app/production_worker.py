@@ -175,6 +175,7 @@ def execute_run(settings, store, run):
         if not base_ready:
             client = VideoProvider(config, settings.seedance_poll_seconds, progress)
             client.generate(defaced, faces, clothes, snapshot['prompt'], base_output, video_url=video_url,
+                            prompt_rule_version=snapshot.get('prompt_rule_version','legacy-v1'),
                             on_submitted=submitted, on_result=result,
                             resume_task_id=provider_id, resume_result_url=result_url, **extra_references,
                             **({'image_asset_uris':image_asset_uris} if image_asset_uris else {}))

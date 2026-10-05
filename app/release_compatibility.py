@@ -44,6 +44,8 @@ def assert_rollback_compatible(target_release,storage_root,*,database_paths=(),e
                 for table in tables:
                     quote='"'+table.replace('"','""')+'"'
                     columns={row[1] for row in db.execute('PRAGMA table_info('+quote+')')}
+                    if table=='prompt_templates' and 'rule_version' in columns:
+                        required.add('exclusive-prompts-v2')
                     if 'status' in columns:
                         if db.execute('SELECT 1 FROM '+quote+" WHERE status='restore_held' LIMIT 1").fetchone():
                             required.add('restore-hold-v1')
