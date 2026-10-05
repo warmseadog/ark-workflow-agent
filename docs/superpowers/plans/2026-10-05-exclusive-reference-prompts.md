@@ -36,11 +36,11 @@
 
 ## Task 3: Verify and synchronize
 
-- [ ] Run relevant backend/browser tests, then full regression; request independent review and address findings.
-- [ ] Commit and merge locally; push GitHub main without force.
-- [ ] Inspect current server identity, build complete verified bundle, stage/check/deploy with existing release tool and backup.
-- [ ] Run template migration after backup, verify live template count/content, version/default behavior, static assets, health and unchanged historical data.
-- [ ] Record final commit, release identity, backup and validation results.
+- [x] Run relevant backend/browser tests, then full regression; request independent review and address findings.
+- [x] Commit and merge locally; push GitHub main without force.
+- [x] Inspect current server identity, build complete verified bundle, stage/check/deploy with existing release tool and backup.
+- [x] Run template migration after backup, verify live template count/content, version/default behavior, static assets, health and unchanged historical data.
+- [x] Record final commit, release identity, backup and validation results.
 
 ## Execution ledger
 
@@ -52,4 +52,11 @@
 - Added release capability exclusive-prompts-v2 after a failing downgrade test demonstrated that old readers would otherwise accept the changed SQLite schema.
 - Integrated origin/main f42820d (MIRA editorial UI); 184 live app/ui files match the previous reconciled base 5b402d9.
 - Local template database backed up and synchronized to the two requested templates; only the three untouched obsolete bundled templates already deleted online were removed locally.
-- Concurrent first-read probe reproduced duplicate-column migration failure; BEGIN IMMEDIATE now serializes schema inspection and migration. Rechecking template API, permissions and browser flows after this fix.
+- Concurrent first-read probe reproduced duplicate-column migration failure; BEGIN IMMEDIATE now serializes schema inspection and migration. Final related template/API/permission/browser/compatibility run: 53 passed.
+- Full regression: 1291 passed, 3 skipped, 28 failed in the restricted environment. All 28 failed cases passed with required storage access on rerun (27 together, one 320px duration test on isolated rerun). The latter batch failure read a run snapshot without source_clip; its root cause was not conclusively established, so this is not a claim of a single all-green full-suite run.
+- Server service-user isolated tests: 88 passed; no paid generation calls. Full release check, deployment and post-deployment verification succeeded.
+- Implementation commit: 740458261dd7d1417c1b62d14063ac02543c1d33, fast-forwarded to local main and pushed to GitHub main after explicit user confirmation of the target branch.
+- Live release: 740458261dd7d1417c1b62d14063ac02543c1d33+38cba1a2e0e5abbb. Bundle SHA256: cddbb613e2805df4f9df02d125240e978dc1df06cc93c7ae41ffdf0f2917abc5.
+- Server backup: /var/lib/ark-video-workflow-backups/before-release-5d85ca73967648d2a57f3ea5ff7345a8; snapshot ID 46626bc17c2d4b7d91d8f497c5fe2da4.
+- Post-deploy database verification confirmed exactly 默认提示词 (exclusive-v2, default) and 默认提示词2 (legacy-v1); all 77 historical run snapshots were unchanged across template migration. The three served JavaScript files matched the deployed release byte-for-byte; health returned 200.
+- Original template body matches the local pre-migration backup, current local database and live database exactly. Verification artifacts are stored locally under exports/exclusive-prompts-release (ignored by Git).
