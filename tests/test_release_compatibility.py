@@ -18,6 +18,20 @@ def test_old_reader_rejects_camera_variation_tasks(tmp_path):
         api().assert_rollback_compatible(target,data)
 
 
+@pytest.mark.parametrize('source',['config','snapshot'])
+def test_old_reader_rejects_variation_reasoning_config(tmp_path,source):
+    data=tmp_path/'data';data.mkdir();target=tmp_path/'old';target.mkdir()
+    if source=='config':
+        private=data/'private';private.mkdir()
+        (private/'variation-settings.json').write_text(json.dumps({'thinking_enabled':True}))
+    else:
+        with sqlite3.connect(data/'state.db') as db:
+            db.execute('CREATE TABLE production_runs(private TEXT)')
+            db.execute('INSERT INTO production_runs VALUES (?)',(json.dumps({'variation':{'config':{'thinking_enabled':True}}}),))
+    with pytest.raises(ValueError,match='camera-variation-reasoning-v1'):
+        api().assert_rollback_compatible(target,data)
+
+
 @pytest.mark.parametrize('table,state',[
     ('portrait_photos','stopped'),('portrait_photos','uncertain'),
     ('stage_tasks','uncertain'),('stage_tasks','restore_held'),('production_runs','restore_held')])

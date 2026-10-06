@@ -69,6 +69,20 @@ def test_config_endpoint_roundtrip(client):
     assert client.put('/api/variation-settings',json={'template':''}).status_code==422
 
 
+def test_pro_settings_wait_for_user_key(client):
+    client.put('/api/variation-settings',json={'api_key':'previous-key'})
+    values={'model':'doubao-seed-2-1-pro-260915','thinking_enabled':True,
+        'reasoning_effort':'high','max_completion_tokens':32768,'timeout_seconds':300,'clear_api_key':True}
+    response=client.put('/api/variation-settings',json=values)
+    assert response.status_code==200,response.text
+    config=client.get('/api/variation-settings').json()['config']
+    assert not config['has_api_key'] and config['problem']
+    assert all(config[k]==v for k,v in values.items() if k!='clear_api_key')
+    for invalid in ({'thinking_enabled':'true'},{'reasoning_effort':'invalid'},{'reasoning_effort':[]},
+                    {'max_completion_tokens':True},{'max_completion_tokens':0},{'timeout_seconds':601}):
+        assert client.put('/api/variation-settings',json=invalid).status_code==422
+
+
 def test_ordinary_owner_cannot_retry_delegated_variation_preparation(accounts_clients):
     import json
     from app import tenancy

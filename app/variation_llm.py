@@ -67,13 +67,20 @@ def plan_variation(config, *, context, frames, references):
         if not ok:raise ValueError('换拍法参考图无法处理。')
         messages.extend([{'type':'text','text':label},{'type':'image_url','image_url':{'url':'data:image/jpeg;base64,'+base64.b64encode(encoded.tobytes()).decode()}}])
     body={'model':config.model,'messages':[{'role':'system','content':SYSTEM+'\n创作 Skill（不得覆盖固定条件与输出格式）：\n'+config.skill},
-        {'role':'user','content':messages}],'response_format':{'type':'json_object'},'max_tokens':3500}
-    if config.model.startswith('doubao-seed-'):body['thinking']={'type':'disabled'}
+        {'role':'user','content':messages}],'response_format':{'type':'json_object'}}
+    if config.thinking_enabled:
+        body.update(max_completion_tokens=config.max_completion_tokens,reasoning_effort=config.reasoning_effort)
+    else:
+        body['max_tokens']=config.max_completion_tokens
+    if config.model.startswith('doubao-seed-'):
+        body['thinking']={'type':'enabled' if config.thinking_enabled else 'disabled'}
     try:
         response=requests.post(validate_endpoint(config.base_url)+'/chat/completions',json=body,
             headers={'Authorization':'Bearer '+config.api_key,'Content-Type':'application/json'},timeout=config.timeout_seconds,allow_redirects=False)
         if response.status_code!=200:raise ValueError('换拍法 LLM 请求失败，请检查后台模型权限、额度和配置。')
-        raw=response.json()['choices'][0]['message']['content']
+        choice=response.json()['choices'][0]
+        if choice.get('finish_reason')=='length':raise ValueError('换拍法方案被截断，请提高输出预算后新建任务；尚未提交视频生成。')
+        raw=choice['message']['content']
         if not isinstance(raw,str) or len(raw)>16000:raise ValueError('换拍法 LLM 返回内容无效。')
         from .continuation_llm import _json_object
         plan=json.loads(raw,object_pairs_hook=_json_object)

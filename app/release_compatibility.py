@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import closing
 from pathlib import Path
 import sqlite3
+import json
 from .release_bundle import ReleaseError, no_links
 
 
@@ -36,6 +37,16 @@ def assert_rollback_compatible(target_release,storage_root,*,database_paths=(),e
     identity=read_release_identity(target_release)
     capabilities=set(identity['capabilities']) if identity else set()
     required=set()
+    for root in roots:
+        paths=root.rglob('variation-settings.json') if root.is_dir() else [root]
+        for path in paths:
+            if path.name!='variation-settings.json':continue
+            try:
+                config=json.loads(no_links(path).read_text(encoding='utf-8'))
+                if not isinstance(config,dict):raise ValueError()
+            except (ValueError,OSError):raise ReleaseError('Variation configuration compatibility inspection failed') from None
+            if {'thinking_enabled','reasoning_effort','max_completion_tokens'} & config.keys():
+                required.add('camera-variation-reasoning-v1')
     databases=discover_databases(storage_root,database_paths=database_paths,extra_roots=extra_roots)
     for path in databases:
         try:
@@ -46,6 +57,9 @@ def assert_rollback_compatible(target_release,storage_root,*,database_paths=(),e
                     columns={row[1] for row in db.execute('PRAGMA table_info('+quote+')')}
                     if table=='production_variations' and db.execute('SELECT 1 FROM production_variations LIMIT 1').fetchone():
                         required.add('camera-variation-v1')
+                    if table=='production_runs' and 'private' in columns:
+                        if db.execute("SELECT 1 FROM production_runs WHERE json_type(private,'$.variation.config.thinking_enabled') IS NOT NULL LIMIT 1").fetchone():
+                            required.add('camera-variation-reasoning-v1')
                     if table=='prompt_templates' and 'rule_version' in columns:
                         required.add('exclusive-prompts-v2')
                         if db.execute("SELECT 1 FROM prompt_templates WHERE rule_version='yoyo-v3' LIMIT 1").fetchone():

@@ -28,6 +28,10 @@ class VariationConfig:
     template: str = DEFAULT_TEMPLATE
     skill: str = DEFAULT_SKILL
     timeout_seconds: int = 90
+    # Legacy task snapshots omit these fields and must keep their original mode.
+    thinking_enabled: bool = False
+    reasoning_effort: str = 'high'
+    max_completion_tokens: int = 3500
 
     @property
     def skill_version(self):
@@ -56,7 +60,10 @@ def _validate(values):
     values['base_url']=validate_url(values['base_url'])
     if not values['model']:raise ValueError('请填写 LLM 模型 ID。')
     if any(ord(c)<33 or ord(c)>126 for c in values['api_key']):raise ValueError('API Key 应为不含空格的英文字符。')
-    if type(values['timeout_seconds']) is not int or not 10<=values['timeout_seconds']<=180:raise ValueError('超时需为 10–180 秒。')
+    if type(values['timeout_seconds']) is not int or not 10<=values['timeout_seconds']<=600:raise ValueError('超时需为 10–600 秒。')
+    if type(values['thinking_enabled']) is not bool:raise ValueError('深度思考选项不正确。')
+    if not isinstance(values['reasoning_effort'],str) or values['reasoning_effort'] not in {'low','medium','high'}:raise ValueError('思考深度应为 low、medium 或 high。')
+    if type(values['max_completion_tokens']) is not int or not 1024<=values['max_completion_tokens']<=131072:raise ValueError('输出预算需为 1024–131072 tokens。')
     for name,limit in [('template',10000),('skill',20000)]:
         value=values[name]
         if not isinstance(value,str) or not value.strip() or len(value)>limit or '\x00' in value:raise ValueError(f'{name} 应为 1–{limit} 字纯文本。')

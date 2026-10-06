@@ -35,3 +35,27 @@ def test_blocked_inspiration_and_invalid_enum_shape():
     assert validate_plan(p,8)['blocked']
     p=example();p['shots'][0]['move']={'untrusted':'value'}
     with pytest.raises(ValueError):validate_plan(p,8)
+
+
+def test_pro_thinking_budget_and_truncated_response(monkeypatch):
+    calls=[]
+    def post(url,**kw):
+        calls.append(kw);r=requests.Response();r.status_code=200
+        r._content=json.dumps({'choices':[{'finish_reason':'length','message':{'content':json.dumps(example())}}]}).encode()
+        return r
+    monkeypatch.setattr('app.variation_llm.requests.post',post)
+    c=VariationConfig(api_key='private',model='doubao-seed-2-1-pro-260915',
+        thinking_enabled=True,reasoning_effort='high',max_completion_tokens=32768,timeout_seconds=300)
+    with pytest.raises(ValueError,match='截断'):
+        plan_variation(c,context={'duration':8},frames=[],references=[])
+    payload=calls[0]['json']
+    assert payload['thinking']=={'type':'enabled'}
+    assert payload['reasoning_effort']=='high'
+    assert payload['max_completion_tokens']==32768 and 'max_tokens' not in payload
+    assert calls[0]['timeout']==300
+
+
+def test_legacy_snapshot_keeps_non_thinking_budget():
+    c=VariationConfig(**{'model':'doubao-seed-2-1-lite-260915','api_key':'old-key'})
+    assert c.thinking_enabled is False
+    assert c.max_completion_tokens==3500

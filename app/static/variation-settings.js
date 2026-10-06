@@ -11,7 +11,8 @@
     } finally {clearTimeout(timer);}
   }
   function fill(c){
-    for(const key of ['model','base_url','timeout_seconds','template','skill'])form.elements[key].value=c[key];
+    for(const key of ['model','base_url','timeout_seconds','template','skill','reasoning_effort','max_completion_tokens'])form.elements[key].value=c[key];
+    form.elements.thinking_enabled.checked=c.thinking_enabled;
     form.elements.enabled.checked=c.enabled;form.elements.api_key.value='';form.elements.clear_api_key.checked=false;
     document.getElementById('variation-key-status').textContent=c.has_api_key?'已保存':'未配置';
     document.getElementById('variation-skill-version').textContent=c.skill_version.slice(0,12);
@@ -24,6 +25,7 @@
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(fields.disabled||!form.reportValidity())return;
     const values=Object.fromEntries(new FormData(form));values.enabled=form.elements.enabled.checked;values.clear_api_key=form.elements.clear_api_key.checked;values.timeout_seconds=Number(values.timeout_seconds);
+    values.thinking_enabled=form.elements.thinking_enabled.checked;values.max_completion_tokens=Number(values.max_completion_tokens);
     fields.disabled=true;note('正在保存…');
     try{const c=await request('PUT',values);fill(c);note('换拍法配置已保存，用于新任务。'+c.problem);}
     catch(e){note(e.name==='AbortError'?'保存超时，请重新加载核对结果。':e.message,true);}
