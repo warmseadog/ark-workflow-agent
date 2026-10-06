@@ -33,9 +33,6 @@ def project(value, settings):
         if isinstance(item, dict):
             result = {key:visit(child) for key,child in item.items()
                     if visible or key not in PROMPT_FIELDS}
-            if not visible and item.get('variation'):
-                result['can_resume']=False
-                result['can_retry_preparation']=False
             return result
         if isinstance(item, list):
             return [visit(child) for child in item]

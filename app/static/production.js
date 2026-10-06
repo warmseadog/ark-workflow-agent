@@ -18,6 +18,15 @@
   const variationEditor = document.getElementById('variation-editor');
   const variationSubmit = document.getElementById('variation-submit');
   const variationInput = document.getElementById('variation-inspiration');
+  function updateVariationLabel() {
+    if (variationSubmit) variationSubmit.textContent = variationInput.value.trim() ? '按灵感生成' : '正常生成';
+  }
+  function resetVariation() {
+    if (!variationEditor) return;
+    variationEditor.hidden = true; variationToggle.setAttribute('aria-expanded','false');
+    variationInput.value = ''; updateVariationLabel();
+  }
+  variationInput?.addEventListener('input', updateVariationLabel);
   variationToggle?.addEventListener('click', () => {
     variationEditor.hidden = !variationEditor.hidden;
     variationToggle.setAttribute('aria-expanded', String(!variationEditor.hidden));
@@ -852,7 +861,8 @@
   });
   generationForm.addEventListener('submit', async event => {
     event.preventDefault();
-    const variationRequested = event.submitter === variationSubmit && Boolean(variationSubmit);
+    const inspiration = variationInput?.value.trim() || '';
+    const variationRequested = event.submitter === variationSubmit && Boolean(variationSubmit) && !variationEditor.hidden && Boolean(inspiration);
     if (busy || sourceImportBusy || !sessionReady || (!pendingSubmission && !sourceForm.reportValidity())) return;
     clearResult(); lock(true); generateButton.textContent = '正在提交…';
     status.textContent = '正在保存草稿并加入任务队列';
@@ -862,14 +872,14 @@
         const saved = await flushDraft();
         if (!variationRequested) await ensurePromptPreview();
         pendingSubmission = {draft_id: saved.id, revision: saved.revision, idempotency_key: crypto.randomUUID()};
-        if (variationRequested) pendingSubmission.variation = {inspiration:variationInput.value.trim()};
+        if (variationRequested) pendingSubmission.variation = {inspiration};
         // Persist before the request: a lost response must retry the identical submission.
         localStorage.setItem(pendingKey, JSON.stringify(pendingSubmission));
       }
       const submitted = await api('/runs', 'POST', pendingSubmission);
       pendingSubmission = null; localStorage.removeItem(pendingKey);
       runs.set(submitted.id, submitted); renderRuns();
-      if (submitted.variation && variationEditor) { variationEditor.hidden=true; variationToggle.setAttribute('aria-expanded','false'); variationInput.value=''; }
+      resetVariation();
       status.textContent = '任务已加入队列，可继续准备下一个视频';
     } catch (error) {
       // A definitive validation error cannot have accepted the task. Network/5xx remains uncertain.
@@ -1175,6 +1185,7 @@
       document.getElementById('scene-description').value = item.scene_description || '';
       document.getElementById('hairstyle-mask-scale').value = item.hairstyle_mask?.mask_scale ?? 1;
       document.getElementById('hairstyle-mask-threshold').value = item.hairstyle_mask?.threshold ?? 0.2;
+      if (draft?.id !== item.id) resetVariation();
       draft = item; draftName=item.name; drafts.set(item.id,item); syncTaskName();
       window.portraitPeople?.restore(item.person_id);
       promptInput.value = item.prompt ?? defaultPrompt;

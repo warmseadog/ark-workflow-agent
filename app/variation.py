@@ -7,6 +7,8 @@ from .reference_roles import OPTIONAL_KINDS, ACCESSORY_LABELS
 from .variation_settings import load_config, VariationConfig
 from .variation_llm import RECIPES, plan_variation
 
+BLOCKED_MESSAGE = '拍摄灵感与人物、穿搭或场景等固定条件冲突，请调整灵感后重新生成。'
+
 
 def normalize_request(value):
     if not isinstance(value,dict) or set(value)!={'inspiration'}:raise ValueError('换拍法请求格式不正确。')
@@ -53,7 +55,7 @@ def source_frames(video,directory):
 def prepare(settings,store,run,video,faces,clothes,extra,config):
     ident=run['id'];state=store.get_variation(ident)
     if state.get('plan'):
-        if state['plan']['blocked']:raise ValueError('灵感与固定条件冲突：'+'；'.join(state['plan']['conflicts']))
+        if state['plan']['blocked']:raise ValueError(BLOCKED_MESSAGE)
         return state['plan']
     store.update_run(ident,stage='variation_planning',message='正在结合素材与灵感设计新拍法',progress=48)
     frozen=run['private']['variation'];llm=VariationConfig(**frozen['config'])
@@ -71,5 +73,7 @@ def prepare(settings,store,run,video,faces,clothes,extra,config):
         'suggested_recipe':state['recipe'],'recent_recipes':state['recent_recipes']}
     plan=plan_variation(llm,context=context,frames=frames,references=references)
     store.update_variation(ident,plan=plan,llm_model=llm.model,skill_version=frozen['skill_version'])
-    if plan['blocked']:raise ValueError('灵感与固定条件冲突：'+'；'.join(plan['conflicts']))
+    # Planner explanations may quote private prompts. Keep them in the plan,
+    # never copy them into public task error/message fields.
+    if plan['blocked']:raise ValueError(BLOCKED_MESSAGE)
     return plan

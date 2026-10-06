@@ -215,14 +215,12 @@
     </div>
     <div id="source-clip-controls" class="source-clip-controls" hidden><label for="source-clip-start">片段起点（秒）<input id="source-clip-start" type="number" min="0" max="86400" step="0.1" value="0"></label><label for="source-clip-duration">基础片段时长（秒）<input id="source-clip-duration" type="number" min="2" max="30" step="0.1" placeholder="自动"></label><button type="button" id="source-clip-preview" class="secondary">预览片段</button><span id="source-clip-note" role="status" aria-live="polite"></span></div>
     <dialog id="source-clip-dialog" class="run-player-dialog"><div class="run-player-heading"><h3>动作视频片段预览</h3><button type="button" id="source-clip-close" aria-label="关闭片段预览">×</button></div><video id="source-clip-video" controls playsinline preload="metadata"></video><p>预览所选原片片段；生成时将对该片段打码并替换人物与服装。</p></dialog>
-    {% if prompt_editor_visible is not defined or prompt_editor_visible(request) %}
     <section id="variation-editor" class="variation-editor" hidden aria-label="换个拍法">
       <label for="variation-inspiration">拍摄灵感（选填）</label>
       <textarea id="variation-inspiration" maxlength="2000" rows="3" placeholder="例如：先拍衣服细节，再慢慢拉远看到全身"></textarea>
-      <p class="field-hint">留空则自动设计新拍法，保留当前人物、造型、场景和光照。每次提交生成一条新视频，使用当前视频模型额度。</p>
-      <div class="variation-actions"><a href="/admin/settings#variation">配置拍法模型</a><button type="button" class="secondary" id="variation-cancel">取消</button><button type="submit" class="primary" id="variation-submit" disabled>生成新视频</button></div>
+      <p class="field-hint">不填写则按原方式生成。</p>
+      <div class="variation-actions">{% if prompt_editor_visible is not defined or prompt_editor_visible(request) %}<a href="/admin/settings#variation">配置拍法模型</a>{% endif %}<button type="button" class="secondary" id="variation-cancel">取消</button><button type="submit" class="primary" id="variation-submit" disabled>正常生成</button></div>
     </section>
-    {% endif %}
     <p id="production-status" class="production-status" role="status" aria-live="polite"></p>
     <div id="save-notice" class="save-notice" hidden>
       <span id="draft-save-status" role="status" aria-live="polite">正在恢复内容…</span>

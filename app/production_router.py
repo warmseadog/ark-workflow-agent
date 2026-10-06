@@ -337,7 +337,6 @@ def get_router(settings_getter, local_guard):
     def submit_run(payload: dict):
         def operation():
             if 'variation' in payload:
-                prompt_visibility.require_editor(settings_getter())
                 from .variation import normalize_request
                 payload['variation']=normalize_request(payload['variation'])
             key=payload.get('idempotency_key')
@@ -349,11 +348,17 @@ def get_router(settings_getter, local_guard):
             if previous:
                 existing=store().get_run(previous['id'],private=True)['private'].get('variation')
                 incoming=payload.get('variation')
+                # Previously accepted blank variations keep their frozen intent.
+                # New blank submissions are equivalent to plain generation.
+                if not existing and incoming and not incoming['inspiration']:
+                    incoming=None
                 if bool(existing)!=bool(incoming) or (existing and existing['inspiration']!=incoming['inspiration']):
                     raise Conflict('提交标识已用于不同拍法或灵感，请核对上次提交。')
                 if previous['id'] in store().deleted_run_ids(): raise Conflict('此前提交的任务已删除，请刷新并发起新的提交。')
                 if previous['draft_id']!=draft_id or previous['revision']!=revision: raise Conflict('提交标识已用于另一份输入。')
                 return decorate_run(previous)
+            if payload.get('variation') and not payload['variation']['inspiration']:
+                payload.pop('variation')
             with queue_admission.reserve(settings_getter(),key,max_queued=queue_limit()):
                 return create_validated(draft_id,revision,key)
         def create_validated(draft_id,revision,key):
@@ -522,7 +527,6 @@ def get_router(settings_getter, local_guard):
     def resume_run(ident: str):
         def operation():
             store().require_visible(ident)
-            if store().get_variation(ident):prompt_visibility.require_editor(settings_getter())
             with active_quota() as quota:
                 run=store().resume_run(ident,max_queued=quota)
             production_worker.wake(settings_getter())
@@ -533,7 +537,6 @@ def get_router(settings_getter, local_guard):
     def retry_person_preparation(ident: str):
         def operation():
             store().require_visible(ident)
-            if store().get_variation(ident):prompt_visibility.require_editor(settings_getter())
             with active_quota() as quota:
                 run = store().retry_preparation(ident,max_queued=quota)
             production_worker.wake(settings_getter())

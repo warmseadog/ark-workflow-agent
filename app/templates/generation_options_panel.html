@@ -20,9 +20,7 @@
         <button type="button" class="generation-dock-summary" id="generation-dock-summary">正在读取生成设置…</button>
         <div class="generation-dock-feedback"><span id="generation-readiness" role="status" aria-live="polite">正在恢复素材…</span><button type="button" id="generation-fix" hidden>去添加</button><a href="#tasks" id="generation-view-task" hidden>查看任务</a></div>
         <button class="primary" type="submit" id="studio-generate-submit" disabled aria-describedby="generation-readiness">生成视频 →</button>
-        {% if prompt_editor_visible is not defined or prompt_editor_visible(request) %}
-        <button class="secondary" type="button" id="variation-toggle" data-admin-only hidden aria-expanded="false" aria-controls="variation-editor">换个拍法</button>
-        {% endif %}
+        <button class="secondary" type="button" id="variation-toggle" disabled aria-expanded="false" aria-controls="variation-editor">换个拍法</button>
       </div>
     </div>
     <small id="generation-audio-note" class="sr-only">关闭后生成无声视频，可在后期添加配音或音乐。</small>

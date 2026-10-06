@@ -76,6 +76,23 @@ def test_failed_plan_never_submits_video(setup,monkeypatch):
     assert store.get_run(run['id'])['status']=='queued'
 
 
+@pytest.mark.parametrize('cached',[False,True])
+def test_blocked_plan_does_not_echo_private_prompt_in_public_error(setup,monkeypatch,cached):
+    cfg,store,draft,private=setup;private['variation']=intent()
+    plan={**example(),'blocked':True,'conflicts':['private-prompt-marker: administrator rules']}
+    monkeypatch.setattr(variation,'source_frames',lambda *a:(8,[]))
+    monkeypatch.setattr(variation,'plan_variation',lambda *a,**kw:plan)
+    monkeypatch.setattr(worker.VideoProvider,'generate',lambda *a,**kw:pytest.fail('blocked plan submitted'))
+    run=store.create_run(draft['id'],1,'blocked-camera',private)
+    if cached:store.update_variation(run['id'],plan=plan)
+    worker.execute_run(cfg,store,store.claim_next())
+    result=store.get_run(run['id'])
+    assert result['status']=='failed'
+    assert 'private-prompt-marker' not in result['error']+result['message']
+    assert store.get_variation(run['id'])['plan']==plan
+    assert not result['can_resume']
+
+
 def test_auto_duration_plans_positive_source_duration(setup,monkeypatch):
     cfg,store,draft,private=setup;private['variation']=intent()
     config=GenerationConfig(duration=-1)
