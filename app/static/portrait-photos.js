@@ -49,10 +49,12 @@
         if (photo.thumbnail_url) image.poster = photo.thumbnail_url;
       } else {
         image.alt = person.name+'的照片'; image.loading = 'lazy';
+        image.dataset.imagePreview = photo.url; image.tabIndex = 0;
+        image.setAttribute('role','button'); image.setAttribute('aria-label','放大查看人物照片');
         if (photo.thumbnail_url) image.src = photo.thumbnail_url;
         else if (/^[a-f0-9]{32}$/.test(photo.asset_id || '')) image.src = '/api/production/assets/'+photo.asset_id+'/thumbnail';
       }
-      const name = document.createElement('span'); name.className = 'person-photo-name'; name.textContent = photo.name; name.title = photo.name;
+      const name = document.createElement('span'); name.className = 'person-photo-name';
       const selected = window.portraitPeople.selected === person.id && current && (current.id === photo.asset_id || current.portrait?.remote_asset_id === photo.remote_asset_id);
       const active = photo.status === 'active' && photo.remote_asset_id;
       const label = document.createElement('small'); label.textContent = selected ? '当前主参考' : active ? '可用' : photo.status === 'stopped' ? '自动查询已停止' : photo.status === 'failed' ? '检查未通过' : photo.status === 'uncertain' ? '结果待确认' : '入库检查中…';

@@ -165,7 +165,7 @@
     coverVideo(personVideoPreview, url, personVideo ? thumbnailFor(personVideo) : '');
     if (personMode !== 'video') releaseVideo(personVideoPreview);
     document.getElementById('person-video-upload').hidden = Boolean(personVideo);
-    document.getElementById('person-video-name').textContent = personVideo ? personVideo.name || '已选人物视频' : '未设置';
+    document.getElementById('person-video-name').textContent = '';
     document.getElementById('person-video-replace').hidden = !personVideo;
     document.getElementById('person-video-remove').hidden = !personVideo;
     const videoStatus = document.getElementById('person-video-status');
@@ -399,11 +399,12 @@
         element.addEventListener('loadedmetadata',updateButtons); return holder;
       }
       element.src = url;
-      element.alt = files[index].name;
+      element.alt = '参考图片';
+      element.dataset.imagePreview = files[index] instanceof File ? url : (files[index].url || url);
+      element.tabIndex = 0; element.setAttribute('role', 'button');
+      element.setAttribute('aria-label', '放大查看参考图片');
       element.decoding = 'async';
       const item = document.createElement('span'); item.className = 'reference-thumb';
-      const caption = document.createElement('span'); caption.className = 'reference-caption';
-      caption.textContent = files[index].name; caption.title = files[index].name;
       const tag = document.createElement('span'); tag.className = 'reference-index';
       tag.textContent = index === 0 ? '主参考' : String(index + 1);
       const actions = document.createElement('span'); actions.className = 'reference-actions';
@@ -420,7 +421,7 @@
         const fallback = document.createElement('span'); fallback.className = 'reference-error';
         fallback.textContent = '无法预览，可替换图片'; item.prepend(fallback);
       }, {once: true});
-      item.append(element, tag, caption, actions);
+      item.append(element, tag, actions);
       const portrait = !window.portraitPeople?.selected ? assetFor(files[index])?.portrait : null;
       if (kind === 'face' && portrait?.status === 'Active' && portrait.remote_asset_id) {
         const badge = document.createElement('span'); badge.className = 'portrait-badge';
@@ -430,7 +431,7 @@
     }));
     document.getElementById(`${kind}-picker`).classList.toggle('has-media', urls.length > 0);
     const name = document.getElementById(kind === 'video' ? 'source-file-name' : `${kind}-file-name`);
-    name.textContent = files.length ? kind === 'video' ? files[0].name : `已选 ${files.length} 张` : '';
+    name.textContent = '';
   }
   function syncImages(kind) {
     const input = imageInputs[kind];
@@ -518,12 +519,11 @@
       linkStatus.textContent = '正在加载视频到页面…';
       const asset = await response.json();
       if (pageInactive) return;
-      const filename = asset.name;
       source.value = ''; sourceAsset = asset;
       sourceUrl.value = '';
       // Reuse the upload path without another paid link resolution.
       showFiles(source, 'video'); invalidate();
-      document.getElementById('source-file-name').textContent = '链接视频 · ' + filename;
+      document.getElementById('source-file-name').textContent = '';
       linkStatus.textContent = '视频已加载，可在上方播放，也可继续打码或生成。';
       const video = document.querySelector('#video-reference-preview video');
       video.playsInline = true;
@@ -644,8 +644,7 @@
         document.getElementById(kind+'-references').hidden = !imageFiles[kind].length;
         document.getElementById(kind+'-add').classList.toggle('has-reference',Boolean(imageFiles[kind].length));
       }
-      if (!imageFiles[kind].length) document.getElementById(kind+'-file-name').textContent = '';
-      else document.getElementById(kind+'-file-name').textContent = imageFiles[kind][0].name;
+      document.getElementById(kind+'-file-name').textContent = '';
     }
     document.getElementById('accessory-count').textContent = `${Object.keys(accessoryLabels).filter(k=>imageFiles[k].length && document.getElementById(k+'-enabled').checked).length} 项已启用`;
     syncReferencePrompt(); updateButtons();
@@ -1116,12 +1115,18 @@
       await flushDraft();
       const item = await action();
       if (pageInactive) return;
+      if (item.copied_from && window.delegatedEditor) {
+        const next = new URL(window.location.href);
+        next.searchParams.delete('delegate_user'); next.searchParams.set('draft', item.id); next.hash = '';
+        window.location.assign(next.toString()); return;
+      }
       if (item.delegated_user) {
         const next = new URL(window.location.href);
         next.searchParams.set('delegate_user', item.delegated_user.id);
         next.searchParams.set('draft', item.id);
         window.location.assign(next.toString()); return;
       }
+      if (item.copied_from) await window.portraitPeople?.refresh();
       await restoreDraft(item);
       document.dispatchEvent(new Event('production-draft-selected'));
     } catch (error) { showSave(error.message, true); }
@@ -1184,7 +1189,7 @@
       try { pendingSubmission = JSON.parse(localStorage.getItem(pendingKey) || 'null'); } catch (_) {}
       const [data] = await Promise.all([api('/drafts'),templatesReady,modelsReady,window.portraitPeople?.ready]);
       (data.items || []).forEach(item=>drafts.set(item.id,item));
-      const requested = window.delegatedEditor?.draftId || localStorage.getItem(currentKey);
+      const requested = window.delegatedEditor?.draftId || new URLSearchParams(location.search).get('draft') || localStorage.getItem(currentKey);
       const selected = drafts.get(requested) || data.items?.[0];
       const item = selected ? await api('/drafts/'+encodeURIComponent(selected.id)) : await api('/drafts','POST',{person_input_policy:'auto_virtual'});
       if (pageInactive) return;

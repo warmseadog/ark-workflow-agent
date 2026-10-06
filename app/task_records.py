@@ -106,6 +106,7 @@ def get_router(settings_getter, admin):
                                         and run.get('error_kind') != 'submission_uncertain')
         if run['can_restore_draft']:
             run['restore_url'] = base(user,run)+'/restore-draft'
+            run['copy_url'] = base(user,run)+'/copy-draft'
         if run['read_only']:
             for key in ('can_cancel','can_resume','can_delete','can_retry_preparation','can_retry_without_audio'):
                 run[key] = False
@@ -140,6 +141,12 @@ def get_router(settings_getter, admin):
         items = [decorate(user,settings,item,actor) for item,user,settings in candidates[(page-1)*page_size:page*page_size]]
         # List polling does not add audit noise; opening individual records is audited.
         return dict(items=items,users=users,total=total,active_count=active,page=page,pages=pages,page_size=page_size)
+
+    @router.post('/{user_id}/{run_id}/copy-draft')
+    def copy_task(request: Request, user_id: str, run_id: str, payload: dict):
+        from .task_copy import copy_draft
+        return guarded(lambda: copy_draft(settings_getter(), admin(request), user_id, run_id,
+                                          payload.get('idempotency_key')))
 
     @router.post('/{user_id}/{run_id}/restore-draft')
     def restore(request: Request, user_id: str, run_id: str, payload: dict):

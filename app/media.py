@@ -3,6 +3,9 @@ from __future__ import annotations
 import subprocess
 import sys
 import re
+import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -160,7 +163,27 @@ def run_deface(
     from . import redaction_service
     service = redaction_service.load_config(settings)
     if service.mode == 'http':
-        return redaction_service.process(input_path, output_path, settings, options, service)
+        try:
+            return redaction_service.process(input_path, output_path, settings, options, service)
+        except (MediaPipelineError, OSError) as external_error:
+            reason = str(external_error) if isinstance(external_error, MediaPipelineError) else '外部打码文件处理失败。'
+            logging.getLogger(__name__).warning('redaction local fallback: %s', reason)
+            fd, name = tempfile.mkstemp(dir=output_path.parent, prefix='.mask-fallback-', suffix='.mp4')
+            os.close(fd)
+            temporary = Path(name)
+            try:
+                _run_local_deface(input_path, temporary, settings, options)
+                redaction_service.validate_output(temporary, settings, input_path)
+                temporary.replace(output_path)
+                return output_path
+            except (MediaPipelineError, OSError, subprocess.SubprocessError):
+                raise MediaPipelineError(f'外部打码失败：{reason} 本地兜底打码也失败，请检查本地处理器和视频素材。') from None
+            finally:
+                temporary.unlink(missing_ok=True)
+    return _run_local_deface(input_path, output_path, settings, options)
+
+
+def _run_local_deface(input_path, output_path, settings, options):
     if options.mask_mode != 'face':
         return run_local_mosaic(input_path, output_path, options)
     command = build_deface_command(input_path, output_path, settings, options)

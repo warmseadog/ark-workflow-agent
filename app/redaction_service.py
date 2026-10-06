@@ -90,10 +90,40 @@ def fingerprint(settings):
     config = load_config(settings)
     if config.mode == 'local':
         return settings.deface_bin + ':v1'
-    return 'external-v1:' + hashlib.sha256(json.dumps(asdict(config), sort_keys=True).encode()).hexdigest()
+    return 'external-v2-local-fallback:' + hashlib.sha256(json.dumps(asdict(config), sort_keys=True).encode()).hexdigest()
+
+
+def validate_output(path, settings, source=None, *, timeout_seconds=120):
+    """Require decodable video, full-stream integrity and unchanged duration."""
+    import subprocess
+    import imageio_ffmpeg
+    from .media_validation import validate_media
+    from fastapi import HTTPException
+    try:
+        validate_media(path, 'video', settings.max_upload_mb * 1024 * 1024)
+        result = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-v', 'error', '-xerror',
+            '-i', str(path), '-map', '0:v:0', '-f', 'null', '-'], capture_output=True, timeout=min(120, timeout_seconds))
+        if result.returncode:
+            raise ValueError('decode failed')
+        if source is not None:
+            durations = []
+            for video in (source, path):
+                capture = cv2.VideoCapture(str(video))
+                try:
+                    fps = capture.get(cv2.CAP_PROP_FPS)
+                    durations.append(capture.get(cv2.CAP_PROP_FRAME_COUNT) / fps if fps > 0 else 0)
+                finally:
+                    capture.release()
+            if min(durations) <= 0 or abs(durations[0]-durations[1]) > max(0.5, durations[0]*0.02):
+                raise ValueError('duration mismatch')
+    except (HTTPException, OSError, ValueError, subprocess.SubprocessError):
+        raise MediaPipelineError('打码结果不是完整有效的视频或时长不匹配。') from None
 
 
 def process(input_path, output_path, settings, options, config):
+    from . import mediakit_redaction
+    if mediakit_redaction.matches(config.endpoint):
+        return mediakit_redaction.process_isolated(input_path, output_path, settings, options, config)
     try:
         endpoint = validate_endpoint(config.endpoint)
     except ValueError as exc:

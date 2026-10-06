@@ -10,7 +10,7 @@
 .production-view .materials-aligned .asset-picker.has-media {
   min-height: var(--material-picker-height, 0px) !important;
 }
-.production-view #person-reference-card .reference-caption { display: block; }
+.production-view [id$="-file-name"], .production-view .reference-caption { display: none; }
 .production-view .asset-picker.has-media {
   display: block;
   width: 100%;

@@ -98,7 +98,7 @@
     operate(service, 'redaction-service-status', '正在保存…', async () => {
       const {config} = await request('/api/redaction-service', 'PUT', payload);
       fillService(config);
-      note('redaction-service-status', config.mode === 'local' ? '已使用本地打码。' : '已使用外部 API，新的打码处理将调用此接口。');
+      note('redaction-service-status', config.mode === 'local' ? '已使用本地打码。' : '已设置外部 API 优先，失败后自动使用本地打码。');
     });
   });
   function redactionLimits() {

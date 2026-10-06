@@ -99,16 +99,16 @@
       <section id="section-redaction" class="section" hidden>
         <div class="section-title"><h2>人物打码</h2></div>
         <div class="card"><form id="redaction-service-form" autocomplete="off"><fieldset disabled>
-          <label>处理方式<select name="mode"><option value="local">本地打码（默认）</option><option value="http">外部 API</option></select></label>
+          <label>处理方式<select name="mode"><option value="local">本地打码（默认）</option><option value="http">外部 API 优先，失败转本地</option></select></label>
           <div id="redaction-api-fields" hidden>
-            <label>接口地址<input name="endpoint" type="url" placeholder="https://example.com/redact" maxlength="2048"></label>
+            <label>接口地址<input name="endpoint" type="url" placeholder="https://mediakit.cn-beijing.volces.com" maxlength="2048"></label>
             <label>API Key <span id="redaction-key-status" class="badge"></span><input name="api_key" type="password" autocomplete="new-password" placeholder="留空保留；无鉴权接口可不填" maxlength="2048"></label>
             <details class="settings-details"><summary>高级配置与接口协议</summary>
               <label>超时时间（秒）<input name="timeout_seconds" type="number" min="10" max="3600" required value="600"></label>
               <label class="check"><input name="clear_api_key" type="checkbox">清除已保存的 API Key</label>
-              <p class="hint">同步 POST：multipart 文件字段 video，JSON 文本字段 options；使用 Bearer 鉴权，返回 MP4 视频。其他协议需适配后接入。</p>
+              <p class="hint">支持火山 MediaKit：填写服务域名和 MediaKit API Key，自动上传视频、等待任务完成并下载结果。其他服务使用同步 POST：文件字段 video、JSON 文本字段 options，返回 MP4。</p>
             </details>
-            <p class="hint">启用后，待打码视频会发送到此接口处理。</p>
+            <p class="hint">优先发送到外部 API；失败或超时后自动使用本地打码。火山支持人脸马赛克及模糊，头发遮挡、黑色遮挡等不支持的参数由本地处理。两种方式都失败时任务才会报错。</p>
           </div>
           <div class="actions"><button type="submit" class="primary">保存打码服务</button></div>
         </fieldset></form><p id="redaction-service-status" class="notice" role="status" hidden></p></div>
@@ -143,7 +143,7 @@
   <script src="/static/continuation-settings.js?v=20260930-continuation-1"></script>
   <script src="/static/admin-settings.js?v=20261005-exclusive-prompts-1"></script>
   <script src="/static/scheduling-settings.js?v=20261005-admin-workflow-1"></script>
-  <script src="/static/virtual-library.js?v=20261005-admin-workflow-1"></script>
+  <script src="/static/virtual-library.js?v=20261006-preview-1"></script>
   <script src="/static/portrait.js?v=20261005-admin-workflow-1"></script>
 </body>
 </html>

@@ -20,7 +20,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
   const comparison=window.createVideoComparison?.({readRun,onError:notice});
   const restoreKeys=new Map(),restoringTasks=new Set();
   async function restoreTask(item){
-    const key='production-restore:'+String(window.currentAccount?.id||'local')+':'+rowKey(item);
+    const key='production-copy:'+String(window.currentAccount?.id||'local')+':'+rowKey(item);
     if(restoringTasks.has(key))return;
     restoringTasks.add(key);
     try{
@@ -28,11 +28,11 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
       if(!id){try{id=localStorage.getItem(key);}catch(_){}id ||= crypto.randomUUID();restoreKeys.set(key,id);}
       try{localStorage.setItem(key,id);}catch(_){}
       await changeDraft(async()=>{
-        const response=await fetch(item.restore_url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:id})});
+        const response=await fetch(item.copy_url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:id})});
         const data=await response.json();
         if(!response.ok){
           if(response.status<500){restoreKeys.delete(key);try{localStorage.removeItem(key);}catch(_){}}
-          throw new Error(typeof data.detail==='string'?data.detail:'恢复草稿失败，请重试。');
+          throw new Error(typeof data.detail==='string'?data.detail:'复制草稿失败，请重试。');
         }
         restoreKeys.delete(key);try{localStorage.removeItem(key);}catch(_){}
         return data;
@@ -169,7 +169,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     }
     const add=(action,label,fn,disabled=false)=>{const b=button(label,async()=>{more.open=false;try{await fn();}catch(error){notice(error);}});b.dataset.runAction=action;b.disabled=disabled;menu.append(b);};
     add('details','查看详情',showDetails);
-    if(item.can_restore_draft&&item.restore_url)add('restore','恢复为新草稿',()=>restoreTask(item));
+    if(item.can_restore_draft&&item.copy_url)add('restore','复制到我的草稿',()=>restoreTask(item));
     if(!item.read_only){
     add('copy','复制为草稿',()=>changeDraft(()=>api('/runs/'+encodeURIComponent(item.id)+'/copy','POST',{})));
     if(item.can_cancel)add('cancel','取消排队',async()=>{await api('/runs/'+item.id+'/cancel','POST',{});await refresh();});
@@ -258,7 +258,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
         const locate=button('查看问题素材：'+referenceLabel,()=>{figure.scrollIntoView({block:'center'});figure.focus({preventScroll:true});});
         locate.dataset.locateSource=kind;panel.append(locate);
       }
-      for(const asset of sources){const isVideo=['video','person_video'].includes(kind),element=node(isVideo?'video':'img');figure.append(element);if(isVideo){media.lazyVideo(element,asset.url,asset.poster_url||asset.thumbnail_url||'');}else{element.src=media.thumbnailFor(asset);element.alt=label;element.loading='lazy';}}materials.append(figure);
+      for(const asset of sources){const isVideo=['video','person_video'].includes(kind),element=node(isVideo?'video':'img');figure.append(element);if(isVideo){media.lazyVideo(element,asset.url,asset.poster_url||asset.thumbnail_url||'');}else{element.src=media.thumbnailFor(asset);element.alt=label;element.loading='lazy';element.dataset.imagePreview=asset.url;element.tabIndex=0;element.setAttribute('role','button');element.setAttribute('aria-label','放大查看'+label);}}materials.append(figure);
     }
     panel.append(materials);if(item.snapshot?.scene_description)panel.append(node('p',item.snapshot.scene_description));
     const windowMedia=media;

@@ -61,7 +61,7 @@ def test_external_upload_receives_options_and_validates_video(client, tmp_path, 
     assert output.read_bytes() == content
 
 
-def test_external_errors_never_fall_back_or_publish_partial_video(client, tmp_path, monkeypatch):
+def test_external_adapter_errors_do_not_publish_partial_video(client, tmp_path, monkeypatch):
     from app import redaction_service
     source, output = tmp_path/'source.mp4', tmp_path/'masked.mp4'
     source.write_bytes(b'source')
@@ -69,9 +69,8 @@ def test_external_errors_never_fall_back_or_publish_partial_video(client, tmp_pa
     def fail(*_, **__):
         raise redaction_service.requests.Timeout('secret-token')
     monkeypatch.setattr(redaction_service.requests, 'post', fail)
-    monkeypatch.setattr(media, 'build_deface_command', lambda *_: pytest.fail('Must not silently fall back'))
     with pytest.raises(media.MediaPipelineError, match='超时') as error:
-        media.run_deface(source, output, main.settings)
+        redaction_service.process(source, output, main.settings, media.BlurOptions(), redaction_service.load_config(main.settings))
     assert 'secret-token' not in str(error.value)
     assert not output.exists()
 
@@ -99,7 +98,7 @@ def test_bad_response_is_not_published(client, tmp_path, monkeypatch, status, co
         def __exit__(self, *_): pass
     monkeypatch.setattr(redaction_service.requests, 'post', lambda *a, **kw: Reply())
     with pytest.raises(media.MediaPipelineError) as error:
-        media.run_deface(source, output, main.settings)
+        redaction_service.process(source, output, main.settings, media.BlurOptions(), redaction_service.load_config(main.settings))
     assert 'private-key' not in str(error.value)
     assert not output.exists()
     assert not list(tmp_path.glob('.mask-*.mp4'))

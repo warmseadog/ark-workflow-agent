@@ -1,0 +1,11 @@
+img[data-image-preview] { cursor: zoom-in; }
+img[data-image-preview]:focus-visible { outline: 3px solid #7a6589; outline-offset: 3px; }
+.image-viewer { width: min(1200px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); box-sizing: border-box; padding: 16px; border: 0; border-radius: 16px; background: #fff; color: #302a38; }
+.image-viewer::backdrop { background: #201b28b3; }
+.image-viewer header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.image-viewer h2 { margin: 0; font-size: 16px; font-weight: 500; }
+.image-viewer button { min-height: 44px; padding: 8px 16px; flex-shrink: 0; cursor: pointer; }
+.image-viewer img { display: block; width: 100%; height: auto; max-height: calc(100dvh - 160px); object-fit: contain; }
+.image-viewer img[hidden] { display: none; }
+.image-viewer [role=status] { margin: 12px 0 0; font-size: 13px; }
+.image-viewer [role=status]:empty { display: none; }

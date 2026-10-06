@@ -262,7 +262,9 @@
       for (const photo of data.items || []) {
         const row = document.createElement('article'); row.className = 'library-photo-card'; row.dataset.libraryPhotoId = photo.id;
         const thumb = safeMediaUrl(photo.thumbnail_url);
-        if (thumb) { const image = document.createElement('img'); image.src = thumb; image.loading = 'lazy'; image.alt = ''; image.width = 180; image.height = 180; row.append(image); }
+        if (thumb) { const image = document.createElement('img'); image.src = thumb; image.loading = 'lazy'; image.alt = '人物素材'; image.width = 180; image.height = 180;
+          if (!isVideo(photo) && safeMediaUrl(photo.url)) { image.dataset.imagePreview=photo.url; image.tabIndex=0; image.setAttribute('role','button'); image.setAttribute('aria-label','放大查看人物照片'); }
+          row.append(image); }
         else { const placeholder = document.createElement('div'); placeholder.className = 'library-photo-placeholder'; placeholder.textContent = isVideo(photo) ? '视频预览' : '暂无缩略图'; row.append(placeholder); }
         const name = document.createElement('strong'); name.textContent = photo.name || '人物照片';
         const state = document.createElement('span'); state.className = 'library-photo-state'; state.dataset.state = photo.status;

@@ -4,7 +4,7 @@ import json
 import sqlite3
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import RLock
@@ -182,17 +182,17 @@ class ProductionStore:
                    (started, finished, state, stamp, queue, execution, paused,
                     int(interrupted or row['interrupted']), ident))
 
-    def create_draft(self, values, *, ident=None):
+    def create_draft(self, values, *, ident=None, connection=None):
         ident, stamp = ident or uuid.uuid4().hex, now()
         data = {'name': default_name(), 'source_clip': None, 'target_duration': None, 'source_asset_id': None, 'face_asset_ids': [],
                 'person_reference_mode':'image','person_video_asset_id':None,
                 'clothing_asset_ids': [], 'hairstyle_asset_ids': [], 'scene_asset_ids': [],
                 **{kind+suffix: ([] if suffix=='_asset_ids' else False) for kind in ('bag','hat','watch','shoes','necklace','glasses','earrings') for suffix in ('_asset_ids','_enabled')},
                 'hairstyle_mask': {'mask_scale':1.0,'threshold':0.2}, 'hairstyle_enabled': False, 'scene_enabled': False, 'scene_description': '', 'prompt': '', 'mask': {}, 'model': {}, **values}
-        with self.connection() as db:
+        with (nullcontext(connection) if connection is not None else self.connection()) as db:
             db.execute('INSERT OR IGNORE INTO production_drafts VALUES (?,?,?,?,?)',
                        (ident, 1, json.dumps(data, ensure_ascii=False), stamp, stamp))
-        return self.get_draft(ident)
+            return self._draft(db.execute('SELECT * FROM production_drafts WHERE id=?', (ident,)).fetchone())
 
     def get_draft(self, ident):
         with self.connection() as db:
