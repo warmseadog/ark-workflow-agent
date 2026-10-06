@@ -22,9 +22,9 @@ ProtectSystem=strict
 ReadWritePaths=/opt/ark-video-workflow/data
 CPUQuota=100%
 CPUWeight=20
-MemoryHigh=2G
+MemoryHigh=2560M
 MemoryMax=3G
-TasksMax=128
+TasksMax=256
 LimitNOFILE=4096
 
 [Install]

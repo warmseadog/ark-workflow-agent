@@ -7,7 +7,7 @@
   const source = document.querySelector('[name="video_url"]');
   const key = byId('tikhub-api-key'), keyStatus = byId('link-settings-status');
   let configured = false, inspectVersion = 0, timer;
-  const busy = () => form.getAttribute('aria-busy') === 'true';
+  const busy = () => form.getAttribute('aria-busy') === 'true' || byId('video-url-entry')?.getAttribute('aria-busy') === 'true';
   function message(element, text, error = false) { if (element) { element.textContent=text; element.dataset.error=String(error); } }
   async function request(url, method='GET', body) {
     const response=await fetch(url,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
@@ -194,4 +194,6 @@
     }
   }
   source.addEventListener('input', () => { clearTimeout(timer); ++inspectVersion; timer = setTimeout(inspect, 450); });
+  // An earlier inspection must not overwrite the result of a later import.
+  byId('confirm-video-url').addEventListener('click', () => { clearTimeout(timer); ++inspectVersion; }, true);
 })();

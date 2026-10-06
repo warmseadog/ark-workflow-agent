@@ -79,3 +79,39 @@ def test_extension_uncertain_is_not_resubmittable(setup,monkeypatch):
     worker.execute_run(cfg,store,store.claim_next())
     assert store.get_run(run['id'])['error_kind']=='submission_uncertain'
     with pytest.raises(Conflict):store.resume_run(run['id'])
+
+
+def test_failed_planning_retains_actual_timeline_and_resume_reuses_base(setup, monkeypatch):
+    cfg, store, draft, private, calls = configure(setup, monkeypatch)
+    actual = 8.041666666666666
+    monkeypatch.setattr('app.person_video.probe', lambda *a: {'duration': actual, 'fps': 24})
+    original_plan = continuation_llm.plan_continuation
+    def fail_plan(*args, **kwargs):
+        calls.append(('failed_plan', kwargs))
+        raise ValueError('beats[0].start: incorrect boundary')
+    monkeypatch.setattr(continuation_llm, 'plan_continuation', fail_plan)
+    class Provider:
+        def __init__(self, *a): pass
+        def generate(self, video, faces, clothes, prompt, output, **kw):
+            calls.append(('base', prompt)); kw['on_submitted']('base-1'); output.write_bytes(b'base')
+        def extend(self, video, prompt, output, **kw):
+            calls.append(('extend', prompt)); output.write_bytes(b'extended')
+    monkeypatch.setattr(worker, 'VideoProvider', Provider)
+    monkeypatch.setattr('app.video_provider.VideoProvider', Provider)
+    run = store.create_run(draft['id'], 1, 'planning-diagnostics', private)
+    worker.execute_run(cfg, store, store.claim_next())
+    result = store.get_run(run['id'])
+    state = result['continuation']
+    assert result['status'] == 'needs_attention'
+    assert state['base_ready'] and not state.get('plan')
+    assert state['source_duration'] == actual
+    assert state['target_duration'] == 9
+    assert state['llm_model'] == private['continuation']['config']['model']
+    assert state['frame_timestamps'] == [7.9]
+    assert 'beats[0].start' in result['error']
+    assert not [c for c in calls if c[0] == 'extend']
+    monkeypatch.setattr(continuation_llm, 'plan_continuation', original_plan)
+    store.resume_run(run['id'])
+    worker.execute_run(cfg, store, store.claim_next())
+    assert store.get_run(run['id'])['status'] == 'succeeded'
+    assert len([c for c in calls if c[0] == 'base']) == 1

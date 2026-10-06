@@ -25,6 +25,27 @@
   let pageReads = new AbortController(), draftReads = new AbortController(), pageInactive = false;
   const assetFor = item => item instanceof File ? assetFiles.get(item) : item?.id ? item : null;
   const sourceItem = () => source.files[0] || sourceAsset;
+  const sourceTabs = [...document.querySelectorAll('[data-source-mode]')];
+  function setSourceMode(mode, focus = false) {
+    if (!sourceTabs.length) return;
+    document.getElementById('source-local-panel').hidden = mode !== 'local';
+    document.getElementById('video-url-entry').hidden = mode !== 'link';
+    sourceTabs.forEach(tab => {
+      const selected = tab.dataset.sourceMode === mode;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      if (selected && focus) tab.focus();
+    });
+  }
+  sourceTabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => { if (!busy && !sourceImportBusy) setSourceMode(tab.dataset.sourceMode); });
+    tab.addEventListener('keydown', event => {
+      if (busy || sourceImportBusy || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? sourceTabs.length - 1 : (index + 1) % sourceTabs.length;
+      setSourceMode(sourceTabs[next].dataset.sourceMode, true);
+    });
+  });
   const thumbnailFor = asset => asset.thumbnail_url || '/api/production/assets/' + encodeURIComponent(asset.id) + '/thumbnail';
   const mediaButtons = new WeakMap();
   const videoCovers = new WeakMap();
@@ -142,6 +163,7 @@
   let personMode = 'image', personVideo = null, personInputPolicy = 'auto_virtual', personInputVersion = 0;
   const personVideoPreview = document.getElementById('person-video-preview');
   let busy = false;
+  let sourceImportBusy = false;
   let personVideoCheck = null, personVideoCheckKey = '', personVideoCheckVersion = 0;
   const personVideoActions = document.createElement('div'); personVideoActions.className = 'asset-footer';
   const checkPersonVideoButton = document.createElement('button'); checkPersonVideoButton.type = 'button';
@@ -171,11 +193,12 @@
     const videoStatus = document.getElementById('person-video-status');
     personVideoActions.hidden = !personVideo;
     const key = personVideo ? personVideo.id + ':' + personInputPolicy + ':' + personInputVersion : '';
-    if (!personVideo) { personVideoCheckVersion++; personVideoCheckKey = ''; personVideoCheck = null; videoStatus.textContent = ''; }
+    if (!personVideo) { personVideoCheckVersion++; personVideoCheckKey = ''; personVideoCheck = null; videoStatus.textContent = ''; videoStatus.dataset.error = 'false'; }
     else if (key !== personVideoCheckKey) {
       personVideoCheckKey = key; personVideoCheck = null;
       const version = ++personVideoCheckVersion, asset = personVideo;
       videoStatus.textContent = '已保存 · 正在核实素材状态…';
+      videoStatus.dataset.error = 'false';
       checkPersonVideoButton.disabled = true;
       fetch('/api/production/assets/' + encodeURIComponent(asset.id) + '/reference-status', {signal:pageReads.signal})
         .then(async response => { const value = await response.json(); if (!response.ok) throw new Error(value.detail || '状态读取失败'); return value; })
@@ -205,13 +228,24 @@
     document.getElementById('person-image-panel').hidden = mode !== 'image';
     document.getElementById('person-video-panel').hidden = mode !== 'video';
     if (mode !== 'video') releaseVideo(personVideoPreview);
-    document.querySelectorAll('[data-person-media]').forEach(button => { button.hidden = button.dataset.personMedia === mode; });
+    document.querySelectorAll('[data-person-media]').forEach(button => {
+      const selected = button.dataset.personMedia === mode;
+      button.setAttribute('aria-selected', String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
     window.portraitPeople?.restore(window.portraitPeople.selected);
     renderPersonVideo(); syncReferencePrompt(); updateButtons();
   }
   document.querySelectorAll('[data-person-media]').forEach(button => button.addEventListener('click',() => {
-    if (busy || !sessionReady) return;
+    if (busy || !sessionReady || button.dataset.personMedia === personMode) return;
     setPersonMode(button.dataset.personMedia); syncImages('face'); clearResult(); refreshPhotoInputs(); changed();
+  }));
+  const personTabs = [...document.querySelectorAll('[data-person-media]')];
+  personTabs.forEach((button, index) => button.addEventListener('keydown', event => {
+    if (busy || !sessionReady || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? personTabs.length - 1 : (index + 1) % personTabs.length;
+    personTabs[next].click(); personTabs[next].focus();
   }));
   document.getElementById('person-video-replace').addEventListener('click',() => {
     if (!busy && sessionReady) document.getElementById('person-video-file').click();
@@ -237,17 +271,24 @@
     const version = ++personInputVersion, targetDraft = draft?.id, targetPerson = window.portraitPeople?.selected;
     const current = () => !pageInactive && version === personInputVersion && personMode === 'video' && personInputPolicy === 'auto_virtual' && draft?.id === targetDraft && window.portraitPeople?.selected === targetPerson;
     document.getElementById('person-video-status').textContent = '正在保存人物视频…';
+    document.getElementById('person-video-status').dataset.error = 'false';
     try {
       const asset = await persistFile(file,'person_video');
       if (!current()) return;
       personVideo = asset; renderPersonVideo(); clearResult(); changed();
     } catch (error) {
-      if (current()) document.getElementById('person-video-status').textContent = '视频保存失败：' + error.message;
+      if (current()) {
+        document.getElementById('person-video-status').textContent = '视频保存失败：' + error.message;
+        document.getElementById('person-video-status').dataset.error = 'true';
+      }
     }
   });
   personVideoPreview.addEventListener('loadedmetadata',updateButtons);
   personVideoPreview.addEventListener('error',() => {
-    if (personVideo) document.getElementById('person-video-status').textContent = '浏览器无法预览此视频，请尝试 H.264 编码的 MP4；生成前仍会检查素材。';
+    if (personVideo) {
+      document.getElementById('person-video-status').textContent = '浏览器无法预览此视频，请尝试 H.264 编码的 MP4；生成前仍会检查素材。';
+      document.getElementById('person-video-status').dataset.error = 'true';
+    }
   });
 
   function maskValues() {
@@ -263,7 +304,7 @@
   };
   function signature() {
     const file = sourceItem();
-    return JSON.stringify([file ? [assetFor(file)?.id || null, file.name, file.size, file.lastModified] : null, sourceUrl.value.trim(), maskValues(), window.generationOptions?.sourceClip?.(), window.generationOptions?.get()?.ratio || 'adaptive']);
+    return JSON.stringify([file ? [assetFor(file)?.id || null, file.name, file.size, file.lastModified] : null, file ? '' : sourceUrl.value.trim(), maskValues(), window.generationOptions?.sourceClip?.(), window.generationOptions?.get()?.ratio || 'adaptive']);
   }
   function hasSource() { return Boolean(sourceItem() || sourceUrl.value.trim() || job?.defaced_url); }
   function referenceTotal() { return (personMode === 'video' ? 0 : imageFiles.face.length) + imageFiles.clothing.length + extraKinds.reduce((n,k)=>n+(document.getElementById(k+'-enabled').checked ? imageFiles[k].length : 0),0); }
@@ -284,6 +325,7 @@
     let message = '素材已选齐，可以生成', target = '', action = '去检查';
     if (busy) message = '正在处理，请稍候…';
     else if (!sessionReady) { message = saveStatus?.dataset.error === 'true' ? '素材恢复失败，请重试' : '正在恢复素材…'; target = 'save-notice'; }
+    else if (sourceImportBusy) message = '参考视频正在导入，可继续准备其他素材';
     else if (pendingSubmission) message = '上次提交结果待确认，可安全恢复';
     else if (!present.video) { message = '还缺参考视频'; target = 'flow-stage-source'; action = '去添加'; }
     else if (!present.clothing) { message = '还缺穿搭参考'; target = 'flow-stage-references'; action = '去添加'; }
@@ -338,9 +380,14 @@
     counter.classList.toggle('over-limit',over);
     document.getElementById('clear-reference-images').disabled = busy || !sessionReady || !Object.values(imageFiles).some(files => files.length);
     document.getElementById('clear-reference-images').hidden = !Object.values(imageFiles).some(files => files.length);
-    importButton.disabled = busy || !sessionReady || !sourceUrl.value.trim();
-    previewButton.disabled = busy || !sessionReady || !hasSource() || window.generationOptions?.available() === false;
-    generateButton.disabled = busy || !sessionReady || (!pendingSubmission && (window.generationOptions?.available() === false || referenceOverLimit() || durationOver || (personMode === 'video' && (!personVideoCheck || !personVideoCheck.can_use)) || !(hasSource() && (personMode === 'video' ? personVideo && (personInputPolicy === 'auto_virtual' || window.portraitPeople?.selected) : imageFiles.face.length) && imageFiles.clothing.length)));
+    const sourceLocked = busy || sourceImportBusy;
+    importButton.disabled = sourceLocked || !sessionReady || !sourceUrl.value.trim();
+    source.disabled = sourceUrl.disabled = sourceLocked;
+    sourceTabs.forEach(tab => { tab.disabled = sourceLocked; });
+    ['replace-source-video', 'remove-source-video'].forEach(id => { document.getElementById(id).disabled = sourceLocked; });
+    document.getElementById('draft-recover').disabled = sourceLocked || !sessionReady;
+    previewButton.disabled = sourceLocked || !sessionReady || !hasSource() || window.generationOptions?.available() === false;
+    generateButton.disabled = sourceLocked || !sessionReady || (!pendingSubmission && (window.generationOptions?.available() === false || referenceOverLimit() || durationOver || (personMode === 'video' && (!personVideoCheck || !personVideoCheck.can_use)) || !(hasSource() && (personMode === 'video' ? personVideo && (personInputPolicy === 'auto_virtual' || window.portraitPeople?.selected) : imageFiles.face.length) && imageFiles.clothing.length)));
     generateButton.formNoValidate = Boolean(pendingSubmission);
     for (const id of ['replace-source-video', 'remove-source-video']) document.getElementById(id).hidden = !hasSource();
     if (!busy) generateButton.textContent = pendingSubmission ? '确认上次提交结果' : window.delegatedEditor ? '为该用户重新生成 →' : '生成视频 →';
@@ -479,19 +526,21 @@
     chooser.click();
   }
   source.addEventListener('change', () => {
+    if (busy || sourceImportBusy || !source.files.length) return;
     sourceAsset = null;
-    if (source.files.length) sourceUrl.value = '';
+    sourceUrl.value = ''; linkStatus.textContent = '';
+    setSourceMode('local');
     showFiles(source, 'video'); invalidate();
   });
   sourceUrl.addEventListener('input', () => {
-    if (sourceUrl.value.trim()) { source.value = ''; sourceAsset = null; showFiles(source, 'video'); }
-    if (sourceUrl.value.trim()) document.getElementById('source-file-name').textContent = '已填写视频链接';
-    invalidate();
+    // Drafting a replacement link must not discard the selected video or preview.
+    updateButtons();
   });
-  document.getElementById('replace-source-video').addEventListener('click', () => { if (!busy) source.click(); });
+  document.getElementById('replace-source-video').addEventListener('click', () => { if (!busy && !sourceImportBusy) source.click(); });
   document.getElementById('remove-source-video').addEventListener('click', () => {
-    if (busy) return;
+    if (busy || sourceImportBusy) return;
     source.value = ''; sourceAsset = null; sourceUrl.value = ''; showFiles(source, 'video');
+    linkStatus.textContent = '';
     invalidate();
   });
   sourceUrl.addEventListener('keydown', event => {
@@ -501,13 +550,20 @@
     }
   });
   importButton.addEventListener('click', async () => {
-    if (busy || !sourceUrl.value.trim()) return;
-    const text = sourceUrl.value.trim();
-    lock(true);
+    if (busy || sourceImportBusy || !sessionReady || !sourceUrl.value.trim()) return;
+    const text = sourceUrl.value.trim(), importingDraftId = draft.id;
+    const panel = document.getElementById('video-url-entry');
+    const loading = document.getElementById('video-import-loading');
+    const loadingTitle = document.getElementById('video-import-loading-title');
+    let imported = false;
+    sourceImportBusy = true;
+    panel.setAttribute('aria-busy', 'true');
+    loadingTitle.textContent = '正在解析并下载视频';
+    loading.hidden = false;
+    updateButtons();
     importButton.textContent = '正在加载视频…';
     linkStatus.dataset.error = 'false';
-    linkStatus.textContent = '正在解析链接并下载视频，请稍候…';
-    document.getElementById('video-picker').setAttribute('aria-busy', 'true');
+    linkStatus.textContent = '';
     try {
       const response = await fetch('/api/production/assets/import', {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text}),
@@ -516,13 +572,17 @@
         const data = await response.json().catch(() => ({}));
         throw new Error(typeof data.detail === 'string' ? data.detail : '视频导入失败，请稍后重试。');
       }
-      linkStatus.textContent = '正在加载视频到页面…';
       const asset = await response.json();
-      if (pageInactive) return;
+      if (pageInactive || draft.id !== importingDraftId) return;
       source.value = ''; sourceAsset = asset;
       sourceUrl.value = '';
+      imported = true;
       // Reuse the upload path without another paid link resolution.
       showFiles(source, 'video'); invalidate();
+      loadingTitle.textContent = '正在保存视频';
+      await flushDraft();
+      if (pageInactive || draft.id !== importingDraftId) return;
+      setSourceMode('local');
       document.getElementById('source-file-name').textContent = '';
       linkStatus.textContent = '视频已加载，可在上方播放，也可继续打码或生成。';
       const video = document.querySelector('#video-reference-preview video');
@@ -533,12 +593,16 @@
         linkStatus.textContent = '视频已导入，但浏览器无法播放此格式，请更换视频或尝试打码预览。';
       }, {once: true});
     } catch (error) {
+      if (pageInactive) return;
+      if (imported) setSourceMode('local');
       linkStatus.dataset.error = 'true';
-      linkStatus.textContent = error.message || '网络异常，视频导入失败，请重试。';
+      linkStatus.textContent = imported ? '视频已载入，但草稿保存失败，请点击重试保存。' : error.message || '网络异常，视频导入失败，请重试。';
     } finally {
-      document.getElementById('video-picker').removeAttribute('aria-busy');
+      sourceImportBusy = false;
+      panel.removeAttribute('aria-busy');
+      loading.hidden = true;
       importButton.textContent = '导入视频';
-      lock(false);
+      updateButtons();
     }
   });
   for (const [kind, input] of Object.entries(imageInputs)) input.addEventListener('change', () => {
@@ -758,7 +822,7 @@
     }
   }
   previewButton.addEventListener('click', async () => {
-    if (busy || !sourceForm.reportValidity()) return;
+    if (busy || sourceImportBusy || !sourceForm.reportValidity()) return;
     const body = new FormData(sourceForm), fingerprint = signature();
     for (const [name, value] of Object.entries(maskValues())) {
       body.set(name === 'style' ? 'blur_style' : name === 'shape' ? 'blur_shape' : name, value == null ? '' : String(value));
@@ -770,7 +834,7 @@
   });
   generationForm.addEventListener('submit', async event => {
     event.preventDefault();
-    if (busy || !sessionReady || (!pendingSubmission && !sourceForm.reportValidity())) return;
+    if (busy || sourceImportBusy || !sessionReady || (!pendingSubmission && !sourceForm.reportValidity())) return;
     clearResult(); lock(true); generateButton.textContent = '正在提交…';
     status.textContent = '正在保存草稿并加入任务队列';
     try {
@@ -1079,6 +1143,7 @@
       const faces = (item.face_asset_ids || []).map(restore), clothes = (item.clothing_asset_ids || []).map(restore);
       const extras = extraKinds.map(kind => [kind,(item[kind+'_asset_ids'] || []).map(restore)]);
       source.value = ''; sourceAsset = videoFile; sourceUrl.value = '';
+      setSourceMode('local'); linkStatus.textContent = '';
       const activePersonIds = item.person_reference_mode === 'video' ? [item.person_video_asset_id] : (item.face_asset_ids || []);
       const hasOfficialBinding = activePersonIds.some(id => known.get(id)?.portrait?.remote_asset_id);
       personInputPolicy = item.person_input_policy || (item.person_id || hasOfficialBinding ? 'existing_person' : 'legacy_raw');
@@ -1106,9 +1171,10 @@
     if (sessionReady && promptEditable && item.prompt !== promptInput.value) changed();
   }
   function draftControls(disabled) {
-    ['draft-recover'].forEach(id => document.getElementById(id).disabled = disabled);
+    ['draft-recover'].forEach(id => document.getElementById(id).disabled = disabled || sourceImportBusy);
   }
   async function changeDraft(action) {
+    if (sourceImportBusy) { toast('参考视频正在导入，请完成后再切换草稿。'); return; }
     if (busy || !sessionReady) return;
     lock(true); draftControls(true);
     try {
@@ -1141,7 +1207,7 @@
   taskNameInput.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();document.getElementById('draft-name-save').click();}if(event.key==='Escape'){event.preventDefault();document.getElementById('draft-name-cancel').click();}});
   retrySave.addEventListener('click', () => sessionReady ? flushDraft().catch(() => {}) : initialize());
   recoverDraft.addEventListener('click', async () => {
-    if (busy) return;
+    if (busy || sourceImportBusy) return;
     lock(true); draftControls(true);
     try {
       const values = await captureDraft();
@@ -1160,7 +1226,7 @@
   window.addEventListener('production-prompt-changed',event => { if (event.detail?.applyTemplate) syncReferencePrompt(); changed(); });
   window.addEventListener('model-settings-saved',() => { invalidate(); schedulePromptPreview(); });
   window.addEventListener('beforeunload', event => {
-    if (savedVersion !== dirtyVersion) { event.preventDefault(); event.returnValue = ''; }
+    if (sourceImportBusy || savedVersion !== dirtyVersion) { event.preventDefault(); event.returnValue = ''; }
   });
 
   async function retryWithoutAudio(ident) {

@@ -109,6 +109,70 @@ def test_even_small_timeline_gaps_are_rejected(invoke):
         run(plan)
 
 
+@pytest.mark.parametrize('source,target', [
+    (11.041666666666666, 17), (7.708333333333333, 20),
+    (8.04, 9), (12.345678, 18.765432),
+])
+def test_decimal_rounding_of_outer_boundaries_is_canonicalized(invoke, source, target):
+    run, captured = invoke
+    plan = {**valid_plan(), 'beats': [
+        {'start': round(source, 2), 'end': round(target, 2), 'action': '自然接续。'}]}
+    result = run(plan, source_duration=source, target_duration=target)
+    assert result['beats'][0]['start'] == source
+    assert result['beats'][-1]['end'] == target
+    assert plan['beats'][0]['start'] == round(source, 2)  # Preserve raw input for diagnosis.
+    system = captured[0][1]['json']['messages'][0]['content']
+    assert json.dumps({'start': source, 'end': target}, ensure_ascii=False) in system
+    assert len(captured) == 1
+
+
+@pytest.mark.parametrize('start,end', [
+    (11, 17), (11.039, 17), (11.041666666666666, 16.99),
+])
+def test_wrong_boundaries_are_not_treated_as_rounding(invoke, start, end):
+    run, _ = invoke
+    with pytest.raises(ValueError) as error:
+        run({**valid_plan(), 'beats': [{'start': start, 'end': end, 'action': '继续。'}]},
+            source_duration=11.041666666666666, target_duration=17)
+    assert 'beats[0]' in str(error.value)
+    assert '17' in str(error.value)
+    assert getattr(error.value, 'error_kind', None) == 'continuation_plan_invalid'
+
+
+@pytest.mark.parametrize('source,start', [(11.125, 11.12), (11.125, 11.13), (11.135, 11.13), (11.135, 11.14)])
+def test_halfway_boundary_accepts_both_standard_rounding_conventions(invoke, source, start):
+    run, _ = invoke
+    plan = {**valid_plan(), 'beats': [{'start': start, 'end': 17, 'action': '继续。'}]}
+    result = run(plan, source_duration=source, target_duration=17)
+    assert result['beats'][0]['start'] == source
+
+
+def test_rounding_cannot_collapse_short_extension_or_hide_internal_gap(invoke):
+    run, _ = invoke
+    plan = {**valid_plan(), 'beats': [{'start': 8.01, 'end': 8.01, 'action': '继续。'}]}
+    with pytest.raises(ValueError):
+        run(plan, source_duration=8.005, target_duration=8.014)
+    plan['beats'] = [{'start': 11.04, 'end': 13, 'action': '继续。'},
+                     {'start': 13.005, 'end': 17, 'action': '继续。'}]
+    with pytest.raises(ValueError) as error:
+        run(plan, source_duration=11.041666666666666, target_duration=17)
+    assert 'beats[1].start' in str(error.value)
+
+
+@pytest.mark.parametrize('change,field', [
+    ({'invariants': {}}, 'invariants'),
+    ({'ending_state': ''}, 'ending_state'),
+    ({'beats': [{'start': 'secret-test-key', 'end': 8, 'action': 'a'}]}, 'beats[0].start'),
+    ({'beats': [{'start': 5, 'end': 8, 'action': ''}]}, 'beats[0].action'),
+])
+def test_invalid_plan_identifies_field_without_echoing_private_values(invoke, change, field):
+    run, _ = invoke
+    with pytest.raises(ValueError) as error:
+        run({**valid_plan(), **change})
+    assert field in str(error.value)
+    assert 'secret-test-key' not in str(error.value)
+
+
 @pytest.mark.parametrize('status,body', [
     (401, b'{"error":"secret-test-key provider-private-error"}'),
     (302, b'{"redirect":"secret-test-key"}'),

@@ -77,14 +77,16 @@ def execute(settings, store, run, base, output, config, storage):
     plan=state.get('plan')
     if not plan:
         frames=ending_frames(base,base.parent/'continuation-frames')
+        # Keep the measured timeline even when the planner response is rejected.
+        store.update_continuation(ident,source_duration=actual,target_duration=target,
+            llm_model=frozen['config']['model'],skill_version=frozen['skill_version'],
+            frame_timestamps=[f['timestamp'] for f in frames])
         store.set_phase(ident, 'model')
         plan=plan_continuation(ContinuationConfig(**frozen['config']),
             original_prompt=run['snapshot']['prompt'],frames=frames,source_duration=actual,
             target_duration=target,reference_roles=snapshot_content_roles(run['snapshot']))
         store.set_phase(ident, 'other')
-        state=store.update_continuation(ident,plan=plan,source_duration=actual,target_duration=target,
-            llm_model=frozen['config']['model'],skill_version=frozen['skill_version'],
-            frame_timestamps=[f['timestamp'] for f in frames])
+        state=store.update_continuation(ident,plan=plan)
     url=None
     remote_id,remote_url=state.get('provider_task_id'),state.get('result_url')
     if not remote_id and not remote_url:
