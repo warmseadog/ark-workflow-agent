@@ -8,17 +8,20 @@ def compose_exclusive_prompt(prompt, roles, *, person_video=False, scene_descrip
     if rule_version not in (EXCLUSIVE_RULE_VERSION, YOYO_RULE_VERSION):
         raise ValueError('提示词规则版本不正确。')
     yoyo = rule_version == YOYO_RULE_VERSION
-    from .reference_roles import ACCESSORY_LABELS, ACCESSORY_RULES
+    from .reference_roles import ACCESSORY_LABELS, ACCESSORY_RULES, OPTIONAL_KINDS
     allowed = {'人物', '衣服', '人物补充', '衣服补充', '发型', '场景', *ACCESSORY_LABELS.values()}
     if not isinstance(prompt, str) or len(prompt) > 14000 or len(strip_reference_rules(prompt)) > 10000:
         raise ValueError('提示词正文最多 10000 字。')
-    if not isinstance(roles, list) or len(roles) > 69 or any(not isinstance(role,str) or role not in allowed for role in roles):
+    if not isinstance(roles, list) or len(roles) > 60 + len(OPTIONAL_KINDS) or any(not isinstance(role,str) or role not in allowed for role in roles):
         raise ValueError('参考素材类别不正确。')
     if type(person_video) is not bool or type(follow_source) is not bool or not isinstance(scene_description,str) or len(scene_description)>2000:
         raise ValueError('参考模式或场景描述不正确。')
     primary = allowed - {'人物补充', '衣服补充'}
     if any(roles.count(role)>1 for role in primary) or (person_video and any(role.startswith('人物') for role in roles)):
         raise ValueError('主参考重复或人物模式冲突。')
+    if variation_plan is not None and variation_plan.get('prompt_mode') == 'user_priority':
+        from .variation_prompts import compose_user_priority_prompt
+        return compose_user_priority_prompt(variation_plan, roles, person_video=person_video, scene_description=scene_description)
     refs = {role:f'@Image{i}' for i,role in enumerate(roles,1) if role in primary}
     identity = '@Video2' if person_video else refs.get('人物')
     rules = [f'本次规则：{"独立参考优先，未指定配饰继承穿搭参考" if yoyo else "独立参考优先"}（{rule_version}）。以下来源分工优先于正文中的冲突描述。']
@@ -63,7 +66,7 @@ def compose_exclusive_prompt(prompt, roles, *, person_video=False, scene_descrip
         if label in refs:
             extra = '不保留或叠加旧包，不混合不同包款。' if kind=='bag' else '不继承旧元素，不混合款式，不额外叠加同类物品。'
             rules.append(f'{label}来源：{refs[label]}。该图是{label}的唯一外观来源；{ACCESSORY_RULES[kind]}严格保留形状、款式、颜色、材质及可见细节；忽略 @Video1、人物参考、服装参考及其他参考素材中的{label}。{extra}只提取{label}，不带入图中人物、发型、服装、其他配饰或背景。')
-        elif yoyo and '衣服' in refs:
+        elif (yoyo or kind in ('scarf', 'hand_jewelry')) and '衣服' in refs:
             clothing_refs = '、'.join(f'@Image{i}' for i,role in enumerate(roles,1) if role in ('衣服','衣服补充'))
             rules.append(f'{label}来源：穿搭参考 {clothing_refs}。本次未启用独立{label}参考；采用穿搭图或单品特写中清楚展示的{label}，主图未展示时从补充图补全，同类冲突以主图为准；{ACCESSORY_RULES[kind]}忽略 @Video1、人物参考及其他类别参考中的{label}，不混合或叠加。穿搭资料未清楚展示该类时，不凭空添加。')
     ending = ('其他清楚展示的穿搭配饰也从穿搭参考提取，不继承其他素材中的同类物品；' if yoyo else '未启用的独立配饰不产生替换指令，沿用既有素材分工；')
@@ -111,6 +114,13 @@ def strict_reference_rules(references, person_video: bool = False) -> str:
             rules.append(f'@Image{i} 仅控制场景，严格保持空间布局、布景、光线、环境色彩及可见细节；不带入图中人物、动作或穿着。')
         elif role not in ('人物', '衣服'):
             rules.append(f'@Image{i} 仅控制{role}，严格保持该部分的形状、颜色、材质及可见细节；不提取图中其他人物、穿着或背景。')
+    # Compatibility is limited to the two new categories; existing legacy roles stay unchanged.
+    from .reference_roles import ACCESSORY_RULES
+    labels = {role for _, role in references}
+    clothing_refs = '、'.join(f'@Image{i}' for i, (_, role) in enumerate(references, 1) if role in ('衣服', '衣服补充'))
+    for kind, label in (('scarf', '围巾'), ('hand_jewelry', '手饰')):
+        if clothing and label not in labels:
+            rules.append(f'{label}来源：穿搭参考 {clothing_refs}。本次未启用独立{label}参考；采用衣服图及补充图中清楚展示的{label}，主图未展示时由补充图补全，同类冲突以主图为准；{ACCESSORY_RULES[kind]}忽略动作视频、人物参考及其他类别参考中的同类配饰，未清楚展示时不凭空添加。')
     rules.extend([
         '独立发型、场景、配饰启用时，在各自范围内优先于人物、服装和动作素材中的同类内容；未启用时按前述素材分工保留。',
         '禁止凭空增加人物、商品、配饰、文字、水印或特效。保持全片身份、服装细节和空间关系连续，不漂移、不闪变；被遮挡或未展示部分只作最小且一致的补全。',

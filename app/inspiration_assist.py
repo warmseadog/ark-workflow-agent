@@ -87,7 +87,7 @@ async def generate(settings, payload):
         raise HTTPException(422, str(exc)) from None
     try:
         config = inspiration_settings.load_config(settings).resolved(settings)
-        skill = inspiration_settings.skill_text()
+        skill = inspiration_settings.skill_text(inspiration_settings.prompt_mode(settings))
     except (ValueError, OSError):
         raise HTTPException(503, 'AI 灵感辅助暂不可用，可直接填写拍摄想法。') from None
     if config.problem():

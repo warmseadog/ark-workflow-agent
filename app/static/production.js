@@ -212,7 +212,7 @@
   let sessionReady = false, restoring = false;
   window.productionSession = true;
   const mediaUrls = new Map();
-  const accessoryLabels = {bag:'包包',hat:'帽子',watch:'手表',shoes:'鞋子',necklace:'项链',glasses:'眼镜',earrings:'耳环'};
+  const accessoryLabels = {bag:'包包',hat:'帽子',watch:'手表',shoes:'鞋子',necklace:'项链',glasses:'眼镜',earrings:'耳环',scarf:'围巾',hand_jewelry:'手饰'};
   const extraKinds = ['hairstyle','scene',...Object.keys(accessoryLabels)];
   const imageFiles = Object.fromEntries(['face','clothing',...extraKinds].map(kind=>[kind,[]]));
   const imageInputs = Object.fromEntries(Object.keys(imageFiles).map(kind=>[kind,generationForm.elements.namedItem(kind+'_image')]));
@@ -434,8 +434,9 @@
     const counter = document.getElementById('reference-count');
     counter.textContent = `本次参考图 ${total}${modelLimits().max_images == null ? '' : ' / '+modelLimits().max_images} 张` + (over ? ' · 请关闭部分可选项后生成' : '');
     counter.classList.toggle('over-limit',over);
-    document.getElementById('clear-reference-images').disabled = busy || !sessionReady || !Object.values(imageFiles).some(files => files.length);
-    document.getElementById('clear-reference-images').hidden = !Object.values(imageFiles).some(files => files.length);
+    const hasReferences = hasSource() || Boolean(personVideo) || Boolean(window.portraitPeople?.selected) || Object.values(imageFiles).some(files => files.length) || Boolean(document.getElementById('scene-description').value.trim());
+    document.getElementById('clear-reference-images').disabled = busy || sourceImportBusy || !sessionReady || !hasReferences;
+    document.getElementById('clear-reference-images').hidden = !hasReferences;
     const sourceLocked = busy || sourceImportBusy;
     importButton.disabled = sourceLocked || !sessionReady || !sourceUrl.value.trim();
     source.disabled = sourceUrl.disabled = sourceLocked;
@@ -553,19 +554,25 @@
     refreshExtraState();
   }
   document.getElementById('clear-reference-images').addEventListener('click', async () => {
-    if (busy || !sessionReady) return;
-    if (!window.confirm('清空本次所有参考图和场景描述？视频、提示词和素材库会保留。')) return;
+    if (busy || sourceImportBusy || !sessionReady) return;
+    if (!window.confirm('清空本次所有参考图片、动作参考视频、人物参考视频和场景描述？提示词和素材库会保留。')) return;
     lock(true); personInputVersion++;
     try {
       clearTimeout(photoTimer); photoTimer = null;
+      source.value = ''; sourceAsset = null; sourceUrl.value = ''; linkStatus.textContent = '';
+      showFiles(source, 'video');
+      useUploadedPerson();
+      document.getElementById('person-video-file').value = '';
+      document.getElementById('source-clip-start').value = 0;
+      document.getElementById('source-clip-duration').value = '';
       for (const kind of Object.keys(imageFiles)) imageFiles[kind] = [];
       for (const kind of extraKinds) document.getElementById(kind+'-enabled').checked = false;
       document.getElementById('scene-description').value = '';
       for (const kind of Object.keys(imageFiles)) syncImages(kind);
-      refreshPhotoInputs(); clearResult(); changed();
+      refreshPhotoInputs(); invalidate();
       await flushDraft();
-      toast('参考图已清空，视频和提示词已保留');
-    } catch (error) { showSave('参考图已清空，但保存失败：'+error.message+'，请重试保存。', true); }
+      toast('所有参考已清空，提示词和素材库已保留');
+    } catch (error) { showSave('所有参考已清空，但保存失败：'+error.message+'，请重试保存。', true); }
     finally { lock(false); }
   });
   function validImage(file) {

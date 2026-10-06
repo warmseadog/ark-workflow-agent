@@ -368,7 +368,7 @@ def put_variation_settings(request: Request, payload: object = Body(...)):
     require_editor(settings)
     try:return {'config':save_config(settings,payload).public()}
     except (ValueError,TypeError) as error:raise HTTPException(422,str(error)) from None
-    except OSError:raise HTTPException(500,'无法保存换拍法配置，请检查存储权限。') from None
+    except OSError:raise HTTPException(500,'无法保存拍摄灵感配置，请检查存储权限。') from None
 
 
 @app.get('/api/inspiration-settings')

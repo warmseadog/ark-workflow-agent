@@ -1,5 +1,5 @@
 """Stable optional reference roles shared by drafts, worker and provider."""
-ACCESSORY_LABELS = {'bag':'包包', 'hat':'帽子', 'watch':'手表', 'shoes':'鞋子', 'necklace':'项链', 'glasses':'眼镜', 'earrings':'耳环'}
+ACCESSORY_LABELS = {'bag':'包包', 'hat':'帽子', 'watch':'手表', 'shoes':'鞋子', 'necklace':'项链', 'glasses':'眼镜', 'earrings':'耳环', 'scarf':'围巾', 'hand_jewelry':'手饰'}
 OPTIONAL_KINDS = ('hairstyle', 'scene', *ACCESSORY_LABELS)
 ACCESSORY_RULES = {
     'bag':'参考包型、颜色、材质和背带结构，自然手持或背戴。',
@@ -9,6 +9,8 @@ ACCESSORY_RULES = {
     'necklace':'参考链条、吊坠和材质，佩戴于颈部。',
     'glasses':'参考镜框、镜片和颜色，自然佩戴，保持人物眼部与面部特征。',
     'earrings':'参考耳环造型、颜色和材质，自然佩戴于耳部，保持耳部结构与面部特征。',
+    'scarf':'参考围巾款式、颜色和材质，保持围法、长度与垂坠关系，随动作自然摆动，不穿模。',
+    'hand_jewelry':'手饰包括手链、手镯、戒指，不包括独立手表类别；保持款式、颜色、材质、佩戴位置和数量，贴合手腕或手指，保持手部结构自然，不额外增加饰品。',
 }
 
 

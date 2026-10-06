@@ -68,10 +68,13 @@ def prepare(settings,store,run,video,faces,clothes,extra,config):
     if extra.get('person_video'):
         _,person_frames=source_frames(extra['person_video'],Path(video).parent/'variation-person-frames')
         references += [('人物身份参考（不提供动作和背景）',f['path']) for f in person_frames[:2]]
-    context={'duration':duration,'inspiration':frozen['inspiration'],'default_template':llm.template,
+    context={'duration':duration,'inspiration':frozen['inspiration'],'default_template':llm.active_template,
         'original_prompt':run['snapshot']['prompt'],'scene_description':extra.get('scene_description',''),
         'suggested_recipe':state['recipe'],'recent_recipes':state['recent_recipes']}
     plan=plan_variation(llm,context=context,frames=frames,references=references)
+    if llm.prompt_mode == 'user_priority':
+        # This provenance comes from the frozen task, never from model output.
+        plan={**plan,'prompt_mode':llm.prompt_mode,'user_inspiration':frozen['inspiration']}
     store.update_variation(ident,plan=plan,llm_model=llm.model,skill_version=frozen['skill_version'])
     # Planner explanations may quote private prompts. Keep them in the plan,
     # never copy them into public task error/message fields.

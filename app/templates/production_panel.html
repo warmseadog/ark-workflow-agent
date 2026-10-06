@@ -127,14 +127,15 @@
           <p class="field-hint">点击类别上传对应图片，每类一张；关闭“本次使用”可暂时停用。</p>
           <p class="input-requirement" data-input-requirement="image">正在读取图片要求…</p>
           <div class="accessory-buttons">
-          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜'),('earrings','耳环')] %}
+          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜'),('earrings','耳环'),('scarf','围巾'),('hand_jewelry','手饰')] %}
             <button type="button" data-add-images="{{ kind }}" data-asset-edit id="{{ kind }}-add">{{ label }}<span id="{{ kind }}-reference-state">可选</span></button>
           {% endfor %}
           </div>
           <div class="accessory-previews">
-          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜'),('earrings','耳环')] %}
+          {% for kind,label in [('bag','包包'),('hat','帽子'),('watch','手表'),('shoes','鞋子'),('necklace','项链'),('glasses','眼镜'),('earrings','耳环'),('scarf','围巾'),('hand_jewelry','手饰')] %}
           <div class="accessory-card" id="{{ kind }}-references" hidden>
             <strong>{{ label }}</strong>
+            {% if kind == 'hand_jewelry' %}<span class="field-hint">手链、手镯、戒指；手表请使用独立入口。</span>{% endif %}
             <div class="asset-picker" id="{{ kind }}-picker">
               <span class="asset-empty"><b>＋</b><strong>上传{{ label }}参考图</strong></span>
               <span class="asset-thumbnails" id="{{ kind }}-reference-preview"></span>
@@ -170,7 +171,7 @@
           </div>
         </article>
     </div>
-    <div class="reference-summary"><p id="reference-count" class="field-hint reference-count" role="status" aria-live="polite">本次参考图 0 / 9 张</p><button id="clear-reference-images" type="button" class="secondary" disabled title="清空本次已选参考图，保留视频、提示词和素材库">清空参考图</button></div>
+    <div class="reference-summary"><p id="reference-count" class="field-hint reference-count" role="status" aria-live="polite">本次参考图 0 / 9 张</p><button id="clear-reference-images" type="button" class="secondary" disabled title="清空本次所有参考图片、参考视频和场景描述，保留提示词和素材库">清空所有参考</button></div>
     {% if prompt_editor_visible(request) %}
     <details class="compact-prompt" id="flow-stage-generation">
       <summary>提示词与模板 <span id="prompt-reference-status">已启用严格参考</span></summary>

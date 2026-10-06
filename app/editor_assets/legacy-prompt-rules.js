@@ -1,5 +1,5 @@
 window.syncLegacyReferencePrompt = function ({input, personMode, imageFiles, accessoryLabels, stripReferenceRules}) {
-  const accessoryRules = {bag:'参考包型、颜色、材质及背带，自然手持或背戴',hat:'参考帽型、颜色与佩戴方式',watch:'参考表盘、表带与颜色，佩戴于手腕',shoes:'参考鞋型、颜色与材质，保持足部结构自然',necklace:'参考链条、吊坠及材质，佩戴于颈部',glasses:'参考镜框、镜片与颜色，保持眼部和面部特征',earrings:'参考耳环造型、颜色与材质，自然佩戴于耳部，保持耳部结构与面部特征'};
+  const accessoryRules = {bag:'参考包型、颜色、材质及背带，自然手持或背戴',hat:'参考帽型、颜色与佩戴方式',watch:'参考表盘、表带与颜色，佩戴于手腕',shoes:'参考鞋型、颜色与材质，保持足部结构自然',necklace:'参考链条、吊坠及材质，佩戴于颈部',glasses:'参考镜框、镜片与颜色，保持眼部和面部特征',earrings:'参考耳环造型、颜色与材质，自然佩戴于耳部，保持耳部结构与面部特征',scarf:'参考围巾款式、颜色、材质、围法、长度与垂坠关系，随动作自然摆动，不穿模',hand_jewelry:'手饰包括手链、手镯、戒指，不含手表；保持款式、颜色、材质、佩戴位置和数量，贴合手腕或手指，保持手部结构自然'};
     const rules = [
       '严格参考：参考素材在各自负责范围内优先于文字描述，文字仅补充未指定细节。',
       '@Video1 动作主参考：严格遵循动作顺序、关键姿态、移动方向、运镜、构图和节奏，不自行增加动作或镜头；不采用其中的人脸和服装，不生成打码痕迹。'
@@ -26,6 +26,7 @@ window.syncLegacyReferencePrompt = function ({input, personMode, imageFiles, acc
     else rules.push('保留原视频场景，不替换背景。');
     for (const [kind,label] of Object.entries(accessoryLabels)) {
       if (imageFiles[kind].length && document.getElementById(kind+'-enabled').checked) rules.push(`@Image${++index} ${label}参考：${accessoryRules[kind]}；仅采用对应配饰，不引入图中人物、服装或背景。`);
+      else if (['scarf','hand_jewelry'].includes(kind) && imageFiles.clothing.length) rules.push(`${label}来源：衣服参考图及补充图。采用清楚展示的${label}，主图未展示时由补充图补全，同类冲突以主图为准；${accessoryRules[kind]}；忽略动作视频、人物参考及其他类别参考中的同类配饰，未展示时不凭空添加。`);
     }
     rules.push('独立发型、场景或配饰在各自范围内优先，严格保持对应参考的可见细节，不混用其他内容。禁止凭空增加人物、配饰、文字、水印或特效；全片保持身份、穿着和细节连续一致。');
     const base = stripReferenceRules(input.value)

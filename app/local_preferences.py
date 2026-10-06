@@ -61,6 +61,21 @@ def connection(settings):
                 previous = db.execute('SELECT content FROM prompt_templates WHERE id=?', (EXCLUSIVE_TEMPLATE_ID,)).fetchone()
                 db.execute('INSERT OR IGNORE INTO prompt_templates (id,name,content,rule_version) VALUES (?,?,?,?)',
                            (DEFAULT_TEMPLATE_ID, 'yoyo提示词', yoyo_prompt(previous['content'] if previous else EXCLUSIVE_PROMPT), YOYO_RULE_VERSION))
+            # Add only this marked block to existing bundled IDs, once. Keep exact
+            # before/after text so rollback never overwrites subsequent manual edits.
+            accessory_upgrade = db.execute("INSERT OR IGNORE INTO preferences VALUES ('prompts_scarf_hand_v1','1')")
+            if accessory_upgrade.rowcount and settings.storage_dir == config_root(settings):
+                from .prompt_templates import SCARF_HAND_CONSTRAINT
+                db.execute('CREATE TABLE IF NOT EXISTS prompt_scarf_hand_backups (id TEXT PRIMARY KEY, before_content TEXT NOT NULL, after_content TEXT NOT NULL)')
+                for ident in (EXCLUSIVE_TEMPLATE_ID, DEFAULT_TEMPLATE_ID, *(f'default-{i}' for i in range(len(DEFAULT_PROMPTS)))):
+                    row = db.execute('SELECT content FROM prompt_templates WHERE id=?', (ident,)).fetchone()
+                    if not row or '【围巾手饰兼容补充 v1】' in row['content']:
+                        continue
+                    updated = row['content'] + '\n\n' + SCARF_HAND_CONSTRAINT
+                    if len(updated) > 10000:
+                        continue  # Preserve near-limit custom bodies; dynamic rules still apply.
+                    db.execute('INSERT OR IGNORE INTO prompt_scarf_hand_backups VALUES (?,?,?)', (ident, row['content'], updated))
+                    db.execute('UPDATE prompt_templates SET content=? WHERE id=?', (updated, ident))
             yield db
     finally:
         db.close()

@@ -22,7 +22,8 @@ def test_shared_migration_preserves_old_body_and_does_not_resurrect_deleted(tmp_
     yoyo, new, old = items
     assert new['rule_version'] == 'exclusive-v2' and not new['is_default']
     assert yoyo['rule_version'] == 'yoyo-v3' and yoyo['is_default']
-    assert old['content'] == '我的旧正文' and old['rule_version'] == 'legacy-v1'
+    from app.prompt_templates import SCARF_HAND_CONSTRAINT
+    assert old['content'] == '我的旧正文\n\n'+SCARF_HAND_CONSTRAINT and old['rule_version'] == 'legacy-v1'
     local_preferences.delete_template(cfg, new['id'])
     assert [x['id'] for x in local_preferences.list_templates(cfg)] == [yoyo['id'], 'default-0']
 

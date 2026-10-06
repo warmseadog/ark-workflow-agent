@@ -106,7 +106,7 @@ def test_duration_slider_restores_fractional_source_and_submits_continuation(bro
         if width > 800:
             assert abs(a['y']+a['height']/2-b['y']-b['height']/2)<2
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),width
-        shots=Path(__file__).resolve().parents[1]/'storage/duration-browser';shots.mkdir(exist_ok=True)
+        shots=tmp_path/'duration-browser';shots.mkdir(exist_ok=True)
         page.locator('.generation-action').screenshot(path=str(shots/f'controls-{width}.png'))
         page.locator('#studio-generate-submit').click()
         expect(page.locator('#production-run-list')).to_contain_text('排队')
@@ -120,8 +120,8 @@ def test_duration_slider_restores_fractional_source_and_submits_continuation(bro
         if width == 390:
             expect(page.locator('#generation-view-task')).to_be_visible()
             expect(page.locator('#scene-picker')).to_be_visible()
-            page.locator('#scene-enabled').check()
             page.locator('#scene-description').fill('下一版使用自然光')
+            expect(page.locator('#scene-enabled')).to_be_checked()
             expect(page.locator('#generation-readiness')).to_have_text('素材已选齐，可以生成')
             expect(page.locator('#generation-view-task')).to_be_hidden()
             page.once('dialog', lambda dialog: dialog.dismiss())
@@ -130,7 +130,7 @@ def test_duration_slider_restores_fractional_source_and_submits_continuation(bro
             page.once('dialog', lambda dialog: dialog.accept())
             page.locator('#clear-reference-images').click()
             expect(page.locator('#clear-reference-images')).to_be_hidden()
-            expect(page.locator('#generation-readiness')).to_have_text('还缺穿搭参考')
+            expect(page.locator('#generation-readiness')).to_have_text('还缺参考视频')
         if width == 1440:
             # A saved short source segment and a longer target remain independent.
             page.evaluate("generationOptions.restore(generationOptions.get(), {start:1,duration:4}, 9)")

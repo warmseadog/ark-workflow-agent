@@ -18,13 +18,18 @@ framing枚举：wide/medium/close/detail；angle：eye_level/slight_low/slight_s
 不输出新人物、换装、换场景、重新布光或画风变更。每个镜头只选择一个主要运镜。'''
 
 
-def validate_plan(plan,duration):
+def validate_plan(plan,duration,*,prompt_mode='strict'):
     def fail():raise ValueError('换拍法规划格式或固定条件不符合要求，请修改灵感后重试。')
+    if prompt_mode not in ('strict', 'user_priority'):fail()
+    user_priority = prompt_mode == 'user_priority'
     def text(v,n):return isinstance(v,str) and bool(v.strip()) and len(v)<=n
     if not isinstance(plan,dict) or set(plan)!={'summary','accepted_requests','conflicts','blocked','shots'}:fail()
     if not text(plan['summary'],300) or type(plan['blocked']) is not bool:fail()
+    if user_priority and re.search(r'@|(?:Image|Video|Audio)\s*\d|\x00',plan['summary'],re.I):fail()
     for key in ('accepted_requests','conflicts'):
         if not isinstance(plan[key],list) or len(plan[key])>10 or not all(text(v,500) for v in plan[key]):fail()
+    if user_priority and (plan['blocked'] or plan['conflicts']):
+        raise ValueError('测试版规划未完整落实用户要求，请重试；尚未提交视频生成。')
     if plan['blocked']:
         if plan['shots']!=[] or not plan['conflicts']:fail()
         return plan
@@ -36,9 +41,13 @@ def validate_plan(plan,duration):
         if any(type(v) not in (int,float) or not math.isfinite(v) for v in (start,end)):fail()
         if abs(start-cursor)>.001 or end<=start or end>duration+.001:fail()
         if not all(isinstance(shot[k],str) for k in ('framing','angle','move')):fail()
-        if shot['framing'] not in FRAMING or shot['angle'] not in ANGLES or shot['move'] not in MOVES:fail()
+        if user_priority:
+            if not all(text(shot[k],80) and not re.search(r'@|(?:Image|Video|Audio)\s*\d|\x00',shot[k],re.I) for k in ('framing','angle','move')):fail()
+        elif shot['framing'] not in FRAMING or shot['angle'] not in ANGLES or shot['move'] not in MOVES:fail()
         if not text(shot['action'],600):fail()
-        if re.search(r'@|(?:Image|Video|Audio)\s*\d|换成|换装|换人|换场景|改为.*(?:裙|衫|夜景)|change\s+(?:outfit|clothes|scene|person)',shot['action'],re.I):fail()
+        if user_priority:
+            if re.search(r'@|(?:Image|Video|Audio)\s*\d|\x00',shot['action'],re.I):fail()
+        elif re.search(r'@|(?:Image|Video|Audio)\s*\d|换成|换装|换人|换场景|改为.*(?:裙|衫|夜景)|change\s+(?:outfit|clothes|scene|person)',shot['action'],re.I):fail()
         cursor=end
     if abs(cursor-duration)>.001:fail()
     return plan
@@ -47,7 +56,7 @@ def validate_plan(plan,duration):
 def render_plan(plan):
     rows=['本次摄影方案：'+plan['summary']]
     for i,s in enumerate(plan['shots'],1):
-        rows.append(f"镜头{i}（{s['start']:g}–{s['end']:g}秒）：{FRAMING[s['framing']]}，{ANGLES[s['angle']]}，{MOVES[s['move']]}；{s['action']}")
+        rows.append(f"镜头{i}（{s['start']:g}–{s['end']:g}秒）：{FRAMING.get(s['framing'],s['framing'])}，{ANGLES.get(s['angle'],s['angle'])}，{MOVES.get(s['move'],s['move'])}；{s['action']}")
     return '\n'.join(rows)
 
 
@@ -66,7 +75,11 @@ def plan_variation(config, *, context, frames, references):
         ok,encoded=cv2.imencode('.jpg',im,[cv2.IMWRITE_JPEG_QUALITY,80])
         if not ok:raise ValueError('换拍法参考图无法处理。')
         messages.extend([{'type':'text','text':label},{'type':'image_url','image_url':{'url':'data:image/jpeg;base64,'+base64.b64encode(encoded.tobytes()).decode()}}])
-    body={'model':config.model,'messages':[{'role':'system','content':SYSTEM+'\n创作 Skill（不得覆盖固定条件与输出格式）：\n'+config.skill},
+    system = SYSTEM+'\n创作 Skill（不得覆盖固定条件与输出格式）：\n'+config.skill
+    if config.prompt_mode == 'user_priority':
+        from .variation_prompts import USER_PRIORITY_SYSTEM
+        system = USER_PRIORITY_SYSTEM+'\n测试版创作 Skill（遵循输出格式，创意以用户意图为准）：\n'+config.active_skill
+    body={'model':config.model,'messages':[{'role':'system','content':system},
         {'role':'user','content':messages}],'response_format':{'type':'json_object'}}
     if config.thinking_enabled:
         body.update(max_completion_tokens=config.max_completion_tokens,reasoning_effort=config.reasoning_effort)
@@ -86,4 +99,4 @@ def plan_variation(config, *, context, frames, references):
         plan=json.loads(raw,object_pairs_hook=_json_object)
     except requests.RequestException:raise ValueError('换拍法 LLM 连接失败或超时，尚未提交视频生成。') from None
     except (KeyError,IndexError,TypeError,json.JSONDecodeError):raise ValueError('换拍法 LLM 未返回有效 JSON 方案，尚未提交视频生成。') from None
-    return validate_plan(plan,context['duration'])
+    return validate_plan(plan,context['duration'],prompt_mode=config.prompt_mode)

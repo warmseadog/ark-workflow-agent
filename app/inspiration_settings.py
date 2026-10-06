@@ -15,9 +15,17 @@ SKILL_PATH = Path(__file__).parent / 'skills' / 'shooting-inspiration' / 'SKILL.
 _lock = RLock()
 
 
-@lru_cache(maxsize=1)
-def skill_text():
-    return SKILL_PATH.read_text(encoding='utf-8').split('---', 2)[-1].strip()
+@lru_cache(maxsize=2)
+def skill_text(prompt_mode='strict'):
+    if prompt_mode not in ('strict', 'user_priority'):
+        raise ValueError('提示词版本不正确。')
+    path = SKILL_PATH.with_name('USER_PRIORITY.md') if prompt_mode == 'user_priority' else SKILL_PATH
+    return path.read_text(encoding='utf-8').split('---', 2)[-1].strip()
+
+
+def prompt_mode(settings):
+    from .variation_settings import load_config as planner_config
+    return planner_config(settings).prompt_mode
 
 
 @dataclass(frozen=True)
@@ -49,9 +57,10 @@ class InspirationConfig:
         values = asdict(self)
         values.pop('api_key')
         effective = self.resolved(settings)
+        mode = prompt_mode(settings)
         return {**values, 'has_api_key': bool(effective.api_key),
                 'effective_model': effective.model, 'problem': effective.problem(),
-                'skill_version': hashlib.sha256(skill_text().encode()).hexdigest()}
+                'prompt_mode': mode, 'skill_version': hashlib.sha256(skill_text(mode).encode()).hexdigest()}
 
 
 def config_path(settings):

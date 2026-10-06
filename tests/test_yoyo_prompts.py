@@ -23,7 +23,8 @@ def test_yoyo_migration_inherits_saved_default_once_and_preserves_old(tmp_path):
     assert new['name']=='yoyo提示词' and new['rule_version']=='yoyo-v3'
     assert new['content'].startswith('原有自定义正文')
     assert '背面' in new['content'] and '眼镜' in new['content']
-    assert next(x for x in items if x['id']=='default-exclusive-v2')['content']=='原有自定义正文'
+    from app.prompt_templates import SCARF_HAND_CONSTRAINT
+    assert next(x for x in items if x['id']=='default-exclusive-v2')['content']=='原有自定义正文\n\n'+SCARF_HAND_CONSTRAINT
     assert not any(x['id']=='default-0' for x in items)
     local_preferences.save_template(cfg,'yoyo提示词','新正文',new['id'])
     assert local_preferences.default_prompt_values(cfg)['prompt']=='新正文'

@@ -12,6 +12,7 @@ from .audio_policy import decorate_audio_failure
 from .model_catalog import capabilities
 from .queue_admission import queued_write, check_capacity, positive_setting
 from . import run_phases
+from .reference_roles import ACCESSORY_LABELS
 
 _connection_setup_lock = RLock()
 
@@ -191,7 +192,7 @@ class ProductionStore:
         data = {'name': default_name(), 'source_clip': None, 'target_duration': None, 'source_asset_id': None, 'face_asset_ids': [],
                 'person_reference_mode':'image','person_video_asset_id':None,
                 'clothing_asset_ids': [], 'hairstyle_asset_ids': [], 'scene_asset_ids': [],
-                **{kind+suffix: ([] if suffix=='_asset_ids' else False) for kind in ('bag','hat','watch','shoes','necklace','glasses','earrings') for suffix in ('_asset_ids','_enabled')},
+                **{kind+suffix: ([] if suffix=='_asset_ids' else False) for kind in ACCESSORY_LABELS for suffix in ('_asset_ids','_enabled')},
                 'hairstyle_mask': {'mask_scale':1.0,'threshold':0.2}, 'hairstyle_enabled': False, 'scene_enabled': False, 'scene_description': '', 'prompt': '', 'mask': {}, 'model': {}, **values}
         with (nullcontext(connection) if connection is not None else self.connection()) as db:
             db.execute('INSERT OR IGNORE INTO production_drafts VALUES (?,?,?,?,?)',

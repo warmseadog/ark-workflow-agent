@@ -1,6 +1,8 @@
-<div class="section-title"><div><h2>换个拍法</h2><p>管理员专用。为同一组素材规划新拍法，每次生成一条视频。</p></div></div>
+<div class="section-title"><div><h2>拍摄灵感</h2><p>管理员专用。配置灵感生成的模型与提示词版本，每次生成一条视频。</p></div></div>
 <div class="card"><form id="variation-form" autocomplete="off"><fieldset disabled>
-  <label class="check"><input name="enabled" type="checkbox">启用换个拍法</label>
+  <label class="check"><input name="enabled" type="checkbox">启用灵感生成</label>
+  <label>提示词版本<select name="prompt_mode"><option value="strict">原版（严格参考）</option><option value="user_priority">用户意图优先（测试版）</option></select></label>
+  <p class="hint">保存后作用于新的灵感辅助和灵感生成任务。两套模板分别保存，切换不会覆盖另一版；普通生成与已有任务不受影响。</p>
   <div class="form-grid"><label>多模态 LLM 模型 ID<input name="model" required maxlength="2048" placeholder="填写有权限调用的多模态模型 ID"></label><label>超时时间（秒）<input name="timeout_seconds" type="number" min="10" max="600" required></label></div>
   <label class="check"><input name="thinking_enabled" type="checkbox">启用深度思考（模型需支持）</label>
   <div class="form-grid"><label>思考深度<select name="reasoning_effort"><option value="low">低</option><option value="medium">中</option><option value="high">高（效果优先）</option></select></label><label>输出预算（tokens）<input name="max_completion_tokens" type="number" min="1024" max="131072" required></label></div>
@@ -11,8 +13,16 @@
   <p class="hint"><a href="https://console.volcengine.com/ark/region:cn-beijing/apikey" target="_blank" rel="noopener noreferrer">前往火山方舟 API Key 管理</a>，复制密钥后填入上方并保存。</p>
   <p class="hint">更换接口地址后需填写新密钥。保存不会调用模型，也不影响已有任务或续写配置。</p>
   <label class="check"><input name="clear_api_key" type="checkbox">清除已保存密钥</label>
-  <label>默认提示词模板<textarea name="template" required maxlength="10000" rows="5"></textarea></label>
-  <label>拍法 Skill<textarea name="skill" required maxlength="20000" rows="9"></textarea></label>
-  <p class="hint">固定人物、造型、场景、光照与风格。用户灵感仅调整摄影方案。版本：<span id="variation-skill-version">—</span></p>
-  <div class="actions"><button type="submit" class="primary">保存换拍法配置</button></div>
+  <div data-prompt-mode="strict">
+    <label>原版默认提示词模板<textarea name="template" required maxlength="10000" rows="5"></textarea></label>
+    <label>原版拍法 Skill<textarea name="skill" required maxlength="20000" rows="9"></textarea></label>
+    <p class="hint">原版保留固定人物、造型、场景、光照与风格的规则。用户灵感仅调整摄影方案。</p>
+  </div>
+  <div data-prompt-mode="user_priority" hidden>
+    <label>测试版默认提示词模板<textarea name="user_priority_template" required maxlength="10000" rows="5" disabled></textarea></label>
+    <label>测试版拍法 Skill<textarea name="user_priority_skill" required maxlength="20000" rows="9" disabled></textarea></label>
+    <p class="hint">以用户明确要求为准，允许CCD质感、微虚化、调色、速度、造型和场景等创意调整；未指定的部分沿用素材。原版提示词单独保留。</p>
+  </div>
+  <p class="hint">当前版本：<span id="variation-skill-version">—</span></p>
+  <div class="actions"><button type="submit" class="primary">保存拍摄灵感配置</button></div>
 </fieldset></form><p id="variation-status" class="notice" role="status" hidden></p><button type="button" id="variation-reload" class="secondary" hidden>重新加载配置</button></div>
