@@ -44,6 +44,8 @@ def assert_rollback_compatible(target_release,storage_root,*,database_paths=(),e
                 for table in tables:
                     quote='"'+table.replace('"','""')+'"'
                     columns={row[1] for row in db.execute('PRAGMA table_info('+quote+')')}
+                    if table=='production_variations' and db.execute('SELECT 1 FROM production_variations LIMIT 1').fetchone():
+                        required.add('camera-variation-v1')
                     if table=='prompt_templates' and 'rule_version' in columns:
                         required.add('exclusive-prompts-v2')
                         if db.execute("SELECT 1 FROM prompt_templates WHERE rule_version='yoyo-v3' LIMIT 1").fetchone():

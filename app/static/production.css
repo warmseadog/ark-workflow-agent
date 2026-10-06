@@ -506,3 +506,12 @@
   .asset-grid #person-reference-card { grid-column:auto; }
   .asset-heading { flex-wrap:wrap; }
 }
+/* Optional administrator camera editor; sits in the form, never inside a modal. */
+.variation-editor{margin:16px 0;padding:18px;border:1px solid #d9d7cf;border-radius:12px;background:#faf9f5;min-width:0}
+.variation-editor[hidden]{display:none}
+.variation-editor label{display:block;font-weight:600;margin-bottom:8px}
+.variation-editor textarea{display:block;width:100%;box-sizing:border-box;resize:vertical;min-height:96px}
+.variation-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.variation-actions a{margin-right:auto;font-size:13px}
+#variation-toggle{white-space:nowrap}
+@media(max-width:600px){.variation-actions a{width:100%;margin-bottom:4px}.variation-editor{padding:12px}}

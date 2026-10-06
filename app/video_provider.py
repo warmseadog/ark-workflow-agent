@@ -194,7 +194,8 @@ class VideoProvider:
                  hairstyles: list[Path] | None = None, scenes: list[Path] | None = None,
                  scene_description: str = '', accessories: dict[str, list[Path]] | None = None,
                  reference_roles: dict[int, str] | None = None,
-                 prompt_rule_version: str = 'legacy-v1') -> dict:
+                 prompt_rule_version: str = 'legacy-v1', variation_plan: dict | None = None,
+                 on_prompt: Callable[[str], None] | None = None) -> dict:
         self._content_roles = reference_roles or {}
         # Recovery needs only the durable remote identity/result, never source files.
         if resume_result_url is not None:
@@ -281,6 +282,13 @@ class VideoProvider:
             structured = compose_exclusive_prompt(original_prompt, [role for _,role in references],
                 person_video=person_video is not None, scene_description=scene_description,
                 follow_source=limits['follow_source'], rule_version=prompt_rule_version)
+        if variation_plan is not None:
+            from .reference_prompt import compose_exclusive_prompt
+            structured=compose_exclusive_prompt('',[role for _,role in references],
+                person_video=person_video is not None,scene_description=scene_description,
+                rule_version=prompt_rule_version if prompt_rule_version in (EXCLUSIVE_RULE_VERSION,YOYO_RULE_VERSION) else EXCLUSIVE_RULE_VERSION,
+                variation_plan=variation_plan)
+            if on_prompt is not None:on_prompt(structured)
         self.progress('正在上传参考素材', 65)
         if self.config.protocol == 'toapis':
             with video.open('rb') as source:

@@ -244,6 +244,7 @@
     operate(prompts,'prompt-status','正在删除…',async () => { await request('/api/admin/prompt-templates/' + encodeURIComponent(templateId),'DELETE'); await loadTemplates(); note('prompt-status','模板已删除。'); });
   });
   const sectionRequests = {
+    variation: ['variation-status', async () => window.VariationSettings.load()],
     continuation: ['continuation-status', async () => window.ContinuationSettings.load()],
     overview: ['page-error', refreshOverview],
     system: ['page-error', async () => overview ? true : refreshOverview()],

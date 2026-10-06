@@ -170,6 +170,10 @@ def execute_run(settings, store, run):
                     framed = reframe_video(defaced, work/'framed.mp4', config.ratio)
                     if framed != defaced:
                         framed.replace(defaced)
+            if private.get('variation'):
+                from .variation import prepare as prepare_variation
+                extra_references['variation_plan']=prepare_variation(settings,store,run,defaced,faces,clothes,extra_references,config)
+                extra_references['on_prompt']=lambda text:store.update_variation(ident,final_prompt=text)
             if config.mode == 'http' and config.protocol == 'ark':
                 store.update_run(ident, stage='upload', message='正在上传打码视频', progress=55)
                 if storage.enabled:
@@ -220,7 +224,8 @@ def execute_run(settings, store, run):
             kind = 'download_failed' if current['stage']=='downloading' else 'query_unavailable'
         if uncertain:
             kind = 'submission_uncertain'
-        needs_attention = continuation_started or uncertain or kind in {'query_unavailable', 'download_failed'} or bool(getattr(exc, 'retryable', False) and private.get('person_preparation') and current['stage'] == 'authorizing')
+        variation_retry = bool(private.get('variation') and current['stage']=='variation_planning' and not store.get_variation(ident).get('plan',{}).get('blocked'))
+        needs_attention = variation_retry or continuation_started or uncertain or kind in {'query_unavailable', 'download_failed'} or bool(getattr(exc, 'retryable', False) and private.get('person_preparation') and current['stage'] == 'authorizing')
         from .security import safe_error, configured_secrets, secret_values
         message = safe_error(str(exc), configured_secrets(settings) | secret_values(private))
         store.update_run(ident, status='needs_attention' if needs_attention else 'failed',

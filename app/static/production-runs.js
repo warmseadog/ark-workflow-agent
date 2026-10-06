@@ -224,6 +224,14 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     const timing=node('div','','run-timing-details');timingDetails(timing,item);panel.append(timing);
     panel.append(node('p','生成声音：'+(item.snapshot?.model?.generate_audio === false ? '关闭（无声视频）' : '开启')));
     panel.append(node('p',item.message||names[item.status]||''));
+    if(item.variation?.recipe){
+      const variation=node('details');variation.append(node('summary','换个拍法 · '+(item.variation.plan?.summary || item.variation.recipe)));
+      variation.append(node('p','灵感：'+(item.variation.inspiration || '默认模板自动规划')));
+      for(const text of item.variation.plan?.conflicts || [])variation.append(node('p','未采纳：'+text));
+      if(item.variation.final_prompt)variation.append(node('pre',item.variation.final_prompt));
+      variation.append(node('small',`LLM：${item.variation.llm_model} · 规则版本：${item.variation.skill_version.slice(0,12)}`));
+      panel.append(variation);
+    }
     if(item.continuation?.base_ready){
       panel.append(node('p',item.continuation.complete ? '基础片与剧情续写已完成' : '基础片已保存；恢复任务将继续续写阶段'));
       if(item.base_url){

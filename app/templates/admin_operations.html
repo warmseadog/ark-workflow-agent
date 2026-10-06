@@ -13,6 +13,7 @@
   <main class="content">
     <p>管理普通用户、共享提示词和任务；全局并发由超级管理员设置。</p>
     <section id="section-overview" class="section"><h2>任务调度</h2></section>
+    <section id="variation" class="section">{% include "variation_settings_panel.html" %}</section>
     <section class="section card"><h2>共享提示词模板</h2>
       <p>模板规则版本保持不变。修改默认模板后，新建任务使用新正文，旧草稿保留原内容。</p>
       <label>选择模板<select id="operations-template"></select></label>
@@ -30,6 +31,7 @@
       <p id="operations-template-status" role="status"></p>
     </section>
   </main>
+  <script src="/static/variation-settings.js?v=20261006-variation-1"></script>
   <script src="/static/scheduling-settings.js?v=20261005-admin-workflow-1"></script>
   <script src="/static/admin-operations.js?v=20261005-admin-workflow-1"></script>
 </body></html>

@@ -14,6 +14,18 @@
   const previewButton = document.getElementById('studio-preview-submit');
   const previewStatus = document.getElementById('studio-preview-status');
   const generateButton = document.getElementById('studio-generate-submit');
+  const variationToggle = document.getElementById('variation-toggle');
+  const variationEditor = document.getElementById('variation-editor');
+  const variationSubmit = document.getElementById('variation-submit');
+  const variationInput = document.getElementById('variation-inspiration');
+  variationToggle?.addEventListener('click', () => {
+    variationEditor.hidden = !variationEditor.hidden;
+    variationToggle.setAttribute('aria-expanded', String(!variationEditor.hidden));
+    if (!variationEditor.hidden) { variationInput.focus(); variationEditor.scrollIntoView({block:'nearest',behavior:'smooth'}); }
+  });
+  document.getElementById('variation-cancel')?.addEventListener('click', () => {
+    variationEditor.hidden = true; variationToggle.setAttribute('aria-expanded','false'); variationToggle.focus();
+  });
   const status = document.getElementById('production-status');
   generationForm.dataset.promptRuleVersion = 'legacy-v1';
   let promptPreviewKey = '', promptPreviewPromise = null, promptPreviewResult = '', promptPreviewTimer;
@@ -389,6 +401,12 @@
     previewButton.disabled = sourceLocked || !sessionReady || !hasSource() || window.generationOptions?.available() === false;
     generateButton.disabled = sourceLocked || !sessionReady || (!pendingSubmission && (window.generationOptions?.available() === false || referenceOverLimit() || durationOver || (personMode === 'video' && (!personVideoCheck || !personVideoCheck.can_use)) || !(hasSource() && (personMode === 'video' ? personVideo && (personInputPolicy === 'auto_virtual' || window.portraitPeople?.selected) : imageFiles.face.length) && imageFiles.clothing.length)));
     generateButton.formNoValidate = Boolean(pendingSubmission);
+    if (variationSubmit) {
+      variationSubmit.disabled = generateButton.disabled || Boolean(pendingSubmission);
+      variationToggle.disabled = sourceLocked || !sessionReady || Boolean(pendingSubmission);
+      variationInput.disabled = sourceLocked || Boolean(pendingSubmission);
+      document.getElementById('variation-cancel').disabled = sourceLocked;
+    }
     for (const id of ['replace-source-video', 'remove-source-video']) document.getElementById(id).hidden = !hasSource();
     if (!busy) generateButton.textContent = pendingSubmission ? '确认上次提交结果' : window.delegatedEditor ? '为该用户重新生成 →' : '生成视频 →';
     updateReadiness(durationOver);
@@ -834,6 +852,7 @@
   });
   generationForm.addEventListener('submit', async event => {
     event.preventDefault();
+    const variationRequested = event.submitter === variationSubmit && Boolean(variationSubmit);
     if (busy || sourceImportBusy || !sessionReady || (!pendingSubmission && !sourceForm.reportValidity())) return;
     clearResult(); lock(true); generateButton.textContent = '正在提交…';
     status.textContent = '正在保存草稿并加入任务队列';
@@ -841,14 +860,16 @@
       if (!pendingSubmission) {
         acceptTaskName();
         const saved = await flushDraft();
-        await ensurePromptPreview();
+        if (!variationRequested) await ensurePromptPreview();
         pendingSubmission = {draft_id: saved.id, revision: saved.revision, idempotency_key: crypto.randomUUID()};
+        if (variationRequested) pendingSubmission.variation = {inspiration:variationInput.value.trim()};
         // Persist before the request: a lost response must retry the identical submission.
         localStorage.setItem(pendingKey, JSON.stringify(pendingSubmission));
       }
       const submitted = await api('/runs', 'POST', pendingSubmission);
       pendingSubmission = null; localStorage.removeItem(pendingKey);
       runs.set(submitted.id, submitted); renderRuns();
+      if (submitted.variation && variationEditor) { variationEditor.hidden=true; variationToggle.setAttribute('aria-expanded','false'); variationInput.value=''; }
       status.textContent = '任务已加入队列，可继续准备下一个视频';
     } catch (error) {
       // A definitive validation error cannot have accepted the task. Network/5xx remains uncertain.

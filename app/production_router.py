@@ -336,6 +336,10 @@ def get_router(settings_getter, local_guard):
     @router.post('/runs')
     def submit_run(payload: dict):
         def operation():
+            if 'variation' in payload:
+                prompt_visibility.require_editor(settings_getter())
+                from .variation import normalize_request
+                payload['variation']=normalize_request(payload['variation'])
             key=payload.get('idempotency_key')
             revision=payload.get('revision')
             if not isinstance(key,str) or not 1<=len(key)<=128 or type(revision) is not int: raise ValueError('缺少有效的提交标识或草稿版本。')
@@ -343,6 +347,10 @@ def get_router(settings_getter, local_guard):
             if not isinstance(draft_id,str) or not 1<=len(draft_id)<=100: raise ValueError('草稿标识不正确。')
             previous=store().run_by_key(key)
             if previous:
+                existing=store().get_run(previous['id'],private=True)['private'].get('variation')
+                incoming=payload.get('variation')
+                if bool(existing)!=bool(incoming) or (existing and existing['inspiration']!=incoming['inspiration']):
+                    raise Conflict('提交标识已用于不同拍法或灵感，请核对上次提交。')
                 if previous['id'] in store().deleted_run_ids(): raise Conflict('此前提交的任务已删除，请刷新并发起新的提交。')
                 if previous['draft_id']!=draft_id or previous['revision']!=revision: raise Conflict('提交标识已用于另一份输入。')
                 return decorate_run(previous)
@@ -386,9 +394,20 @@ def get_router(settings_getter, local_guard):
             # creating a queued run. The worker rechecks before submission.
             production_worker.authorize_run_inputs(settings_getter(),store(),draft)
             from .continuation import preflight as continuation_preflight
-            continuation_intent = continuation_preflight(settings_getter(),store(),draft,config)
+            variation_intent=None
+            if 'variation' in payload:
+                from .variation import preflight as variation_preflight
+                variation_intent=variation_preflight(settings_getter(),store(),draft,payload['variation'])
+                # One independent video; never silently enter a second-stage extension.
+                if draft.get('target_duration'):
+                    from .source_clip import validate_source
+                    from .continuation import should_extend
+                    seconds=validate_source(store().get_asset(draft['source_asset_id'],private=True)['path'],draft.get('source_clip'),max_seconds=limits['max_video_seconds'])['duration']
+                    if should_extend(seconds,draft['target_duration']):raise ValueError('换个拍法暂不同时续写，请将时长设为原片或所选片段时长。')
+            continuation_intent = None if variation_intent else continuation_preflight(settings_getter(),store(),draft,config)
             from .portrait_generation import prepare
             private={'generation':asdict(config),'storage':asdict(storage)}
+            if variation_intent:private['variation']=variation_intent
             actor = prompt_visibility.actor(settings_getter())
             if actor and actor['id'] != settings_getter().user_id:
                 private['delegation'] = {'actor_id':actor['id'],'owner_id':settings_getter().user_id,
@@ -503,6 +522,7 @@ def get_router(settings_getter, local_guard):
     def resume_run(ident: str):
         def operation():
             store().require_visible(ident)
+            if store().get_variation(ident):prompt_visibility.require_editor(settings_getter())
             with active_quota() as quota:
                 run=store().resume_run(ident,max_queued=quota)
             production_worker.wake(settings_getter())
@@ -513,6 +533,7 @@ def get_router(settings_getter, local_guard):
     def retry_person_preparation(ident: str):
         def operation():
             store().require_visible(ident)
+            if store().get_variation(ident):prompt_visibility.require_editor(settings_getter())
             with active_quota() as quota:
                 run = store().retry_preparation(ident,max_queued=quota)
             production_worker.wake(settings_getter())
@@ -552,6 +573,8 @@ def get_router(settings_getter, local_guard):
             storage = store()
             storage.require_visible(ident)
             original = storage.get_run(ident)
+            if original.get('variation'):
+                raise Conflict('换拍法任务请在制作页关闭声音后，使用换个拍法重新生成。')
             if not original['can_retry_without_audio']:
                 raise Conflict('此任务不支持关闭声音重试，请查看错误详情。')
             key = 'audio-off:' + ident

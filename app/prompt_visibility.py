@@ -2,7 +2,7 @@
 from . import tenancy
 
 PROMPT_FIELDS = {'prompt', 'prompt_template_id', 'prompt_rule_version', 'continuation_prompt',
-                 'final_prompt', 'resolved_prompt', 'system_prompt', 'plan'}
+                 'final_prompt', 'resolved_prompt', 'system_prompt', 'plan', 'variation'}
 
 
 def actor(settings=None):
@@ -31,8 +31,12 @@ def project(value, settings):
     delegated = bool(who and settings.user_id and who['id'] != settings.user_id)
     def visit(item):
         if isinstance(item, dict):
-            return {key:visit(child) for key,child in item.items()
+            result = {key:visit(child) for key,child in item.items()
                     if visible or key not in PROMPT_FIELDS}
+            if not visible and item.get('variation'):
+                result['can_resume']=False
+                result['can_retry_preparation']=False
+            return result
         if isinstance(item, list):
             return [visit(child) for child in item]
         if delegated and isinstance(item, str):

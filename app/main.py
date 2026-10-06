@@ -350,6 +350,27 @@ def get_continuation_settings(request: Request):
         raise HTTPException(500, '无法读取续写配置，请检查服务器配置文件。') from None
 
 
+@app.get('/api/variation-settings')
+def get_variation_settings(request: Request):
+    _local_config_request(request)
+    from .prompt_visibility import require_editor
+    from .variation_settings import load_config
+    require_editor(settings)
+    try:return {'config':load_config(settings).public()}
+    except (ValueError,OSError):raise HTTPException(500,'无法读取换拍法配置。') from None
+
+
+@app.put('/api/variation-settings')
+def put_variation_settings(request: Request, payload: object = Body(...)):
+    _local_config_request(request)
+    from .prompt_visibility import require_editor
+    from .variation_settings import save_config
+    require_editor(settings)
+    try:return {'config':save_config(settings,payload).public()}
+    except (ValueError,TypeError) as error:raise HTTPException(422,str(error)) from None
+    except OSError:raise HTTPException(500,'无法保存换拍法配置，请检查存储权限。') from None
+
+
 @app.put('/api/continuation-settings')
 def put_continuation_settings(request: Request, payload: object = Body(...)):
     _local_config_request(request)

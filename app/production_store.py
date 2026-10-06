@@ -72,6 +72,10 @@ class ProductionStore:
                 result_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS production_person_preparations (
                 run_id TEXT PRIMARY KEY, data TEXT NOT NULL, next_check REAL NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS production_variations (
+                run_id TEXT PRIMARY KEY, group_key TEXT NOT NULL, data TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS variation_group ON production_variations(group_key);
             CREATE TABLE IF NOT EXISTS production_continuations (
                 run_id TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS production_run_timing (
@@ -279,8 +283,12 @@ class ProductionStore:
         value['name'] = self.run_name(value['id'],value['snapshot'].get('name', '未命名视频'))
         continuation = self.get_continuation(value['id'])
         value['continuation'] = {k:v for k,v in continuation.items() if k != 'result_url'}
+        value['variation'] = self.get_variation(value['id'])
+        if value['variation']:value['can_retry_without_audio']=False
         has_remote = bool(value['provider_task_id'] or value['result_url'] or continuation.get('base_ready'))
         value['can_resume'] = value['status'] == 'needs_attention' and has_remote and value['error_kind'] != 'submission_uncertain'
+        if value['status']=='needs_attention' and value['stage']=='variation_planning' and value['variation'] and not value['variation'].get('plan',{}).get('blocked'):
+            value['can_resume']=True
         value['can_cancel'] = value['status'] == 'queued' and not has_remote
         value['can_delete'] = value['status'] != 'running' and (value['status'] != 'queued' or not has_remote)
         preparation = self.get_preparation(value['id'])
@@ -322,11 +330,21 @@ class ProductionStore:
             if row:
                 if row['draft_id'] != draft_id or row['revision'] != revision:
                     raise Conflict('提交标识已用于另一份输入，请核对任务列表。')
+                old=json.loads(row['private']).get('variation');new=private.get('variation')
+                if bool(old)!=bool(new) or (old and old['inspiration']!=new['inspiration']):
+                    raise Conflict('提交标识已用于不同拍法或灵感，请核对上次提交。')
                 return self._run(row)
             self.check_queue_limit(db,max_queued)
             draft = self._draft(db.execute('SELECT * FROM production_drafts WHERE id=?', (draft_id,)).fetchone())
             if draft['revision'] != revision:
                 raise Conflict('草稿发生变化，请保存后重新提交。')
+            if private.get('variation'):
+                from .variation_llm import RECIPES
+                intent=private['variation']
+                recent=[json.loads(row[0])['recipe'] for row in db.execute('SELECT data FROM production_variations WHERE group_key=? ORDER BY rowid DESC LIMIT 4',(intent['group_key'],))]
+                recipe=next((r for r in RECIPES if r not in recent),RECIPES[0])
+                state={'recipe':recipe,'recent_recipes':recent,'inspiration':intent['inspiration'],'skill_version':intent['skill_version'],'llm_model':intent['config']['model']}
+                db.execute('INSERT INTO production_variations VALUES (?,?,?)',(ident,intent['group_key'],json.dumps(state,ensure_ascii=False)))
             db.execute('INSERT INTO production_runs\n                (id,draft_id,revision,idempotency_key,snapshot,private,status,stage,message,created_at,updated_at)\n                VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                 (ident,draft_id,revision,key,json.dumps(draft,ensure_ascii=False),json.dumps(private,ensure_ascii=False),
                  'queued','queued','等待处理',stamp,stamp))
@@ -343,6 +361,20 @@ class ProductionStore:
                 db.execute('INSERT INTO production_person_preparations VALUES (?,?,0)',
                     (ident, json.dumps(data, ensure_ascii=False)))
         return self.get_run(ident)
+
+    def get_variation(self, ident):
+        with self.connection() as db:
+            row=db.execute('SELECT data FROM production_variations WHERE run_id=?',(ident,)).fetchone()
+        return json.loads(row['data']) if row else {}
+
+    def update_variation(self, ident, **changes):
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT data FROM production_variations WHERE run_id=?',(ident,)).fetchone()
+            if row is None:raise LookupError('换拍法任务不存在。')
+            state={**json.loads(row['data']),**changes}
+            db.execute('UPDATE production_variations SET data=? WHERE run_id=?',(json.dumps(state,ensure_ascii=False),ident))
+        return state
 
     def get_preparation(self, ident):
         with self.connection() as db:
@@ -449,6 +481,11 @@ class ProductionStore:
             continuation = {} if item['legacy'] else self.get_continuation(item['id'])
             remote = remote or continuation.get('base_ready')
             item['can_resume']=not item['legacy'] and item['status']=='needs_attention' and bool(remote) and item['error_kind'] != 'submission_uncertain'
+            variation={} if item['legacy'] else self.get_variation(item['id'])
+            item['variation'] = variation
+            if variation:item['can_retry_without_audio']=False
+            if variation and item['status']=='needs_attention' and item['stage']=='variation_planning' and not variation.get('plan',{}).get('blocked'):
+                item['can_resume']=True
             item['can_cancel']=not item['legacy'] and item['status']=='queued' and not remote
             item['can_delete']=item['status']!='running' and (item['status']!='queued' or (not item['legacy'] and not remote))
             preparation = None if item['legacy'] else self.get_preparation(item['id'])
@@ -566,7 +603,9 @@ class ProductionStore:
                 raise LookupError('找不到任务。')
             state = db.execute('SELECT data FROM production_continuations WHERE run_id=?', (ident,)).fetchone()
             base_ready = bool(state and json.loads(state['data']).get('base_ready'))
-            if row['status'] != 'needs_attention' or row['error_kind'] == 'submission_uncertain' or not (row['provider_task_id'] or row['result_url'] or base_ready):
+            variation=db.execute('SELECT data FROM production_variations WHERE run_id=?',(ident,)).fetchone()
+            variation_retry=bool(variation and row['stage']=='variation_planning' and not json.loads(variation['data']).get('plan',{}).get('blocked'))
+            if row['status'] != 'needs_attention' or row['error_kind'] == 'submission_uncertain' or not (row['provider_task_id'] or row['result_url'] or base_ready or variation_retry):
                 raise Conflict('此任务无法直接恢复，请核对详情后复制为新草稿。')
             self.check_queue_limit(db,max_queued)
             continuation = json.loads(state['data']) if state else {}

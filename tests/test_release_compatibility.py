@@ -9,6 +9,15 @@ def api():
     return importlib.import_module('app.release_compatibility')
 
 
+def test_old_reader_rejects_camera_variation_tasks(tmp_path):
+    data=tmp_path/'data';data.mkdir();target=tmp_path/'old';target.mkdir()
+    with sqlite3.connect(data/'state.db') as db:
+        db.execute('CREATE TABLE production_variations(run_id TEXT, data TEXT)')
+        db.execute("INSERT INTO production_variations VALUES ('run', '{}')")
+    with pytest.raises(ValueError,match='camera-variation-v1'):
+        api().assert_rollback_compatible(target,data)
+
+
 @pytest.mark.parametrize('table,state',[
     ('portrait_photos','stopped'),('portrait_photos','uncertain'),
     ('stage_tasks','uncertain'),('stage_tasks','restore_held'),('production_runs','restore_held')])

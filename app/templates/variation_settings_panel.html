@@ -1,0 +1,14 @@
+<div class="section-title"><div><h2>换个拍法</h2><p>管理员专用。为同一组素材规划新拍法，每次生成一条视频。</p></div></div>
+<div class="card"><form id="variation-form" autocomplete="off"><fieldset disabled>
+  <label class="check"><input name="enabled" type="checkbox">启用换个拍法</label>
+  <div class="form-grid"><label>多模态 LLM 模型 ID<input name="model" required maxlength="2048" placeholder="填写有权限调用的多模态模型 ID"></label><label>超时时间（秒）<input name="timeout_seconds" type="number" min="10" max="180" required></label></div>
+  <label>接口基础地址<input name="base_url" type="url" required maxlength="2048" placeholder="https://ark.cn-beijing.volces.com/api/v3"></label>
+  <p class="hint">使用支持图片输入和 JSON 输出的 Chat Completions 兼容接口。这里配置提示词规划模型，视频生成仍使用制作页所选模型。</p>
+  <label>API Key <span id="variation-key-status" class="badge"></span><input name="api_key" type="password" autocomplete="new-password" maxlength="2048" placeholder="留空保留当前密钥"></label>
+  <p class="hint">更换接口地址后需填写新密钥。保存不会调用模型，也不影响已有任务或续写配置。</p>
+  <label class="check"><input name="clear_api_key" type="checkbox">清除已保存密钥</label>
+  <label>默认提示词模板<textarea name="template" required maxlength="10000" rows="5"></textarea></label>
+  <label>拍法 Skill<textarea name="skill" required maxlength="20000" rows="9"></textarea></label>
+  <p class="hint">固定人物、造型、场景、光照与风格。用户灵感仅调整摄影方案。版本：<span id="variation-skill-version">—</span></p>
+  <div class="actions"><button type="submit" class="primary">保存换拍法配置</button></div>
+</fieldset></form><p id="variation-status" class="notice" role="status" hidden></p><button type="button" id="variation-reload" class="secondary" hidden>重新加载配置</button></div>

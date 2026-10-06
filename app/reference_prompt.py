@@ -2,7 +2,7 @@
 import re
 
 
-def compose_exclusive_prompt(prompt, roles, *, person_video=False, scene_description='', follow_source=False, rule_version='exclusive-v2'):
+def compose_exclusive_prompt(prompt, roles, *, person_video=False, scene_description='', follow_source=False, rule_version='exclusive-v2', variation_plan=None):
     """Versioned deterministic composer shared by preview and provider submission."""
     from .prompt_templates import EXCLUSIVE_RULE_VERSION, YOYO_RULE_VERSION
     if rule_version not in (EXCLUSIVE_RULE_VERSION, YOYO_RULE_VERSION):
@@ -22,13 +22,18 @@ def compose_exclusive_prompt(prompt, roles, *, person_video=False, scene_descrip
     refs = {role:f'@Image{i}' for i,role in enumerate(roles,1) if role in primary}
     identity = '@Video2' if person_video else refs.get('人物')
     rules = [f'本次规则：{"独立参考优先，未指定配饰继承穿搭参考" if yoyo else "独立参考优先"}（{rule_version}）。以下来源分工优先于正文中的冲突描述。']
-    if follow_source:
+    if variation_plan is not None:
+        rules.append('换个拍法任务：直接使用本次原始素材生成独立视频。@Video1 只提供核心展示意图及未被独立参考覆盖的场景、光照和视觉风格；不复制其运镜、构图和镜头节奏，不继承其中的人物、发型和服装。镜头按本次摄影方案执行。保持同一场景布局、光源方向、色温、调色和质感；仅允许视角变化引起的自然透视、反光和遮挡变化。不得默认新增人物、对白、字幕或花哨转场。')
+    elif follow_source:
         rules.append('视频编辑任务：唯一编辑目标为 @Video1；保持原视频时长、画面比例、动作与镜头节奏，不延长或新增镜头。其他视频仅作人物身份参考。')
-    rules.append('动作来源：@Video1。严格遵循动作顺序、关键姿态、步态、移动方向、运镜、构图和节奏；不自行增加动作或镜头，不采用其中的人脸、发型和服装，不生成打码痕迹。')
+    if variation_plan is None:
+        rules.append('动作来源：@Video1。严格遵循动作顺序、关键姿态、步态、移动方向、运镜、构图和节奏；不自行增加动作或镜头，不采用其中的人脸、发型和服装，不生成打码痕迹。')
+    else:
+        rules.append('保留原视频的核心展示内容，允许为新拍法服务的轻微姿态调整；不新增剧情，不生成打码痕迹。')
     if identity:
         rules.append(f'人物来源：{identity}。锁定脸型、五官比例、肤色及人物身份，全片一致；忽略所有其他素材中的人物身份，不自行美化或重塑五官。')
     if person_video:
-        rules.append('人物参考视频 @Video2 不提供动作、服装、背景、声音或台词；动作仅以 @Video1 为准。')
+        rules.append('人物参考视频 @Video2 不提供动作、服装、背景、声音或台词；保留原视频核心展示意图。' if variation_plan is not None else '人物参考视频 @Video2 不提供动作、服装、背景、声音或台词；动作仅以 @Video1 为准。')
     if '衣服' in refs:
         rules.append(f'服装来源：{refs["衣服"]}。严格还原款式、剪裁、版型、颜色、材质、纹理、图案和可见细节；忽略 @Video1、人物参考和其他素材中的服装，不改款、不换色、不增加装饰。已启用的独立配饰由各自参考决定。')
     for i,role in enumerate(roles,1):
@@ -63,7 +68,12 @@ def compose_exclusive_prompt(prompt, roles, *, person_video=False, scene_descrip
             rules.append(f'{label}来源：穿搭参考 {clothing_refs}。本次未启用独立{label}参考；采用穿搭图或单品特写中清楚展示的{label}，主图未展示时从补充图补全，同类冲突以主图为准；{ACCESSORY_RULES[kind]}忽略 @Video1、人物参考及其他类别参考中的{label}，不混合或叠加。穿搭资料未清楚展示该类时，不凭空添加。')
     ending = ('其他清楚展示的穿搭配饰也从穿搭参考提取，不继承其他素材中的同类物品；' if yoyo else '未启用的独立配饰不产生替换指令，沿用既有素材分工；')
     rules.append(ending+'不得凭空增加物品。保持全片身份和各元素连续一致，运动、佩戴、接触、遮挡和透视自然，不漂移、不闪烁、不穿模。禁止新增文字、水印或特效，未展示部分仅作最小且一致的补全。')
-    base = normalize_reference_mentions(strip_reference_rules(prompt), person_video)
+    if variation_plan is not None:
+        from .variation_llm import render_plan
+        rules = [line.replace('背面细节仅在原动作自然露出时使用，不新增转身或镜头。','背面细节仅在参考充分时使用，不默认新增转身。').replace('保留 @Video1 的动作与镜头：','摄影按本次方案执行：') for line in rules]
+        base = render_plan(variation_plan)
+    else:
+        base = normalize_reference_mentions(strip_reference_rules(prompt), person_video)
     return base + '\n\n【素材联动】\n' + '\n'.join(rules) + '\n【联动结束】'
 
 
