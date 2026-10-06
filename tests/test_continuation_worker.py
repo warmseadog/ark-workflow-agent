@@ -115,3 +115,34 @@ def test_failed_planning_retains_actual_timeline_and_resume_reuses_base(setup, m
     worker.execute_run(cfg, store, store.claim_next())
     assert store.get_run(run['id'])['status'] == 'succeeded'
     assert len([c for c in calls if c[0] == 'base']) == 1
+
+
+def test_seam_rejection_requires_explicit_tail_retry_and_reuses_base(setup,monkeypatch):
+    cfg,store,draft,private,calls=configure(setup,monkeypatch)
+    attempts=[]
+    class Provider:
+        def __init__(self,*a):pass
+        def generate(self,video,faces,clothes,prompt,output,**kw):
+            calls.append(('base',prompt));kw['on_submitted']('base-1');output.write_bytes(b'base')
+        def extend(self,video,prompt,output,**kw):
+            assert kw.get('resume_task_id') is None and kw.get('resume_result_url') is None
+            attempts.append(1);kw['on_submitted']('tail-'+str(len(attempts)));kw['on_result']('https://assets/tail')
+            output.write_bytes(b'extended')
+    def finalize(source,out,target,base):
+        assert base.read_bytes()==b'base'
+        if len(attempts)==1:raise continuation_media.ContinuationQualityError('接续变化过大')
+        out.write_bytes(b'base+tail')
+    monkeypatch.setattr(worker,'VideoProvider',Provider)
+    monkeypatch.setattr('app.video_provider.VideoProvider',Provider)
+    monkeypatch.setattr(continuation_media,'finalize',finalize)
+    run=store.create_run(draft['id'],1,'seam-retry',private)
+    worker.execute_run(cfg,store,store.claim_next())
+    assert store.get_run(run['id'])['status']=='needs_attention'
+    assert store.get_run(run['id'])['error_kind']=='continuation_seam_mismatch'
+    assert store.get_continuation(run['id'])['quality_rejected'] is True
+    assert len(attempts)==1 and not (cfg.storage_dir/'outputs'/(run['id']+'.mp4')).exists()
+    store.resume_run(run['id'])
+    assert store.get_continuation(run['id'])['previous_task_ids']==['tail-1']
+    worker.execute_run(cfg,store,store.claim_next())
+    assert store.get_run(run['id'])['status']=='succeeded'
+    assert len(attempts)==2 and len([c for c in calls if c[0]=='base'])==1

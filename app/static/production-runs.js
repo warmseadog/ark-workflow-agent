@@ -173,7 +173,10 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     if(!item.read_only){
     add('copy','复制为草稿',()=>changeDraft(()=>api('/runs/'+encodeURIComponent(item.id)+'/copy','POST',{})));
     if(item.can_cancel)add('cancel','取消排队',async()=>{await api('/runs/'+item.id+'/cancel','POST',{});await refresh();});
-    if(item.can_resume)add('resume','继续查询 / 下载',async()=>{await api('/runs/'+item.id+'/resume','POST',{});await refresh();});
+    if(item.can_resume)add('resume',item.error_kind==='continuation_seam_mismatch'?'重新生成尾段':'继续查询 / 下载',async()=>{
+      if(item.error_kind==='continuation_seam_mismatch'&&!window.confirm('保留原基础片，重新调用视频模型生成尾段？本次会产生新的模型调用费用。'))return;
+      await api('/runs/'+item.id+'/resume','POST',{});await refresh();
+    });
     if(item.can_retry_preparation)add('retry-preparation','重新检查人物准备',async()=>{await api('/runs/'+item.id+'/person-preparation/retry','POST',{});await refresh();});
     add('delete','删除任务',async()=>{
       if(!window.confirm('删除这条任务记录？草稿和原始视频文件会保留。'+(item.status==='needs_attention'?' 此操作不会取消服务商端的任务。':'')))return;

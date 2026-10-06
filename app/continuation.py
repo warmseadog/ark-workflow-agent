@@ -58,7 +58,7 @@ def execute(settings, store, run, base, output, config, storage):
     from dataclasses import replace
     from .continuation_settings import ContinuationConfig
     from .continuation_llm import plan_continuation
-    from .continuation_media import ending_frames, finalize
+    from .continuation_media import ending_frames, finalize, ContinuationQualityError
     from .person_video import probe
     from .production_worker import authorize_run_inputs
     from .reference_roles import snapshot_content_roles
@@ -119,7 +119,12 @@ def execute(settings, store, run, base, output, config, storage):
             store.update_continuation(ident,terminal_failure=True)
         raise
     store.set_phase(ident, 'other')
-    store.update_run(ident,stage='continuation_finalizing',message='正在校验续写成片时长',progress=98)
+    store.update_run(ident,stage='continuation_finalizing',message='正在保留基础片、拼接尾段并校验前段画面',progress=98)
     authorize_run_inputs(settings,store,run['snapshot'])
-    finalize(extension,output,target)
+    try:
+        finalize(extension,output,target,base)
+    except ContinuationQualityError:
+        # Re-generation is allowed only after the user explicitly resumes this task.
+        store.update_continuation(ident,quality_rejected=True)
+        raise
     store.update_continuation(ident,complete=True)

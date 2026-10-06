@@ -609,13 +609,13 @@ class ProductionStore:
                 raise Conflict('此任务无法直接恢复，请核对详情后复制为新草稿。')
             self.check_queue_limit(db,max_queued)
             continuation = json.loads(state['data']) if state else {}
-            if continuation.get('terminal_failure'):
-                # Only an explicit user resume after a definitive remote failure
+            if continuation.get('terminal_failure') or continuation.get('quality_rejected'):
+                # Only an explicit user resume after a failure or rejected seam
                 # may submit a fresh continuation; the base and plan are reused.
                 history=continuation.setdefault('previous_task_ids',[])
                 if continuation.get('provider_task_id'):
                     history.append(continuation['provider_task_id'])
-                continuation.update(provider_task_id=None,result_url=None,terminal_failure=False)
+                continuation.update(provider_task_id=None,result_url=None,terminal_failure=False,quality_rejected=False)
                 db.execute('UPDATE production_continuations SET data=? WHERE run_id=?',(json.dumps(continuation,ensure_ascii=False),ident))
             stamp = now()
             self._transition_timing(db, ident, 'queued', stamp)
