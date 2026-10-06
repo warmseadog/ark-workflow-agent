@@ -42,7 +42,7 @@
           <p id="model-catalog-status" role="status" class="notice"></p>
         </details>
       </section>
-      <section id="section-variation" class="section" hidden>{% include "variation_settings_panel.html" %}</section>
+      <section id="section-variation" class="section" hidden>{% include "variation_settings_panel.html" %}{% include "inspiration_settings_panel.html" %}</section>
       <section id="section-continuation" class="section" hidden>
         <div class="section-title"><div><h2>视频续写</h2><p>目标时长比参考视频长至少 1 秒时，结合关键帧规划新增动作，原始提示词保持不变。</p></div></div>
         <div class="card"><form id="continuation-form" autocomplete="off"><fieldset disabled>
@@ -142,8 +142,9 @@
   <script src="/static/model-settings.js?v=20260930-settings-simple-1"></script>
   <script src="/static/model-catalog.js?v=20260930-settings-simple-1"></script>
   <script src="/static/variation-settings.js?v=20261006-pro-1"></script>
+  <script src="/static/inspiration-settings.js?v=20261006-1"></script>
   <script src="/static/continuation-settings.js?v=20260930-continuation-1"></script>
-  <script src="/static/admin-settings.js?v=20261006-variation-1"></script>
+  <script src="/static/admin-settings.js?v=20261006-inspiration-1"></script>
   <script src="/static/scheduling-settings.js?v=20261005-admin-workflow-1"></script>
   <script src="/static/virtual-library.js?v=20261006-preview-1"></script>
   <script src="/static/portrait.js?v=20261005-admin-workflow-1"></script>

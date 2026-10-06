@@ -371,6 +371,30 @@ def put_variation_settings(request: Request, payload: object = Body(...)):
     except OSError:raise HTTPException(500,'无法保存换拍法配置，请检查存储权限。') from None
 
 
+@app.get('/api/inspiration-settings')
+def get_inspiration_settings(request: Request):
+    _local_config_request(request)
+    prompt_visibility.require_editor(settings)
+    from . import inspiration_settings
+    try:
+        return {'config': inspiration_settings.load_config(settings).public(settings)}
+    except (ValueError, OSError):
+        raise HTTPException(500, '无法读取灵感辅助配置。') from None
+
+
+@app.put('/api/inspiration-settings')
+def put_inspiration_settings(request: Request, payload: object = Body(...)):
+    _local_config_request(request)
+    prompt_visibility.require_editor(settings)
+    from . import inspiration_settings
+    try:
+        return {'config': inspiration_settings.save_config(settings, payload).public(settings)}
+    except (ValueError, TypeError) as error:
+        raise HTTPException(422, str(error)) from None
+    except OSError:
+        raise HTTPException(500, '无法保存灵感辅助配置，请检查存储权限。') from None
+
+
 @app.put('/api/continuation-settings')
 def put_continuation_settings(request: Request, payload: object = Body(...)):
     _local_config_request(request)

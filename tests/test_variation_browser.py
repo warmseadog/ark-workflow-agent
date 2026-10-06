@@ -26,30 +26,29 @@ def test_inline_editor_optional_inspiration_and_single_submission(browser,client
     page.add_init_script('localStorage.setItem("production-current-draft-v1",'+json.dumps(draft['id'])+');')
     try:
         page.goto('https://testserver/')
-        expect(page.locator('#variation-toggle')).to_be_visible()
-        page.locator('#variation-toggle').click()
+        expect(page.locator('#variation-toggle')).to_have_count(0)
         expect(page.locator('#variation-editor')).to_be_visible()
         page.screenshot(path=str(tmp_path/f'variation-{width}.png'),full_page=True)
         assert submitted==[]
         expect(page.locator('#variation-submit')).to_be_enabled()
-        expect(page.locator('#variation-submit')).to_have_text('正常生成')
+        expect(page.locator('#variation-submit')).to_have_text('灵感生成')
         page.locator('#variation-submit').click()
         expect(page.locator('#production-status')).to_contain_text('测试提交保留输入')
         assert len(submitted)==1 and 'variation' not in submitted[0]
         page.locator('#variation-inspiration').fill('先拍袖口，再拉远')
-        expect(page.locator('#variation-submit')).to_have_text('按灵感生成')
+        expect(page.locator('#variation-submit')).to_have_text('灵感生成')
         page.locator('#variation-submit').click()
         expect(page.locator('#production-status')).to_contain_text('测试提交保留输入')
         assert len(submitted)==2 and submitted[1]['variation']['inspiration']=='先拍袖口，再拉远'
         expect(page.locator('#variation-inspiration')).to_have_value('先拍袖口，再拉远')
-        page.locator('#variation-cancel').click()
-        expect(page.locator('#variation-editor')).to_be_hidden()
         page.locator('#studio-generate-submit').click()
         expect(page.locator('#production-status')).to_contain_text('测试提交保留输入')
         assert len(submitted)==3 and 'variation' not in submitted[2]
-        page.locator('#variation-toggle').click()
+        page.locator('#variation-clear').click()
+        expect(page.locator('#variation-inspiration')).to_have_value('')
+        expect(page.locator('#variation-editor')).to_be_visible()
         page.locator('#variation-inspiration').fill('  \n　')
-        expect(page.locator('#variation-submit')).to_have_text('正常生成')
+        expect(page.locator('#variation-submit')).to_have_text('灵感生成')
         page.locator('#variation-submit').click()
         expect(page.locator('#production-status')).to_contain_text('测试提交保留输入')
         assert len(submitted)==4 and 'variation' not in submitted[3]
@@ -76,15 +75,14 @@ def test_ordinary_user_success_clears_editor_without_private_variation(browser,a
     page.add_init_script('localStorage.setItem("production-current-draft-v1",'+json.dumps(draft['id'])+');')
     try:
         page.goto('https://testserver/')
-        expect(page.locator('#variation-toggle')).to_be_visible()
-        page.locator('#variation-toggle').click()
+        expect(page.locator('#variation-editor')).to_be_visible()
         expect(page.locator('#variation-editor a')).to_have_count(0)
         page.locator('#variation-inspiration').fill('先拍袖口，再拉远')
         expect(page.locator('#variation-submit')).to_be_enabled()
         page.locator('#variation-submit').click()
         expect(page.locator('#production-status')).to_contain_text('任务已加入队列')
         assert submitted[0]['variation']=={'inspiration':'先拍袖口，再拉远'}
-        expect(page.locator('#variation-editor')).to_be_hidden()
+        expect(page.locator('#variation-editor')).to_be_visible()
         expect(page.locator('#variation-inspiration')).to_have_value('')
         assert not errors
     finally:ctx.close()

@@ -58,7 +58,7 @@ def administrator_allowed(path, method):
     """Operational management is distinct from system configuration."""
     if ordinary_allowed(path, method):
         return True
-    return ((path == '/api/variation-settings' and method in {'GET','PUT'}) or path == '/admin/users' or path == '/admin/templates'
+    return ((path in {'/api/variation-settings', '/api/inspiration-settings'} and method in {'GET','PUT'}) or path == '/admin/users' or path == '/admin/templates'
             or (path in {'/admin/settings', '/api/admin/scheduling'} and method in {'GET','HEAD'})
             or path.startswith(('/api/admin/users', '/api/admin/tasks', '/api/admin/task-records', '/api/admin/audit',
                                 '/api/admin/delegated/', '/api/admin/prompt-templates',

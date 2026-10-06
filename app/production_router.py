@@ -8,7 +8,7 @@ import re
 import shutil
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Query
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse
 from .media_transport import media_file_response
 from .production_store import ProductionStore, Conflict
@@ -51,6 +51,11 @@ def get_router(settings_getter, local_guard):
         return Accounts(tenancy.config_root(effective)).get_user(effective.user_id)['max_queued']
     def public_model():
         return editor_options(settings_getter())['defaults']
+
+    @router.post('/inspiration-assist')
+    async def inspiration_assist(payload: object = Body(...)):
+        from .inspiration_assist import generate
+        return await generate(settings_getter(), payload)
 
     @contextmanager
     def active_quota():

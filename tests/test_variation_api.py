@@ -54,9 +54,9 @@ def test_normal_user_can_submit_variation_but_not_configure(accounts_clients):
         route='/api/production/runs/'+saved['id']+suffix
         assert (bob.post(route) if suffix else bob.get(route)).status_code==404
     assert 'admin-private-key' not in admin.get('/api/variation-settings').text
-    assert 'id="variation-toggle"' in admin.get('/').text
+    assert 'id="variation-toggle"' not in admin.get('/').text
     html=alice.get('/').text
-    assert 'id="variation-toggle"' in html and 'id="variation-editor"' in html
+    assert 'id="variation-toggle"' not in html and 'id="variation-editor"' in html
     assert '配置拍法模型' not in html
 
 

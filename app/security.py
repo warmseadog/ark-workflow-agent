@@ -15,7 +15,7 @@ _logger = logging.getLogger('ark.security')
 _SECRET_NAMES = {'apikey', 'accesskey', 'secretkey', 'secretaccesskey', 'password', 'token', 'authorization'}
 _ERROR_FIELDS = {'error', 'errors', 'message', 'detail', 'logs', 'error_data'}
 _CONFIG_FILES = ('generation-settings.json', 'storage-settings.json', 'portrait.json',
-                 'continuation-settings.json', 'variation-settings.json', 'redaction-service.json')
+                 'continuation-settings.json', 'variation-settings.json', 'inspiration-settings.json', 'redaction-service.json')
 
 
 def secret_values(value):
