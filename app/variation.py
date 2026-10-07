@@ -71,7 +71,18 @@ def prepare(settings,store,run,video,faces,clothes,extra,config):
     context={'duration':duration,'inspiration':frozen['inspiration'],'default_template':llm.active_template,
         'original_prompt':run['snapshot']['prompt'],'scene_description':extra.get('scene_description',''),
         'suggested_recipe':state['recipe'],'recent_recipes':state['recent_recipes']}
-    plan=plan_variation(llm,context=context,frames=frames,references=references)
+    def diagnostic(value):
+        # Private prompt-bearing data must not enter the public variation state.
+        import os,tempfile
+        directory=settings.storage_dir/'work'/ident
+        directory.mkdir(parents=True,exist_ok=True)
+        fd,name=tempfile.mkstemp(dir=directory,prefix='.plan-',suffix='.json')
+        path=Path(name)
+        try:
+            with os.fdopen(fd,'w',encoding='utf-8') as stream:json.dump(value,stream,ensure_ascii=False)
+            path.replace(directory/'variation-diagnostic.json')
+        finally:path.unlink(missing_ok=True)
+    plan=plan_variation(llm,context=context,frames=frames,references=references,on_diagnostic=diagnostic)
     if llm.prompt_mode == 'user_priority':
         # This provenance comes from the frozen task, never from model output.
         plan={**plan,'prompt_mode':llm.prompt_mode,'user_inspiration':frozen['inspiration']}

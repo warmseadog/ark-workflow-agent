@@ -136,9 +136,10 @@ def test_retry_respects_queue_limit_and_reuses_draft_after_rejection(client, mon
 
 @pytest.mark.parametrize('audio', [False, True])
 def test_provider_sends_explicit_audio_flag(tmp_path, monkeypatch, audio):
+    from tests.media_fixtures import media_bytes
     files=[]
     for name in ('source.mp4','face.png','clothing.png'):
-        path=tmp_path/name;path.write_bytes(b'fixture');files.append(path)
+        path=tmp_path/name;path.write_bytes(media_bytes(name));files.append(path)
     config = generation_settings.GenerationConfig(mode='http', api_key='fixture', generate_audio=audio)
     calls=[]
     monkeypatch.setattr(VideoProvider, '_request', lambda self,*args,**kwargs: calls.append(kwargs['json']) or {'id':'task'})

@@ -15,10 +15,11 @@ def response(payload, status=200):
 
 @pytest.fixture
 def media(tmp_path):
+    from tests.media_fixtures import video_bytes,image_bytes
     paths = []
-    for name in ['defaced.mp4', 'face1.png', 'face2.png', 'clothing.png']:
+    for index,name in enumerate(['defaced.mp4', 'face1.png', 'face2.png', 'clothing.png']):
         path = tmp_path / name
-        path.write_bytes(name.encode())
+        path.write_bytes(video_bytes() if index==0 else image_bytes(color=(index*50,80,120)))
         paths.append(path)
     return paths
 
@@ -32,7 +33,7 @@ def test_provider_sends_saved_parameters_all_images_and_downloads(protocol, medi
     def request(method, url, **kwargs):
         calls.append((method, url, kwargs))
         if url.endswith('/uploads/videos'):
-            assert kwargs['files']['file'][1].read() == b'defaced.mp4'
+            assert kwargs['files']['file'][1].read() == media[0].read_bytes()
             return response({'success': True, 'data': {'url': 'https://uploaded.example/redacted.mp4'}})
         if method == 'POST':
             if protocol == 'adapter':
@@ -160,7 +161,7 @@ def test_optional_images_are_submitted_with_separate_roles(protocol,media,tmp_pa
     else:
         body=call['json']
         refs=[x['image_url']['url'] for x in body['content'] if x['type']=='image_url'] if protocol=='ark' else [x['url'] for x in body['image_with_roles']]
-        assert [base64.b64decode(x.split(',')[1]) for x in refs]==[b'face1.png',b'clothing.png',b'face2.png',b'HAIR',b'SCENE']
+        assert [base64.b64decode(x.split(',')[1]) for x in refs]==[media[1].read_bytes(),media[3].read_bytes(),media[2].read_bytes(),b'HAIR',b'SCENE']
         text=body['content'][0]['text'] if protocol=='ark' else body['prompt']
     assert '@Image4' in text and '发型' in text and '@Image5' in text and '暖色室内' in text
     assert '保留其动作、镜头、场景' not in text and '动作、镜头、场景和节奏' not in text

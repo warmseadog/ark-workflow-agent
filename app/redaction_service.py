@@ -158,11 +158,16 @@ def process(input_path, output_path, settings, options, config):
                         if size > settings.max_upload_mb * 1024 * 1024:
                             raise MediaPipelineError('外部打码结果超过视频大小上限。')
                         target.write(chunk)
-        capture = cv2.VideoCapture(str(temporary))
-        try:
-            valid, _ = capture.read()
-        finally:
-            capture.release()
+        from .preprocessing_limits import local_lock
+        from .run_phases import notify
+        notify('waiting')
+        with local_lock:
+            notify('masking')
+            capture = cv2.VideoCapture(str(temporary))
+            try:
+                valid, _ = capture.read()
+            finally:
+                capture.release()
         if not valid:
             raise MediaPipelineError('外部打码未返回有效视频，请检查接口适配。')
         temporary.replace(output_path)

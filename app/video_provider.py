@@ -195,7 +195,8 @@ class VideoProvider:
                  scene_description: str = '', accessories: dict[str, list[Path]] | None = None,
                  reference_roles: dict[int, str] | None = None,
                  prompt_rule_version: str = 'legacy-v1', variation_plan: dict | None = None,
-                 on_prompt: Callable[[str], None] | None = None) -> dict:
+                 on_prompt: Callable[[str], None] | None = None,
+                 on_input_adapted: Callable[[dict], None] | None = None) -> dict:
         self._content_roles = reference_roles or {}
         # Recovery needs only the durable remote identity/result, never source files.
         if resume_result_url is not None:
@@ -218,9 +219,12 @@ class VideoProvider:
             validate_pair(video,person_video,max_seconds=limits['max_video_seconds'])
         elif person_video_uri is not None:
             raise ProviderError('人物视频与授权编号不匹配。',error_kind='configuration')
-        elif limits['follow_source']:
+        elif limits['follow_source'] or (self.config.mode=='http' and limits['person_video']):
             from .person_video import validate_file
-            validate_file(video,person=False,max_seconds=limits['max_video_seconds'])
+            try:
+                validate_file(video,person=False,max_seconds=limits['max_video_seconds'])
+            except ValueError as exc:
+                raise ProviderError(str(exc),error_kind='material_rejected') from None
         image_asset_uris = image_asset_uris or {}
         if image_asset_uris:
             if self.config.protocol != 'ark' or self.config.base_url.rstrip('/') != 'https://ark.cn-beijing.volces.com/api/v3':
@@ -243,6 +247,18 @@ class VideoProvider:
             raise ProviderError('配饰类别或图片数量不正确。', error_kind='configuration')
         references = reference_order(faces, clothes) + [(p,'发型') for p in hairstyles] + [(p,'场景') for p in scenes]
         references += [(p,label) for kind,label in ACCESSORY_LABELS.items() for p in accessories.get(kind,[])]
+        if limits['person_video']:
+            from .reference_adaptation import adapt_image
+            adapted=[]
+            for index,(path,label) in enumerate(references,1):
+                if str(path) not in image_asset_uris:
+                    try:
+                        path,notice=adapt_image(path,output.parent/'reference-inputs')
+                    except ValueError as exc:
+                        raise ProviderError(str(exc),error_kind='material_rejected') from None
+                    if notice and on_input_adapted:on_input_adapted({**notice,'label':f'第 {index} 张{label}参考图'})
+                adapted.append((path,label))
+            references=adapted
         self._content_roles = {i: f'第 {i} 张{kind}参考图' for i,(_,kind) in enumerate(references,1)}
         self._content_roles[len(references)+1] = '参考视频'
         if person_video is not None:self._content_roles[len(references)+2] = '人物参考视频'

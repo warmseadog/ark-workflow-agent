@@ -7,6 +7,7 @@ The process-wide limits include queued AND running work (2/tenant, 20 total).
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from dataclasses import replace
 import hashlib
 import json
@@ -161,22 +162,27 @@ def _work(settings, store, ident, source_id, mask):
         clip = values.pop('source_clip', None)
         ratio = values.pop('ratio', 'adaptive')
         options = production_worker.mask_options(values)
-        # Serialize with paid production preprocessing as well as other previews.
-        with production_worker._preprocess_lock:
-            _update(store, ident, 'running')
+        from .preprocessing_limits import cache_writer, local_lock
+        # Local previews remain queued while local processing is occupied.
+        # Recheck the source after that wait, before any source bytes are read.
+        with local_lock if redaction_service.load_config(settings).mode == 'local' else nullcontext():
             asset, source = _source(store, source_id)
-            output = _output(store, ident)
-            # Match production's cache fingerprint, but only within THIS tenant.
-            key = hashlib.sha256((asset['sha256'] +
-                json.dumps(options.model_dump(mode='json'), sort_keys=True) +
-                redaction_service.fingerprint(settings) + clip_fingerprint(clip)).encode()).hexdigest()
-            cache = _inside(store.storage, 'cache', 'redacted', key + '.mp4')
+        output = _output(store, ident)
+        key = hashlib.sha256((asset['sha256'] +
+            json.dumps(options.model_dump(mode='json'), sort_keys=True) +
+            redaction_service.fingerprint(settings) + clip_fingerprint(clip)).encode()).hexdigest()
+        cache = _inside(store.storage, 'cache', 'redacted', key + '.mp4')
+        # Only identical tenant/cache inputs serialize; cloud calls share media's limiter.
+        with cache_writer(cache):
+            _update(store, ident, 'running')
             output.parent.mkdir(parents=True, exist_ok=True)
             temporary = output.with_name('defaced.tmp.mp4')
             if cache.is_file():
                 shutil.copyfile(cache, temporary)
             else:
-                source = clip_video(source,output.parent/'source-clip.mp4',clip)
+                with local_lock:
+                    _, source = _source(store, source_id)
+                    source = clip_video(source,output.parent/'source-clip.mp4',clip)
                 production_worker.run_deface(source, temporary, settings, options)
             if not temporary.is_file() or temporary.stat().st_size == 0:
                 raise ValueError('No preview output')
@@ -187,7 +193,8 @@ def _work(settings, store, ident, source_id, mask):
                 shutil.copyfile(output, cache_tmp)
                 cache_tmp.replace(cache)
             from .video_framing import reframe_video
-            framed = reframe_video(output, output.with_name('framed.mp4'), ratio)
+            with local_lock:
+                framed = reframe_video(output, output.with_name('framed.mp4'), ratio)
             if framed != output:
                 framed.replace(output)
         # Finish and release admission atomically: polling a terminal state must

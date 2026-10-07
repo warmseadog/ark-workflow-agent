@@ -167,12 +167,16 @@ def test_queue_has_two_workers_and_only_one_process_leader(setup, monkeypatch):
 @pytest.mark.parametrize('enabled',[True,False])
 def test_optional_reference_snapshot_reaches_provider_only_when_enabled(setup,monkeypatch,enabled):
     import base64
+    from tests.media_fixtures import image_bytes,video_bytes
     cfg,store,draft,private=setup
+    for asset_id in ('source','face','clothes'):
+        Path(store.get_asset(asset_id,private=True)['path']).write_bytes(video_bytes() if asset_id=='source' else image_bytes())
+    monkeypatch.setattr(worker,'run_deface',lambda src,dst,*args:dst.write_bytes(src.read_bytes()))
     for kind in ('hairstyle','scene'):
-        path=cfg.storage_dir/(kind+'.png');path.write_bytes(kind.encode())
+        path=cfg.storage_dir/(kind+'.png');path.write_bytes(image_bytes(color=(40,50,60)))
         store.add_asset(kind,path.name,kind,path,path.stat().st_size,'image/png',hashlib.sha256(path.read_bytes()).hexdigest())
     def redact(settings,asset,options):
-        output=cfg.storage_dir/'masked-hair.png';output.write_bytes(b'masked-hairstyle');return {'path':output}
+        output=cfg.storage_dir/'masked-hair.png';output.write_bytes(image_bytes(color=(20,30,40)));return {'path':output}
     monkeypatch.setattr(worker,'process_hairstyle',redact)
     draft=store.save_draft(draft['id'],draft['revision'],{'hairstyle_asset_ids':['hairstyle'],'scene_asset_ids':['scene'],
         'hairstyle_enabled':enabled,'scene_enabled':enabled,'scene_description':'frozen room'})
@@ -186,7 +190,7 @@ def test_optional_reference_snapshot_reaches_provider_only_when_enabled(setup,mo
     worker.execute_run(cfg,store,store.claim_next())
     assert store.get_run(run['id'])['status']=='succeeded'
     refs=[base64.b64decode(x['image_url']['url'].split(',')[1]) for x in sent[0]['content'] if x['type']=='image_url']
-    assert refs==([b'face',b'clothes',b'masked-hairstyle',b'scene'] if enabled else [b'face',b'clothes'])
+    assert refs==([image_bytes(),image_bytes(),image_bytes(color=(20,30,40)),image_bytes(color=(40,50,60))] if enabled else [image_bytes(),image_bytes()])
     text=sent[0]['content'][0]['text']
     assert ('frozen room' in text)==enabled
     assert 'edited later' not in text

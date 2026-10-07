@@ -162,9 +162,14 @@ def run_deface(
     options = options or BlurOptions.from_settings(settings)
     from . import redaction_service
     service = redaction_service.load_config(settings)
+    from .preprocessing_limits import cloud_slots, local_lock
+    from .run_phases import notify
     if service.mode == 'http':
         try:
-            return redaction_service.process(input_path, output_path, settings, options, service)
+            notify('waiting')
+            with cloud_slots:
+                notify('masking')
+                return redaction_service.process(input_path, output_path, settings, options, service)
         except (MediaPipelineError, OSError) as external_error:
             reason = str(external_error) if isinstance(external_error, MediaPipelineError) else '外部打码文件处理失败。'
             logging.getLogger(__name__).warning('redaction local fallback: %s', reason)
@@ -172,15 +177,21 @@ def run_deface(
             os.close(fd)
             temporary = Path(name)
             try:
-                _run_local_deface(input_path, temporary, settings, options)
-                redaction_service.validate_output(temporary, settings, input_path)
+                notify('waiting')
+                with local_lock:
+                    notify('masking')
+                    _run_local_deface(input_path, temporary, settings, options)
+                    redaction_service.validate_output(temporary, settings, input_path)
                 temporary.replace(output_path)
                 return output_path
             except (MediaPipelineError, OSError, subprocess.SubprocessError):
                 raise MediaPipelineError(f'外部打码失败：{reason} 本地兜底打码也失败，请检查本地处理器和视频素材。') from None
             finally:
                 temporary.unlink(missing_ok=True)
-    return _run_local_deface(input_path, output_path, settings, options)
+    notify('waiting')
+    with local_lock:
+        notify('masking')
+        return _run_local_deface(input_path, output_path, settings, options)
 
 
 def _run_local_deface(input_path, output_path, settings, options):

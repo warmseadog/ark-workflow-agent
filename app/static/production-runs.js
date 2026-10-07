@@ -253,6 +253,10 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
       if(item.person_preparation.person_id)preparation.append(node('small','人物编号：'+item.person_preparation.person_id));
       panel.append(preparation);
     }
+    for(const adaptation of item.input_adaptations||[]){
+      const before=adaptation.before.join('×'),after=adaptation.after.join('×');
+      panel.append(node('p',`${adaptation.label}已自动适配：${before} → ${after}，原素材保留。`,'run-input-adaptation'));
+    }
     if(item.error){const error=node('details','','run-error-detail');error.append(node('summary','错误详情'),node('p',item.error));window.supportUI?.appendContext(error,item);panel.append(error);}
     const assets=item.snapshot?.assets||[],materials=node('div','','run-detail-assets');
     const labels={video:'动作参考视频',person_video:'人物参考视频',face:'人物参考图',clothing:'穿搭参考图',hairstyle:'发型参考图',scene:'场景参考图',...accessoryLabels};

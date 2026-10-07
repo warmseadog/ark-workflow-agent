@@ -389,7 +389,7 @@ def get_router(settings_getter, local_guard):
                 if not limits['person_video']:
                     raise ValueError('人物视频需要支持人物素材的 Seedance 2.0 或 2.5 模型。')
                 validate_pair(store().get_asset(draft['source_asset_id'],private=True)['path'],store().get_asset(draft['person_video_asset_id'],private=True)['path'],max_seconds=limits['max_video_seconds'],source_clip=draft.get('source_clip'))
-            elif limits['follow_source']:
+            elif limits['person_video']:
                 from .source_clip import validate_source
                 validate_source(store().get_asset(draft['source_asset_id'],private=True)['path'],draft.get('source_clip'),max_seconds=limits['max_video_seconds'])
             storage=storage_settings.load_config(settings_getter())

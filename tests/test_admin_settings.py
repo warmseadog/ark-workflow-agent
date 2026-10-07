@@ -89,6 +89,7 @@ def test_missing_tikhub_key_is_reported_without_network(client):
 
 @pytest.mark.parametrize('generation_fails', [False, True])
 def test_tos_generation_uploads_only_redacted_video_and_preserves_snapshot(client, monkeypatch, generation_fails):
+    from tests.media_fixtures import video_bytes
     from pathlib import Path
     from types import SimpleNamespace
     from app import jobs, storage_settings
@@ -99,7 +100,7 @@ def test_tos_generation_uploads_only_redacted_video_and_preserves_snapshot(clien
     work = main.settings.storage_dir / 'work' / job.id
     work.mkdir(parents=True)
     (work / 'original.mp4').write_bytes(b'private-original')
-    (work / 'defaced.mp4').write_bytes(b'redacted-only')
+    (work / 'defaced.mp4').write_bytes(video_bytes())
     store.update(job.id, status='defaced', defaced_name='defaced.mp4')
     uploaded = {}
     signed = {}
@@ -149,7 +150,7 @@ def test_tos_generation_uploads_only_redacted_video_and_preserves_snapshot(clien
     response = client.post(f'/api/jobs/{job.id}/generate', data={'prompt': 'keep motion'})
     assert response.status_code == 200
     assert response.json()['status'] == ('failed' if generation_fails else 'succeeded')
-    assert uploaded['content'] == b'redacted-only'
+    assert uploaded['content'] == video_bytes()
     assert uploaded['content_type'] == 'video/mp4'
     import tos
     assert uploaded['acl'] == tos.ACLType.ACL_Private

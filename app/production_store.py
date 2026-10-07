@@ -285,6 +285,9 @@ class ProductionStore:
         continuation = self.get_continuation(value['id'])
         value['continuation'] = {k:v for k,v in continuation.items() if k != 'result_url'}
         value['variation'] = self.get_variation(value['id'])
+        try:
+            value['input_adaptations']=json.loads((self.storage/'work'/value['id']/'input-adaptations.json').read_text(encoding='utf-8'))
+        except (OSError,ValueError):value['input_adaptations']=[]
         if value['variation']:value['can_retry_without_audio']=False
         has_remote = bool(value['provider_task_id'] or value['result_url'] or continuation.get('base_ready'))
         value['can_resume'] = value['status'] == 'needs_attention' and has_remote and value['error_kind'] != 'submission_uncertain'

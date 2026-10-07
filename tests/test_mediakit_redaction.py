@@ -240,6 +240,60 @@ def test_cloud_deadline_terminates_blocked_child(tmp_path, monkeypatch):
     assert not (tmp_path/'output.mp4').exists()
 
 
+@pytest.mark.parametrize('valid', [False, True])
+def test_isolated_download_is_validated_before_publication(tmp_path, monkeypatch, valid):
+    import subprocess
+    from app import mediakit_redaction
+    original = subprocess.Popen
+    source = tmp_path/'input.mp4'
+    source.write_bytes(video_bytes(tmp_path, seconds=1, size=(64,64), fps=25) if valid else b'invalid-video')
+    child_code = ('import json,sys,pathlib; p=json.load(sys.stdin); '
+                  'pathlib.Path(p["output"]).write_bytes(pathlib.Path(p["input"]).read_bytes()); '
+                  'print(json.dumps({"ok": True}))')
+    downloads = []
+    def downloaded(args, **kwargs):
+        if args[0] == sys.executable and not downloads:
+            downloads.append(True)
+            args = [sys.executable, '-c', child_code]
+        return original(args, **kwargs)
+    monkeypatch.setattr(subprocess, 'Popen', downloaded)
+    cfg = redaction_service.ServiceConfig(mode='http', endpoint=HOST, api_key='secret', timeout_seconds=10)
+    if valid:
+        result = mediakit_redaction.process_isolated(source, tmp_path/'output.mp4', settings, media.BlurOptions(), cfg)
+        assert result.read_bytes() == source.read_bytes()
+    else:
+        with pytest.raises(MediaPipelineError):
+            mediakit_redaction.process_isolated(source, tmp_path/'output.mp4', settings, media.BlurOptions(), cfg)
+        assert not (tmp_path/'output.mp4').exists()
+
+
+def test_decode_validation_has_killable_deadline(tmp_path, monkeypatch):
+    import subprocess
+    import time
+    from app import mediakit_redaction
+    original = subprocess.Popen
+    source = tmp_path/'input.mp4'
+    source.write_bytes(video_bytes(tmp_path, seconds=1, size=(64,64), fps=25))
+    download = ('import json,sys,pathlib; p=json.load(sys.stdin); '
+                'pathlib.Path(p["output"]).write_bytes(pathlib.Path(p["input"]).read_bytes()); '
+                'print(json.dumps({"ok": True}))')
+    children = []
+    def worker(args, **kwargs):
+        if args[0] != sys.executable:
+            return original(args, **kwargs)
+        child = original([sys.executable, '-c', download if not children else 'import time; time.sleep(30)'], **kwargs)
+        children.append(child)
+        return child
+    monkeypatch.setattr(subprocess, 'Popen', worker)
+    cfg = redaction_service.ServiceConfig(mode='http', endpoint=HOST, api_key='secret', timeout_seconds=2)
+    started = time.monotonic()
+    with pytest.raises(MediaPipelineError, match='超时'):
+        mediakit_redaction.process_isolated(source, tmp_path/'output.mp4', settings, media.BlurOptions(), cfg)
+    assert time.monotonic()-started < 6
+    assert len(children) == 2 and all(child.poll() is not None for child in children)
+    assert not (tmp_path/'output.mp4').exists()
+
+
 def test_cloud_deadline_terminates_descendants(tmp_path, monkeypatch):
     import subprocess
     import time

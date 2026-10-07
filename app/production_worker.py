@@ -21,8 +21,9 @@ from .source_clip import clip_video, fingerprint as clip_fingerprint
 from .video_framing import reframe_video
 from .reference_roles import ACCESSORY_LABELS, snapshot_content_roles
 from . import scheduling_settings
+from .preprocessing_limits import local_lock, cache_writer
 
-_preprocess_lock = threading.Lock()
+_preprocess_lock = local_lock
 _managers = {}
 _managers_lock = threading.Lock()
 
@@ -85,6 +86,11 @@ def execute_run(settings, store, run):
         extra_references = {'reference_roles':snapshot_content_roles(snapshot)} if provider_id or result_url else {}
         if not provider_id and not result_url and not base_ready:
             authorize_run_inputs(settings, store, snapshot)
+            from .model_catalog import capabilities
+            if config.mode=='http' and capabilities(config.model,config.protocol)['person_video']:
+                from .source_clip import validate_source
+                validate_source(store.get_asset(snapshot['source_asset_id'],private=True)['path'],
+                    snapshot.get('source_clip'),max_seconds=capabilities(config.model,config.protocol)['max_video_seconds'])
             if private.get('portrait') or private.get('person_preparation'):
                 from .portrait_generation import verify, PortraitPending
                 store.update_run(ident,stage='authorizing',message='正在核实人物素材',progress=2)
@@ -144,9 +150,9 @@ def execute_run(settings, store, run):
             options = mask_options(snapshot['mask'])
             key = hashlib.sha256((source['sha256'] + json.dumps(options.model_dump(mode='json'), sort_keys=True) + redaction_service.fingerprint(settings) + clip_fingerprint(snapshot.get('source_clip'))).encode()).hexdigest()
             cache = settings.storage_dir / 'cache' / 'redacted' / (key + '.mp4')
-            store.update_run(ident, stage='preprocess', message='等待本地视频预处理', progress=5)
+            store.update_run(ident, stage='preprocess', message='等待视频预处理', progress=5)
             store.set_phase(ident, 'waiting')
-            with _preprocess_lock:
+            with cache_writer(cache):
                 store.set_phase(ident, 'other')
                 if not defaced.is_file():
                     if cache.is_file():
@@ -156,7 +162,9 @@ def execute_run(settings, store, run):
                         store.update_run(ident, message='正在处理视频打码', progress=15)
                         temporary = work / 'defaced.tmp.mp4'
                         store.set_phase(ident, 'masking')
-                        run_deface(source_path, temporary, settings, options)
+                        from .run_phases import observe
+                        with observe(lambda phase, **kw: store.set_phase(ident, phase, **kw)):
+                            run_deface(source_path, temporary, settings, options)
                         store.set_phase(ident, 'other')
                         temporary.replace(defaced)
                         cache.parent.mkdir(parents=True, exist_ok=True)
@@ -167,9 +175,24 @@ def execute_run(settings, store, run):
                     store.set_phase(ident, 'masking', cached=True)
                 if capabilities(config.model, config.protocol)['follow_source'] and config.ratio != 'adaptive':
                     store.update_run(ident, message='正在调整参考视频画面比例', progress=45)
-                    framed = reframe_video(defaced, work/'framed.mp4', config.ratio)
+                    store.set_phase(ident, 'waiting')
+                    with _preprocess_lock:
+                        store.set_phase(ident, 'other')
+                        framed = reframe_video(defaced, work/'framed.mp4', config.ratio)
                     if framed != defaced:
                         framed.replace(defaced)
+            if config.mode=='http' and capabilities(config.model,config.protocol)['person_video']:
+                from .reference_adaptation import adapt_video, record_adaptation
+                store.update_run(ident,message='正在检查参考视频尺寸',progress=46)
+                adapted,notice=adapt_video(defaced,settings.storage_dir/'cache'/'model-inputs',
+                    max_seconds=capabilities(config.model,config.protocol)['max_video_seconds'])
+                if notice:
+                    # Public video sharing admits only task-scoped masked files.
+                    defaced=work/'model-input'/'defaced.mp4'
+                    defaced.parent.mkdir(parents=True,exist_ok=True)
+                    shutil.copyfile(adapted,defaced)
+                    record_adaptation(work,{**notice,'label':'动作参考视频'})
+                extra_references['on_input_adapted']=lambda notice:record_adaptation(work,notice)
             if private.get('variation'):
                 from .variation import prepare as prepare_variation
                 extra_references['variation_plan']=prepare_variation(settings,store,run,defaced,faces,clothes,extra_references,config)

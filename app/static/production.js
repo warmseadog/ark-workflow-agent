@@ -422,13 +422,14 @@
     const sourceSeconds = window.generationOptions?.effectiveDuration?.(originalSeconds) ?? originalSeconds;
     const personSeconds = mediaDuration(personVideo, personVideoPreview);
     const seconds = sourceSeconds + personSeconds, maxSeconds = modelLimits().max_video_seconds;
-    const durationOver = (personMode === 'video' && personVideo && Number.isFinite(seconds) && seconds > maxSeconds) || (modelLimits().follow_source && Number.isFinite(sourceSeconds) && (sourceSeconds < 2 || sourceSeconds > maxSeconds));
+    const sourceLimited = modelLimits().person_video || modelLimits().follow_source;
+    const durationOver = !Number.isFinite(sourceSeconds) || (sourceLimited && (sourceSeconds < 2 || sourceSeconds > maxSeconds)) || (personMode === 'video' && (!Number.isFinite(personSeconds) || personSeconds < 2 || seconds > maxSeconds));
     const durationHint = document.getElementById('person-video-duration');
     durationHint.textContent = Number.isFinite(seconds) && personVideo ? `合计 ${seconds.toFixed(1)} / ${maxSeconds} 秒` + (durationOver ? '，请缩短视频。' : '') : `动作 + 人物视频合计 ≤ ${maxSeconds} 秒`;
     durationHint.dataset.error = String(Boolean(durationOver));
     const sourceHint = document.getElementById('source-model-hint');
-    sourceHint.hidden = !modelLimits().follow_source;
-    sourceHint.textContent = Number.isFinite(sourceSeconds) && (sourceSeconds < 2 || sourceSeconds > maxSeconds) ? `当前模型需要 2–${maxSeconds} 秒的动作视频，可选择指定片段时长。` : `视频编辑保留所用视频或片段的时长，参考视频合计不超过 ${maxSeconds} 秒。`;
+    sourceHint.hidden = !hasSource() || !sourceLimited;
+    sourceHint.textContent = !Number.isFinite(sourceSeconds) ? '正在读取动作视频时长，完成后可生成。' : sourceSeconds < 2 || sourceSeconds > maxSeconds ? `动作视频为 ${sourceSeconds.toFixed(2)} 秒，当前模型要求 2–${maxSeconds} 秒，请缩短视频或选择支持该时长的模型。` : `参考视频合计不超过 ${maxSeconds} 秒。`;
     face.required = personMode === 'image' && !imageFiles.face.length;
     clothing.required = !imageFiles.clothing.length;
     const counter = document.getElementById('reference-count');
@@ -906,6 +907,8 @@
     const inspiration = variationInput?.value.trim() || '';
     const variationRequested = event.submitter === variationSubmit && Boolean(variationSubmit) && Boolean(inspiration);
     if (busy || sourceImportBusy || !sessionReady || (!pendingSubmission && !sourceForm.reportValidity())) return;
+    updateButtons();
+    if (!pendingSubmission && generateButton.disabled) return;
     invalidateInspiration();
     clearResult(); lock(true); generateButton.textContent = '正在提交…';
     status.textContent = '正在保存草稿并加入任务队列';

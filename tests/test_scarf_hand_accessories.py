@@ -72,12 +72,13 @@ def test_new_accessories_survive_draft_run_copy_and_disable(client):
 
 @pytest.mark.parametrize('version', ['legacy-v1', 'exclusive-v2', 'yoyo-v3'])
 def test_provider_submission_includes_new_images_with_correct_binding(tmp_path, monkeypatch, version):
+    from tests.media_fixtures import media_bytes
     from app.generation_settings import GenerationConfig
     from app.video_provider import VideoProvider
     paths = []
     for name in ('video.mp4', 'face.png', 'clothing.png', 'scarf.png', 'hand.png'):
         path = tmp_path/name
-        path.write_bytes(name.encode())
+        path.write_bytes(media_bytes(name))
         paths.append(path)
     requests = []
     monkeypatch.setattr(VideoProvider, '_request', lambda self, *a, **kw: requests.append(kw) or {'id': 'test-task'})

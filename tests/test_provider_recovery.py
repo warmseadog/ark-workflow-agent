@@ -23,10 +23,11 @@ def provider():
 
 @pytest.fixture
 def inputs(tmp_path):
+    from tests.media_fixtures import video_bytes,image_bytes
     video = tmp_path / 'video.mp4'
-    video.write_bytes(b'video')
+    video.write_bytes(video_bytes())
     face = tmp_path / 'face.png'
-    face.write_bytes(b'face')
+    face.write_bytes(image_bytes())
     return video, [face], [], 'prompt', tmp_path / 'result.mp4'
 
 

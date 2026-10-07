@@ -32,35 +32,54 @@ def process_isolated(input_path, output_path, settings, options, config):
         payload = {'input': str(input_path.resolve()), 'output': str(result_path.resolve()),
                    'max_upload_mb': settings.max_upload_mb, 'config': asdict(config),
                    'options': options.model_dump(mode='json', exclude={'replace_image'})}
-        child = None
-        try:
-            child = subprocess.Popen([sys.executable, '-m', 'app.mediakit_redaction'],
-                cwd=Path(__file__).resolve().parents[1], stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                env={**os.environ, 'PYTHONUTF8': '1', 'PYTHON_DOTENV_DISABLED': '1'},
-                start_new_session=os.name != 'nt')
-            stdout, _ = child.communicate(json.dumps(payload).encode(), timeout=config.timeout_seconds)
-            response = json.loads(stdout)
-            if child.returncode != 0 or response.get('ok') is not True or not result_path.is_file():
-                # Child messages are controlled by this adapter, never provider bodies.
-                raise MediaPipelineError(response.get('error') or '火山打码进程处理失败。')
-            result_path.replace(output_path)
-            return output_path
-        except subprocess.TimeoutExpired:
-            if os.name != 'nt':
-                import signal
-                try: os.killpg(child.pid, signal.SIGKILL)
-                except ProcessLookupError: pass
-            else:
-                subprocess.run(['taskkill', '/PID', str(child.pid), '/T', '/F'],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5,
-                    creationflags=subprocess.CREATE_NO_WINDOW)
-                if child.poll() is None:
-                    child.kill()
-            child.communicate()
-            raise MediaPipelineError('火山打码超时，已结束外部处理等待。') from None
-        except (OSError, ValueError, TypeError):
-            raise MediaPipelineError('火山打码进程启动失败或响应无效。') from None
+        started = time.monotonic()
+        _run_isolated_worker(payload, config.timeout_seconds)
+        if not result_path.is_file():
+            raise MediaPipelineError('火山打码进程处理失败。')
+        # Only one heavyweight decoder runs at a time, in a killable child.
+        # Queue time does not consume its remaining active-processing budget.
+        budget = min(120, config.timeout_seconds - (time.monotonic() - started))
+        if budget <= 0:
+            raise MediaPipelineError('火山打码超时。')
+        from .preprocessing_limits import local_lock
+        from .run_phases import notify
+        notify('waiting')
+        with local_lock:
+            notify('masking')
+            _run_isolated_worker({'validate_only': True, 'input': payload['input'],
+                'output': payload['output'], 'max_upload_mb': settings.max_upload_mb,
+                'timeout_seconds': budget}, budget)
+        result_path.replace(output_path)
+        return output_path
+
+
+def _run_isolated_worker(payload, timeout_seconds):
+    child = None
+    try:
+        child = subprocess.Popen([sys.executable, '-m', 'app.mediakit_redaction'],
+            cwd=Path(__file__).resolve().parents[1], stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env={**os.environ, 'PYTHONUTF8': '1', 'PYTHON_DOTENV_DISABLED': '1'},
+            start_new_session=os.name != 'nt')
+        stdout, _ = child.communicate(json.dumps(payload).encode(), timeout=timeout_seconds)
+        response = json.loads(stdout)
+        if child.returncode != 0 or response.get('ok') is not True:
+            raise MediaPipelineError(response.get('error') or '火山打码进程处理失败。')
+    except subprocess.TimeoutExpired:
+        if os.name != 'nt':
+            import signal
+            try: os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError: pass
+        else:
+            subprocess.run(['taskkill', '/PID', str(child.pid), '/T', '/F'],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW)
+            if child.poll() is None:
+                child.kill()
+        child.communicate()
+        raise MediaPipelineError('火山打码超时，已结束外部处理等待。') from None
+    except (OSError, ValueError, TypeError):
+        raise MediaPipelineError('火山打码进程启动失败或响应无效。') from None
 
 
 def matches(endpoint):
@@ -90,8 +109,7 @@ def parameters(options):
             'face_confidence': options.threshold}
 
 
-def process(input_path, output_path, settings, options, config):
-    from .redaction_service import validate_output
+def process(input_path, output_path, settings, options, config, *, validate_result=True):
     body = parameters(options)
     endpoint = validate_endpoint(config.endpoint, allow_local=False)
     if endpoint not in {HOST, HOST+'/api/v1', HOST+TASK_PATH}:
@@ -171,7 +189,11 @@ def process(input_path, output_path, settings, options, config):
                     if size > settings.max_upload_mb * 1024 * 1024:
                         raise MediaPipelineError('火山打码结果超过视频大小上限。')
                     target.write(chunk)
-        validate_output(temporary, settings, input_path, timeout_seconds=remaining())
+        if validate_result:
+            from .redaction_service import validate_output
+            from .preprocessing_limits import local_lock
+            with local_lock:
+                validate_output(temporary, settings, input_path, timeout_seconds=remaining())
         remaining()
         temporary.replace(output_path)
         return output_path
@@ -189,9 +211,15 @@ if __name__ == '__main__':
     from types import SimpleNamespace
     try:
         payload = json.load(sys.stdin)
-        process(Path(payload['input']), Path(payload['output']),
+        if payload.get('validate_only'):
+            from .redaction_service import validate_output
+            validate_output(Path(payload['output']), SimpleNamespace(max_upload_mb=payload['max_upload_mb']),
+                            Path(payload['input']), timeout_seconds=payload['timeout_seconds'])
+        else:
+            process(Path(payload['input']), Path(payload['output']),
                 SimpleNamespace(max_upload_mb=payload['max_upload_mb']),
-                SimpleNamespace(**payload['options']), SimpleNamespace(**payload['config']))
+                SimpleNamespace(**payload['options']), SimpleNamespace(**payload['config']),
+                validate_result=False)
         print(json.dumps({'ok': True}))
     except MediaPipelineError as error:
         print(json.dumps({'ok': False, 'error': str(error)}))

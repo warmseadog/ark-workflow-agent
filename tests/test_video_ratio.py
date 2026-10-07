@@ -49,10 +49,11 @@ def test_real_framing_preserves_picture_duration_audio_and_original(tmp_path,rat
 
 @pytest.mark.parametrize('model,expected',[(SD20,'16:9'),(SD25,'adaptive')])
 def test_provider_uses_native_ratio_only_when_supported(tmp_path,monkeypatch,model,expected):
+    from tests.media_fixtures import image_bytes
     from app.video_provider import VideoProvider
     from app import person_video
     video=tmp_path/'video.mp4';video.write_bytes(b'video')
-    face=tmp_path/'face.png';face.write_bytes(b'image');clothes=tmp_path/'clothes.png';clothes.write_bytes(b'image')
+    face=tmp_path/'face.png';face.write_bytes(image_bytes());clothes=tmp_path/'clothes.png';clothes.write_bytes(image_bytes())
     config=GenerationConfig(mode='http',api_key='fixture',model=model,ratio='16:9')
     provider=VideoProvider(config);calls=[]
     monkeypatch.setattr(person_video,'validate_file',lambda *a,**k:{'duration':5})

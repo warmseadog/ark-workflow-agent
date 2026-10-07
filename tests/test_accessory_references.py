@@ -34,9 +34,10 @@ def test_accessories_persist_validate_and_count(client):
 
 @pytest.fixture
 def paths(tmp_path):
+    from tests.media_fixtures import media_bytes
     values=[]
     for name in ['video.mp4','face.png','clothes.png','hair.png','glasses.png']:
-        p=tmp_path/name;p.write_bytes(name.encode());values.append(p)
+        p=tmp_path/name;p.write_bytes(media_bytes(name));values.append(p)
     return values
 
 def test_provider_maps_accessories_and_text_only_scene(paths,tmp_path,monkeypatch):

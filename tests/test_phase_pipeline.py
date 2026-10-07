@@ -20,7 +20,7 @@ def test_worker_measures_lock_wait_separately_from_masking_and_cache(setup, monk
     def mask(src, dst, *args):
         seconds[0] += 7
         dst.write_bytes(b'masked')
-    monkeypatch.setattr(worker, '_preprocess_lock', BusyLock())
+    monkeypatch.setattr(worker, 'cache_writer', lambda _: BusyLock())
     monkeypatch.setattr(worker, 'run_deface', mask)
     for index in range(2):
         run = store.create_run(draft['id'], 1, str(index), private)
