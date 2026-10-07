@@ -1,6 +1,7 @@
 @charset "UTF-8";
 .settings-details{margin:16px 0}.settings-details>summary{cursor:pointer;font-weight:500;font-size:13px}.settings-details[open]>summary{margin-bottom:14px}.notice:empty,.field-hint:empty{display:none}
 #section-model .config-heading{display:none}
+#section-prompts textarea[readonly]{background:#f6f8f6}#standby-records summary,#standby-records p{overflow-wrap:anywhere}#standby-records>details{border-top:1px solid var(--hair);padding-top:16px}
 .workspace-shell .content{padding-top:24px}
 .workspace-shell .card,.workspace-shell #model-settings>.config-panel{padding:20px;margin-bottom:16px}
 .workspace-shell .summary-card{min-height:150px;padding:20px}

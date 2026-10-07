@@ -27,6 +27,13 @@ def test_secondary_admin_shared_template_form(browser, accounts_clients, width):
     page.on('dialog', lambda dialog: dialog.accept())
     try:
         page.goto('http://testserver/admin/settings#prompts')
+        expect(page.locator('#prompt-current-name')).to_have_text('yoyo提示词')
+        page.locator('#standby-name').fill('普通管理员待用版')
+        page.locator('#standby-content').fill('不改变线上默认的正文')
+        page.locator('#standby-save').click()
+        expect(page.locator('#standby-status')).to_contain_text('已保存为待用版本')
+        expect(page.locator('#standby-records')).to_contain_text('普通管理员待用版')
+        page.locator('#operations-direct-edit > summary').click()
         form = page.locator('#operations-template-form')
         content = page.locator('#operations-template-content')
         expect(content).to_be_enabled()

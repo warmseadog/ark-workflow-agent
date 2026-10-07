@@ -115,6 +115,14 @@ class PromptTemplateInput(BaseModel):
     content: str = Field(min_length=1, max_length=10000)
     rule_version: str | None = None
 
+
+class PromptStandbyInput(BaseModel):
+    model_config = {'extra': 'forbid'}
+    name: str = Field(min_length=1, max_length=60)
+    content: str = Field(min_length=1, max_length=10000)
+    source_template_id: str = Field(min_length=1, max_length=100)
+    note: str = Field(default='', max_length=1000)
+
 class LinkSettingsInput(BaseModel):
     api_key: str = Field(default='', max_length=2048)
     clear_api_key: bool = False
@@ -251,6 +259,30 @@ def shared_prompt_templates(request: Request):
 def create_shared_prompt_template(request: Request, payload: PromptTemplateInput):
     _local_config_request(request)
     return _save_prompt(payload, shared=True)
+
+
+@app.get('/api/admin/prompt-standby')
+def get_prompt_standby(request: Request):
+    _local_config_request(request)
+    from . import prompt_standby
+    try:
+        return prompt_standby.overview(tenancy.current_settings(settings))
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from None
+
+
+@app.post('/api/admin/prompt-standby')
+def save_prompt_standby(request: Request, payload: PromptStandbyInput):
+    _local_config_request(request)
+    from . import prompt_standby
+    try:
+        return prompt_standby.save(tenancy.current_settings(settings), **payload.model_dump())
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from None
 
 
 @app.put('/api/admin/prompt-templates/{template_id}')

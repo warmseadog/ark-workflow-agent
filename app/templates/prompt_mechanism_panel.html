@@ -1,0 +1,35 @@
+<div id="prompt-mechanism" class="card">
+<h3>当前生效机制 <span class="badge">只读查看</span></h3>
+<dl class="info-list">
+<div><dt>新建草稿默认模板</dt><dd id="prompt-current-name">正在读取…</dd></div>
+<div><dt>素材联动规则</dt><dd id="prompt-current-rule">正在读取…</dd></div>
+<div><dt>实际生成内容</dt><dd>常规生成使用草稿保存的正文 + 按本次素材生成的联动规则 + 对应模型的必要说明。联动规则有冲突时优先于正文。“换个拍法”等模式使用对应的拍摄方案与规则。</dd></div>
+<div><dt>生效范围</dt><dd>新建草稿复制当时的默认正文和规则版本；已有草稿保留自身内容，已提交任务使用提交时的快照。规则版本对应的拼接逻辑仍由代码维护。</dd></div>
+<div><dt>围巾与手饰</dt><dd>是否在正文中出现，以下方保存正文为准；素材联动层仍支持围巾、手饰，独立参考优先，未启用时按现有规则从衣服参考中提取。</dd></div>
+</dl>
+<details class="settings-details"><summary>查看当前默认正文</summary>
+<label>保存的正文（只读）<textarea id="prompt-current-body" rows="10" readonly></textarea></label>
+</details>
+<details class="settings-details"><summary>查看素材联动示例</summary>
+<p class="hint">示例素材：人物、衣服、独立围巾、独立手饰。用于解释拼接机制，不发起生成；实际内容取决于用户的素材、场景、所选模型及生成模式。</p>
+<label>正文与素材规则示例（只读）<textarea id="prompt-current-example" rows="12" readonly></textarea></label>
+</details>
+</div>
+<div class="card">
+<h3>保存待用版本 <span class="badge">不会生效</span></h3>
+<p class="hint">从共享模板复制正文后修改，每次保存都新增一条记录。不会改动共享模板、默认选择、已有草稿或已提交任务；本页暂不提供启用操作。</p>
+<form id="standby-form"><fieldset disabled>
+<label>来源共享模板<select id="standby-source" required></select></label>
+<p class="hint" id="standby-rule"></p>
+<label>待用版本名称<input id="standby-name" required maxlength="60" placeholder="例如：穿搭参考说明候选版"></label>
+<label>待用正文<textarea id="standby-content" required maxlength="10000" rows="8"></textarea></label>
+<label>改动备注<textarea id="standby-note" maxlength="1000" rows="2" placeholder="记录修改原因，方便日后核对与恢复"></textarea></label>
+<div class="actions"><button id="standby-save" type="submit" class="primary">保存待用版本</button></div>
+</fieldset></form>
+<p id="standby-status" class="notice" role="status" hidden></p>
+</div>
+<div class="card">
+<h3>待用版本记录</h3>
+<p class="hint">展示最近 100 条记录。保存正文、来源正文和当时规则示例，便于对照；记录不可覆盖，继续调整请另存新版本。规则示例不是可执行的历史规则备份。</p>
+<div id="standby-records">正在读取…</div>
+</div>

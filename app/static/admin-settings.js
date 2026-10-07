@@ -212,16 +212,16 @@
     const selected = templates.find(item => item.id === id);
     templateId = selected?.id || ''; byId('admin-template-select').value = templateId;
     prompts.elements.namedItem('name').value = selected?.name || ''; prompts.elements.content.value = selected?.content || '';
-    byId('admin-prompt-rule').textContent = selected?.rule_version === 'exclusive-v2'
-      ? '独立参考优先：未启用独立发型时沿用主人物发型；已启用的元素只采用各自参考。'+(selected.is_default ? '此模板用于新建任务。' : '')
-      : '原版素材联动规则；已保存的草稿保留原内容。';
+    const ruleNames = {'legacy-v1':'早期素材联动', 'exclusive-v2':'独立参考优先', 'yoyo-v3':'独立参考优先，其余配饰跟随穿搭图'};
+    byId('admin-prompt-rule').textContent = (ruleNames[selected?.rule_version] || ruleNames['legacy-v1'])
+      + (selected?.is_default ? '；当前默认模板，直接保存会影响之后新建的草稿。' : '；已有草稿保留自身内容。');
     byId('delete-template').disabled = !selected; promptBaseline = promptValue();
   }
   async function loadTemplates(selected = '') {
     templates = (await request('/api/admin/prompt-templates')).items;
     const select = byId('admin-template-select'); select.replaceChildren();
     const blank = document.createElement('option'); blank.value=''; blank.textContent='新建模板'; select.append(blank);
-    templates.forEach(item => { const option = document.createElement('option'); option.value=item.id; option.textContent=item.name; select.append(option); });
+    templates.forEach(item => { const option = document.createElement('option'); option.value=item.id; option.textContent=item.name+(item.is_default ? '（当前默认）' : ''); select.append(option); });
     fillPrompt(selected);
   }
   byId('admin-template-select').addEventListener('change',event => {
@@ -236,12 +236,12 @@
     event.preventDefault(); const payload={name:prompts.elements.namedItem('name').value,content:prompts.elements.content.value};
     operate(prompts,'prompt-status','正在保存模板…',async () => {
       const data = await request('/api/admin/prompt-templates' + (templateId ? '/' + encodeURIComponent(templateId) : ''),templateId ? 'PUT' : 'POST',payload);
-      await loadTemplates(data.id); note('prompt-status','模板已保存，制作页刷新后可选用。');
+      await loadTemplates(data.id); await window.PromptMechanism.load(); note('prompt-status','共享模板已直接保存，制作页刷新后可选用；若为默认模板，之后新建的草稿会使用新正文。');
     });
   });
   byId('delete-template').addEventListener('click',() => {
     if (!templateId || !confirm('确认删除此提示词模板？')) return;
-    operate(prompts,'prompt-status','正在删除…',async () => { await request('/api/admin/prompt-templates/' + encodeURIComponent(templateId),'DELETE'); await loadTemplates(); note('prompt-status','模板已删除。'); });
+    operate(prompts,'prompt-status','正在删除…',async () => { await request('/api/admin/prompt-templates/' + encodeURIComponent(templateId),'DELETE'); await loadTemplates(); await window.PromptMechanism.load(); note('prompt-status','模板已删除。'); });
   });
   const sectionRequests = {
     variation: ['variation-status', async () => Promise.all([window.VariationSettings.load(), window.InspirationSettings.load()])],
@@ -256,7 +256,7 @@
     }],
     storage: ['tos-status', async () => { fillTos((await request('/api/storage-settings')).config); tos.querySelector('fieldset').disabled = false; }],
     tikhub: ['tikhub-status', async () => { fillTik(await request('/api/link-settings')); tik.querySelector('fieldset').disabled = false; }],
-    prompts: ['prompt-status', async () => { await loadTemplates(); prompts.querySelector('fieldset').disabled = false; }],
+    prompts: ['prompt-status', async () => { await loadTemplates(); await window.PromptMechanism.load(); prompts.querySelector('fieldset').disabled = false; }],
   };
   async function ensureSection(section) {
     if (!sectionRequests[section] || sectionLoads.has(section)) return;

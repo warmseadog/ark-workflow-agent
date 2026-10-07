@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>mira · 后台配置</title>
   <link rel="stylesheet" href="/static/model-settings.css?v=20260928-model-selection-1">
-  <link rel="stylesheet" href="/static/admin-settings.css?v=20260930-settings-simple-1">
+  <link rel="stylesheet" href="/static/admin-settings.css?v=20261007-standby-1">
   <link rel="stylesheet" href="/static/portrait.css?v=20260928-backend-1">
   <link rel="stylesheet" href="/static/virtual-library.css?v=20260930-batch-mobile-1">
   <link rel="stylesheet" href="/static/account.css?v=20260929-navigation-people-1">
@@ -87,15 +87,19 @@
         </fieldset></form><p id="tos-status" class="notice" role="status" hidden></p></div>
       </section>
       <section id="section-prompts" class="section" hidden>
-        <div class="section-title"><div><h2>共享提示词模板</h2><p>管理员在此维护全员可用的模板；个人模板请在制作页另存。</p></div></div>
-        <div class="card"><form id="prompt-form"><fieldset disabled>
+        <div class="section-title"><div><h2>提示词机制与待用版本</h2><p>查看当前默认内容，保存候选正文。待用版本仅存档，不会自动应用。</p></div></div>
+        <p id="prompt-status" class="notice" role="status" hidden></p>
+        {% include "prompt_mechanism_panel.html" %}
+        <details class="card settings-details"><summary>直接编辑共享模板（保存后可能影响新建草稿）</summary>
+          <p class="notice">此处为原有模板编辑入口。直接保存当前默认模板，会改变之后新建草稿的正文；其他模板保存后可在制作页选择。仅想保存候选方案，请使用上方“保存待用版本”。</p>
+          <form id="prompt-form"><fieldset disabled>
           <label>已有模板<select id="admin-template-select"><option value="">新建模板</option></select></label>
           <label>模板名称<input name="name" required maxlength="60" placeholder="例如：自然换装"></label>
           <label>提示词内容<textarea name="content" required maxlength="10000" rows="7" placeholder="描述希望保留的动作、场景与生成要求"></textarea></label>
           <p class="hint" id="admin-prompt-rule">选择模板可查看生效规则。</p>
           <p class="hint">新版正文可使用“主人物参考”“服装参考”等角色名称。具体素材编号与独立元素规则由制作页自动生成，请勿写死配饰图片编号。</p>
           <div class="actions"><button type="button" id="delete-template" class="danger">删除模板</button><button type="button" id="new-template" class="secondary">新建模板</button><button type="submit" class="primary">保存模板</button></div>
-        </fieldset></form><p id="prompt-status" class="notice" role="status" hidden></p></div>
+        </fieldset></form></details>
       </section>
       <section id="section-redaction" class="section" hidden>
         <div class="section-title"><h2>人物打码</h2></div>
@@ -144,7 +148,8 @@
   <script src="/static/variation-settings.js?v=20261006-user-priority-1"></script>
   <script src="/static/inspiration-settings.js?v=20261006-user-priority-1"></script>
   <script src="/static/continuation-settings.js?v=20260930-continuation-1"></script>
-  <script src="/static/admin-settings.js?v=20261006-inspiration-1"></script>
+  <script src="/static/prompt-mechanism.js?v=20261007-standby-1"></script>
+  <script src="/static/admin-settings.js?v=20261007-standby-1"></script>
   <script src="/static/scheduling-settings.js?v=20261005-admin-workflow-1"></script>
   <script src="/static/virtual-library.js?v=20261006-preview-1"></script>
   <script src="/static/portrait.js?v=20261005-admin-workflow-1"></script>

@@ -16,13 +16,14 @@
   function apply() {
     const item=items.find(item=>item.id===select.value); selected=item?.id || null;
     name.value=item?.name || '';content.value=item?.content || '';version=item?.rule_version || version;
-    $('operations-template-rule').textContent='规则：'+(version==='exclusive-v2'?'独立参考优先':'原版')+(item?.is_default?' · 新任务默认':'');
+    const labels={'legacy-v1':'早期素材联动','exclusive-v2':'独立参考优先','yoyo-v3':'独立参考优先，其余配饰跟随穿搭图'};
+    $('operations-template-rule').textContent='规则：'+(labels[version] || version)+(item?.is_default?' · 当前默认，直接保存影响之后新建草稿':'');
     baseline={name:name.value,content:content.value};
     $('operations-template-delete').disabled=busy || !selected;
   }
   async function load(preferred=selected) {
     const data=await request('/api/admin/prompt-templates'); items=data.items;
-    select.replaceChildren(...items.map(item=>new Option(item.name,item.id)));
+    select.replaceChildren(...items.map(item=>new Option(item.name+(item.is_default?'（当前默认）':''),item.id)));
     if(items.some(item=>item.id===preferred))select.value=preferred;
     apply();
   }
@@ -39,6 +40,7 @@
       const item=await request('/api/admin/prompt-templates'+(!copy&&selected?'/'+selected:''),!copy&&selected?'PUT':'POST',
         {name:name.value.trim(),content:content.value.trim(),rule_version:version});
       await load(item.id);
+      await loadMechanism();
     });
   }
   form.addEventListener('submit',event=>{event.preventDefault();save(false);});
@@ -52,9 +54,19 @@
     selected=null;select.selectedIndex=-1;apply();status.textContent='';name.focus();
   });
   $('operations-template-delete').addEventListener('click',()=>{
-    if(!busy && selected && confirm('确认删除这个共享模板？未保存的编辑将丢弃，现有草稿和任务保持不变。'))operate(async()=>{await request('/api/admin/prompt-templates/'+selected,'DELETE');await load(null);});
+    if(!busy && selected && confirm('确认删除这个共享模板？未保存的编辑将丢弃，现有草稿和任务保持不变。'))operate(async()=>{await request('/api/admin/prompt-templates/'+selected,'DELETE');await load(null);await loadMechanism();});
   });
   window.addEventListener('beforeunload',event=>{if(dirty()){event.preventDefault();event.returnValue='';}});
   setBusy(true);
   window.accountReady.then(()=>load()).catch(error=>status.textContent=error.message).finally(()=>setBusy(false));
+  async function loadMechanism() {
+    const node=$('mechanism-load-status'); node.textContent='正在读取提示词机制…';
+    try { await window.PromptMechanism.load(); node.textContent=''; }
+    catch(error) {
+      node.textContent=error.message+' ';
+      const retry=document.createElement('button');retry.type='button';retry.textContent='重试加载';
+      retry.addEventListener('click',()=>void loadMechanism());node.append(retry);
+    }
+  }
+  window.accountReady.then(loadMechanism).catch(error=>$('mechanism-load-status').textContent=error.message);
 })();
