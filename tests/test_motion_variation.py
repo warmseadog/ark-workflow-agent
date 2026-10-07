@@ -34,13 +34,13 @@ def test_new_profile_accepts_four_shots_without_changing_legacy_contract():
     assert validate_plan(motion_plan((8,)), 8)['shots'][0]['end'] == 8
 
 
-@pytest.mark.parametrize('durations', [(2, 5), (2.5, 2.5, 2.5, 2.5), (1.5,), (5,)])
+@pytest.mark.parametrize('durations', [(2, 3), (2.5, 2.5, 2.5, 2.5), (1.5,), (3,)])
 def test_motion_duration_boundaries(durations):
     plan = motion_plan(durations)
     assert validate_plan(plan, sum(durations), prompt_mode='motion') == plan
 
 
-@pytest.mark.parametrize('durations', [(6,), (1, 3), (1, 1)])
+@pytest.mark.parametrize('durations', [(3.01,), (4,), (5,), (6,), (1, 3), (1, 1)])
 def test_motion_rejects_long_shots_and_short_tail(durations):
     with pytest.raises(ValueError, match='时长'):
         validate_plan(motion_plan(durations), sum(durations), prompt_mode='motion')
@@ -63,7 +63,7 @@ def test_motion_setting_and_assist_follow_selected_version(client, monkeypatch):
     result = client.post('/api/production/inspiration-assist', json={'inspiration':'正常行走并转身展示'})
     assert result.status_code == 200
     system = calls[0]['messages'][0]['content']
-    assert '动作变化' in system and '2～5秒' in system
+    assert '动作变化' in system and '2～3秒' in system
     assert '不安排新增人物、换装、换景、绕背、复杂转身' not in system
     assert len(calls[0]['messages']) == 2
     restored = client.put('/api/variation-settings', json={'prompt_mode':'strict'})
@@ -81,7 +81,7 @@ def test_planner_uses_motion_system_and_validates_many_shots(monkeypatch):
     config = VariationConfig(api_key='test', prompt_mode='motion')
     assert plan_variation(config, context={'duration':12, 'inspiration':'行走转身'}, frames=[], references=[]) == motion_plan()
     system = captured[0]['messages'][0]['content']
-    assert '每个镜头通常2～5秒' in system and '只允许轻微姿态调整' not in system
+    assert '每个镜头通常2～3秒' in system and '只允许轻微姿态调整' not in system
     assert '相邻镜头应在人物动作' in system
 
 

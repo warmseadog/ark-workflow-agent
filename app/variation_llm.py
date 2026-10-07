@@ -52,8 +52,8 @@ def validate_plan(plan,duration,*,prompt_mode='strict'):
             if abs(end-duration)>.005000001:timing_fail()
             end=duration
         if end<=start or end>duration:timing_fail()
-        if prompt_mode == 'motion' and duration >= 2 and not 2-.005000001 <= end-start <= 5+.005000001:
-            raise ValueError('动作分镜的每镜头时长需为2～5秒，请重试规划；尚未提交视频生成。')
+        if prompt_mode == 'motion' and duration >= 2 and not 2-.005000001 <= end-start <= 3+.005000001:
+            raise ValueError('动作分镜的每镜头时长需为2～3秒，请重试规划；尚未提交视频生成。')
         shot.update(start=start,end=end)
         if not all(isinstance(shot[k],str) for k in ('framing','angle','move')):fail()
         if user_priority:

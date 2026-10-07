@@ -25,7 +25,7 @@
   }
   function showInfo(config) {
     info.textContent =
-      `提示词：${config.prompt_mode === 'motion' ? '2～5秒分镜 · 丰富动作' : config.prompt_mode === 'user_priority' ? '用户意图优先（测试版）' : '原版（严格参考）'}；实际模型：${config.effective_model || '未配置'}；密钥：${config.has_api_key ? '已配置' : '未配置'}；Skill 版本：${config.skill_version.slice(0, 12)}。${config.problem}`;
+      `提示词：${config.prompt_mode === 'motion' ? '2～3秒分镜 · 丰富动作' : config.prompt_mode === 'user_priority' ? '用户意图优先（测试版）' : '原版（严格参考）'}；实际模型：${config.effective_model || '未配置'}；密钥：${config.has_api_key ? '已配置' : '未配置'}；Skill 版本：${config.skill_version.slice(0, 12)}。${config.problem}`;
   }
   async function refreshProfile() {
     const version = ++infoVersion;
