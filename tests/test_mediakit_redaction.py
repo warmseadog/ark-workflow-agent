@@ -57,9 +57,10 @@ def pipeline(tmp_path, monkeypatch):
     return source, output, cfg, calls, pending, content
 
 
-def test_mediakit_upload_poll_download_and_map_parameters(pipeline):
+@pytest.mark.parametrize('scale,expand', [(1.4, 0.4), (1.8, 0.8), (2.0, 1.0)])
+def test_mediakit_upload_poll_download_and_map_parameters(pipeline, scale, expand):
     source, output, cfg, calls, _, content = pipeline
-    result = redaction_service.process(source, output, cfg, media.BlurOptions(mask_scale=1.8), cfg.redaction_service)
+    result = redaction_service.process(source, output, cfg, media.BlurOptions(mask_scale=scale), cfg.redaction_service)
     assert result == output and output.read_bytes() == content
     assert [c[:2] for c in calls] == [
         ('POST', HOST+'/api/v1/tools-sync/request-media-upload-url'),
@@ -70,7 +71,7 @@ def test_mediakit_upload_poll_download_and_map_parameters(pipeline):
     body = calls[2][2]['json']
     assert body['video_url'] == 'mediakit://file-1'
     assert body['mask_mode'] == 'mosaic' and body['face_confidence'] == 0.2
-    assert body['face_box_expand'] == pytest.approx(0.4)
+    assert body['face_box_expand'] == pytest.approx(expand)
     assert body['mask_strength'] == 'medium'
     assert calls[1][2]['data'] == content
     assert calls[1][2]['headers']['X-Test-Upload'] == 'signed'
@@ -142,6 +143,20 @@ def test_unsupported_hair_mode_uses_local_without_upload(pipeline, monkeypatch):
         return dst
     monkeypatch.setattr(media, '_run_local_deface', local, raising=False)
     assert media.run_deface(source, output, cfg, media.BlurOptions(mask_mode='face_hair_all')) == output
+    assert not calls
+
+
+@pytest.mark.parametrize('scale', [2.01, 3.0])
+def test_expansion_beyond_cloud_limit_uses_original_local_scale_without_upload(pipeline, monkeypatch, scale):
+    source, output, cfg, calls, _, content = pipeline
+    local_options = []
+    def local(src, dst, settings, opts):
+        local_options.append(opts.mask_scale)
+        dst.write_bytes(content)
+        return dst
+    monkeypatch.setattr(media, '_run_local_deface', local)
+    assert media.run_deface(source, output, cfg, media.BlurOptions(mask_scale=scale)) == output
+    assert local_options == [scale]
     assert not calls
 
 

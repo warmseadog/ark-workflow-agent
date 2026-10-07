@@ -81,12 +81,12 @@ def public_media_url(value):
 
 def parameters(options):
     if (options.mask_mode != 'face' or options.style not in {'mosaic', 'blur'}
-            or not options.keep_audio or options.mask_scale <= 1 or options.threshold < 0.1):
+            or not options.keep_audio or not 1 < options.mask_scale <= 2 or options.threshold < 0.1):
         raise MediaPipelineError('火山打码不支持当前遮挡参数，改用本地处理。')
-    # deface scales the total box; MediaKit expands each edge independently.
+    # deface.scale_bb expands EACH edge by (mask_scale - 1), as does MediaKit.
     return {'mask_mode': options.style,
             'mask_strength': 'low' if options.mosaic_size < 12 else 'medium' if options.mosaic_size <= 30 else 'high',
-            'face_box_expand': round((options.mask_scale - 1) / 2, 6),
+            'face_box_expand': options.mask_scale - 1,
             'face_confidence': options.threshold}
 
 

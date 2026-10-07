@@ -140,6 +140,33 @@ def test_service_change_uses_separate_preview_and_cache(preview):
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize('mode', ['local', 'http'])
+def test_coverage_fix_invalidates_legacy_preview_and_media_cache(preview, monkeypatch, mode):
+    from app import redaction_service
+    from dataclasses import asdict
+    client, tenants, _, _, calls, *_ = preview
+    asset(tenants['1'])
+    redaction_service.save_config(tenants['1'], {'mode': mode, 'endpoint': 'https://mediakit.cn-beijing.volces.com'})
+    current_fingerprint = redaction_service.fingerprint
+    def legacy_fingerprint(settings):
+        config = redaction_service.load_config(settings)
+        if config.mode == 'local':
+            return settings.deface_bin + ':v1'
+        return 'external-v2-local-fallback:' + hashlib.sha256(json.dumps(asdict(config), sort_keys=True).encode()).hexdigest()
+    monkeypatch.setattr(redaction_service, 'fingerprint', legacy_fingerprint)
+    old = terminal(client, post(client).json()['id'])
+    assert old['status'] == 'defaced'
+    monkeypatch.setattr(redaction_service, 'fingerprint', current_fingerprint)
+    new = terminal(client, post(client).json()['id'])
+    assert new['status'] == 'defaced'
+    assert new['id'] != old['id']
+    assert len(calls) == 2
+    assert len(list((tenants['1'].storage_dir/'cache'/'redacted').glob('*.mp4'))) == 2
+    assert terminal(client, post(client).json()['id'])['status'] == 'defaced'
+    assert len(calls) == 2
+    assert client.get(old['defaced_url'], headers=headers()).status_code == 200
+
+
 def test_clip_preview_uses_segment_and_separate_cache(preview,monkeypatch):
     from app import source_clip
     client,tenants,_,_,calls,*_=preview

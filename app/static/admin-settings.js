@@ -74,7 +74,6 @@
       if (input.type === 'checkbox') input.checked = value;
       else input.value = value ?? '';
     }
-    redactionLimits();
   }
   function serviceMode() {
     const external = service.elements.mode.value === 'http';
@@ -101,15 +100,9 @@
       note('redaction-service-status', config.mode === 'local' ? '已使用本地打码。' : '已设置外部 API 优先，失败后自动使用本地打码。');
     });
   });
-  function redactionLimits() {
-    const hair = redaction.elements.mask_mode.value !== 'face';
-    for (const option of redaction.elements.blur_style.options) option.disabled = hair && option.value !== 'mosaic';
-    if (hair) redaction.elements.blur_style.value = 'mosaic';
-  }
-  redaction.elements.mask_mode.addEventListener('change', redactionLimits);
   redaction.addEventListener('submit', event => {
     event.preventDefault();
-    const values = {};
+    const values = {mask_mode: 'face'};
     redaction.querySelectorAll('input,select').forEach(input => {
       values[input.name] = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.name === 'detection_size' ? (input.value ? Number(input.value) : null) : input.value;
     });

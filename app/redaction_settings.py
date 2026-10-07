@@ -31,7 +31,10 @@ def load_config(settings):
     with _lock:
         path = config_path(settings)
         if path.exists():
-            return validate(json.loads(path.read_text(encoding='utf-8')))
+            values = validate(json.loads(path.read_text(encoding='utf-8')))
+            # Retire the selectable target for new drafts without mutating task snapshots.
+            values['mask_mode'] = 'face'
+            return values
         values = BlurOptions.from_settings(settings).model_dump(exclude={'replace_image'})
         values['blur_style'] = values.pop('style')
         return validate(values)
@@ -42,6 +45,8 @@ def save_config(settings, payload):
         current = load_config(settings)
         if set(payload) - set(current):
             raise ValueError('包含不支持的打码配置字段。')
+        if payload.get('mask_mode', 'face') != 'face':
+            raise ValueError('默认打码设置目前仅支持人脸遮挡。')
         values = validate({**current, **payload})
         path = config_path(settings)
         path.parent.mkdir(parents=True, exist_ok=True)

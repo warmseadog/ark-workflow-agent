@@ -121,7 +121,6 @@
         <div class="card"><form id="redaction-form"><fieldset disabled>
           <div class="form-grid">
             <label>打码样式<select name="blur_style"><option value="mosaic">马赛克</option><option value="blur">高斯模糊</option><option value="solid">黑色遮挡</option></select></label>
-            <label>遮挡目标<select name="mask_mode"><option value="face">只遮人脸</option><option value="face_hair_primary">人脸 + 主人物头发</option><option value="hair_primary">只遮主人物头发</option><option value="face_hair_all">所有人物脸和头发</option></select></label>
             <label>遮罩倍数<input name="mask_scale" type="number" min="0.1" max="3" step="0.1" required></label>
             <label>马赛克颗粒<input name="mosaic_size" type="number" min="4" max="100" step="1" required></label>
           </div>
@@ -149,7 +148,7 @@
   <script src="/static/inspiration-settings.js?v=20261006-user-priority-1"></script>
   <script src="/static/continuation-settings.js?v=20260930-continuation-1"></script>
   <script src="/static/prompt-mechanism.js?v=20261007-standby-1"></script>
-  <script src="/static/admin-settings.js?v=20261007-standby-1"></script>
+  <script src="/static/admin-settings.js?v=20261007-mask-coverage-1"></script>
   <script src="/static/scheduling-settings.js?v=20261005-admin-workflow-1"></script>
   <script src="/static/virtual-library.js?v=20261006-preview-1"></script>
   <script src="/static/portrait.js?v=20261005-admin-workflow-1"></script>

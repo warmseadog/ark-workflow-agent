@@ -89,8 +89,8 @@ def freeze(settings):
 def fingerprint(settings):
     config = load_config(settings)
     if config.mode == 'local':
-        return settings.deface_bin + ':v1'
-    return 'external-v2-local-fallback:' + hashlib.sha256(json.dumps(asdict(config), sort_keys=True).encode()).hexdigest()
+        return settings.deface_bin + ':v2-coverage'
+    return 'external-v3-deface-coverage:' + hashlib.sha256(json.dumps(asdict(config), sort_keys=True).encode()).hexdigest()
 
 
 def validate_output(path, settings, source=None, *, timeout_seconds=120):
