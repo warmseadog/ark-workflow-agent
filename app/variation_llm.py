@@ -108,9 +108,9 @@ def plan_variation(config, *, context, frames, references, on_diagnostic=None, c
     if creative_rules:
         system += '\n\n本次创作规则（取代预设拍法选择规则，其他约束仍有效）：\n'+creative_rules
     if timing_policy:
-        from .variation_timing import TIMING_POLICY, TIMING_RULE
+        from .variation_timing import TIMING_POLICY
         if timing_policy != TIMING_POLICY or config.prompt_mode != 'motion':raise ValueError('分镜时长规则版本不正确。')
-        system += '\n\n'+TIMING_RULE
+        # Keep timing repair in validation; the planner uses the 84e9343 system prompt.
     body={'model':config.model,'messages':[{'role':'system','content':system},
         {'role':'user','content':messages}],'response_format':{'type':'json_object'}}
     if config.thinking_enabled:

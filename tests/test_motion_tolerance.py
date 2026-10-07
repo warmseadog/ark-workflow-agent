@@ -1,5 +1,6 @@
 """Real incident timing, bounded repairs and a shared planning retry budget."""
 import copy
+import hashlib
 import json
 from dataclasses import asdict
 
@@ -87,6 +88,30 @@ def responses(monkeypatch, plans):
         return response
     monkeypatch.setattr('app.variation_llm.requests.post', post)
     return calls
+
+
+@pytest.mark.parametrize(('mode', 'expected_sha256'), [
+    ('guided', '0c64663725a7ad8f4c87e9ef024f3dfbf1a7a97f0fbbec46cae5a6c962e9ac06'),
+    ('random', '53ebe17c2f9433c155349c68d124e0027f83b02bc442711c1676148d78a5c2d7'),
+])
+def test_planner_restores_v7_system_without_losing_timing_repairs(monkeypatch, mode, expected_sha256):
+    from app.random_inspiration import CREATIVE_RULES, GUIDED_RULES
+    from app.variation_llm import plan_variation
+    plan = motion_plan((3.1, 3.1))
+    plan['shots'][1]['start'] = '3.120'
+    calls = responses(monkeypatch, [plan])
+    result = plan_variation(
+        VariationConfig(api_key='test', prompt_mode='motion'),
+        context={'duration':6.2, 'inspiration':'保持自然行走'}, frames=[], references=[],
+        creative_rules=GUIDED_RULES if mode == 'guided' else CREATIVE_RULES,
+        timing_policy=POLICY,
+    )
+    # Full system-message fingerprints from commit 84e9343, before the v8 suffix.
+    system = calls[0]['messages'][0]['content']
+    assert hashlib.sha256(system.encode()).hexdigest() == expected_sha256
+    assert result['shots'][1]['start'] == 3.1
+    assert result['shots'][1]['action'] == plan['shots'][1]['action']
+    assert len(calls) == 1
 
 
 def prepare(cfg, store, run):
