@@ -77,6 +77,9 @@ class ProductionStore:
                 run_id TEXT PRIMARY KEY, group_key TEXT NOT NULL, data TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS variation_group ON production_variations(group_key);
+            CREATE TABLE IF NOT EXISTS production_inspiration_history (
+                id INTEGER PRIMARY KEY, style TEXT NOT NULL, inspiration TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS production_continuations (
                 run_id TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS production_run_timing (
@@ -203,6 +206,16 @@ class ProductionStore:
         with self.connection() as db:
             return self._draft(db.execute('SELECT * FROM production_drafts WHERE id=?', (ident,)).fetchone())
 
+    def inspiration_history(self):
+        with self.connection() as db:
+            return [dict(row) for row in db.execute('SELECT style,inspiration FROM production_inspiration_history ORDER BY id DESC LIMIT 12')]
+
+    def save_inspiration_history(self, style, inspiration):
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            db.execute('INSERT INTO production_inspiration_history(style,inspiration) VALUES (?,?)',(style,inspiration))
+            db.execute('DELETE FROM production_inspiration_history WHERE id NOT IN (SELECT id FROM production_inspiration_history ORDER BY id DESC LIMIT 12)')
+
     def list_drafts(self):
         with self.connection() as db:
             return [self._draft(row) for row in db.execute('SELECT * FROM production_drafts ORDER BY updated_at DESC')]
@@ -285,6 +298,7 @@ class ProductionStore:
         continuation = self.get_continuation(value['id'])
         value['continuation'] = {k:v for k,v in continuation.items() if k != 'result_url'}
         value['variation'] = self.get_variation(value['id'])
+        value['confirmed_inspiration'] = value['variation'].get('inspiration','') if value['variation'] else ''
         try:
             value['input_adaptations']=json.loads((self.storage/'work'/value['id']/'input-adaptations.json').read_text(encoding='utf-8'))
         except (OSError,ValueError):value['input_adaptations']=[]

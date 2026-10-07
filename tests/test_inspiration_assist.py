@@ -10,7 +10,7 @@ from tests.test_production_api import client
 from tests.test_access_control import protected, accounts_clients
 
 
-def mock_provider(monkeypatch, *, text='先以近景展示，再缓慢拉远至全身。', reason='stop', status=200):
+def mock_provider(monkeypatch, *, text='先以近景展示衣服细节，再缓慢拉远至全身，人物保持自然放松。', reason='stop', status=200):
     calls = []
 
     async def send(self, request, **kwargs):
@@ -30,7 +30,7 @@ def test_assist_works_without_assets_and_never_creates_video(client, monkeypatch
     calls = mock_provider(monkeypatch)
     response = client.post('/api/production/inspiration-assist', json={'inspiration': inspiration})
     assert response.status_code == 200, response.text
-    assert response.json()['inspiration'] == '先以近景展示，再缓慢拉远至全身。'
+    assert response.json()['inspiration'] == '先以近景展示衣服细节，再缓慢拉远至全身，人物保持自然放松。'
     assert response.json()['request_id']
     assert len(calls) == 1
     body = calls[0]
@@ -117,7 +117,7 @@ def test_concurrent_requests_rejected_and_cancelled_request_releases_lease(clien
             entered.set()
             await release.wait()
             return httpx.Response(200, request=request, json={
-                'choices': [{'finish_reason': 'stop', 'message': {'content': '固定中景，自然展示。'}}]})
+                'choices': [{'finish_reason': 'stop', 'message': {'content': '保持固定中景，人物自然站立展示穿搭，不额外走动或转身。'}}]})
 
         monkeypatch.setattr(httpx.AsyncClient, 'send', send)
         first = asyncio.create_task(generate(main.settings, {'inspiration': '保留固定机位'}))
@@ -135,7 +135,7 @@ def test_concurrent_requests_rejected_and_cancelled_request_releases_lease(clien
             with pytest.raises(asyncio.CancelledError):
                 await first
         release.set()
-        assert (await generate(main.settings, {'inspiration': '保留固定机位'}))['inspiration'] == '固定中景，自然展示。'
+        assert (await generate(main.settings, {'inspiration': '保留固定机位'}))['inspiration'] == '保持固定中景，人物自然站立展示穿搭，不额外走动或转身。'
 
     asyncio.run(scenario())
 

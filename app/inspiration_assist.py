@@ -61,12 +61,12 @@ def output_text(data):
         if choice.get('finish_reason') != 'stop' or not isinstance(text, str):
             raise ValueError()
         text = text.strip()
-        if (not text or len(text) > 500 or '\x00' in text or '```' in text
+        if (not 20 <= len(text) <= 100 or '\n' in text or '\r' in text or '\x00' in text or '```' in text
                 or text.startswith(('{', '[', '#', '<')) or re.search(r'(?m)^\s*(?:\d+[.、)]|[-*])\s', text)):
             raise ValueError()
         return text
     except (ValueError, KeyError, IndexError, TypeError):
-        raise HTTPException(502, '未获取到有效灵感，请重试。原内容已保留。') from None
+        raise HTTPException(502, '未获取到20～100字的单段灵感，请重试。原内容已保留。') from None
 
 
 async def _complete(config, body):
@@ -91,6 +91,7 @@ async def generate(settings, payload):
     try:
         config = inspiration_settings.load_config(settings).resolved(settings)
         skill = inspiration_settings.skill_text(inspiration_settings.prompt_mode(settings))
+        skill += '\n本次输出长度规则取代前文长度上限：只输出20～100字的单段中文灵感，通常40～70字；保留一个核心想法，不扩写详细分镜，不写时间轴，不为凑字数添加动作。保留用户的明确顺序和否定要求。'
     except (ValueError, OSError):
         raise HTTPException(503, 'AI 润色暂不可用，可直接填写拍摄想法。') from None
     if config.problem():

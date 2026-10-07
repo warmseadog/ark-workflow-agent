@@ -227,8 +227,11 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     const timing=node('div','','run-timing-details');timingDetails(timing,item);panel.append(timing);
     panel.append(node('p','生成声音：'+(item.snapshot?.model?.generate_audio === false ? '关闭（无声视频）' : '开启')));
     panel.append(node('p',item.message||names[item.status]||''));
-    if(item.variation?.recipe){
-      const variation=node('details');variation.append(node('summary','换个拍法 · '+(item.variation.plan?.summary || item.variation.recipe)));
+    if(item.confirmed_inspiration){
+      const inspiration=node('details');inspiration.append(node('summary','本次拍摄灵感'),node('p',item.confirmed_inspiration));panel.append(inspiration);
+    }
+    if(item.variation?.skill_version){
+      const variation=node('details');variation.append(node('summary','拍摄方案 · '+(item.variation.plan?.summary || item.variation.recipe || '按已确认灵感执行')));
       variation.append(node('p','灵感：'+(item.variation.inspiration || '默认模板自动规划')));
       for(const text of item.variation.plan?.conflicts || [])variation.append(node('p','未采纳：'+text));
       if(item.variation.final_prompt)variation.append(node('pre',item.variation.final_prompt));

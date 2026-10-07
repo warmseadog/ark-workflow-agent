@@ -30,40 +30,37 @@ def test_inline_editor_optional_inspiration_and_single_submission(browser,client
         expect(page.locator('#variation-editor')).to_be_visible()
         page.screenshot(path=str(tmp_path/f'variation-{width}.png'),full_page=True)
         assert submitted==[]
-        expect(page.locator('#variation-submit')).to_be_enabled()
-        expect(page.locator('#variation-submit')).to_have_text('🎲 灵感随机生成')
+        expect(page.locator('#variation-submit')).to_be_disabled()
+        expect(page.locator('#inspiration-random')).to_be_enabled()
         import os
         from pathlib import Path
         if os.environ.get('INSPIRATION_PREVIEW_DIR'):
             page.locator('#variation-editor').screenshot(path=str(Path(os.environ['INSPIRATION_PREVIEW_DIR'])/f'editor-{width}.png'))
-        page.locator('#variation-submit').click()
-        expect(page.locator('#production-status')).to_contain_text('测试提交保留输入')
-        assert len(submitted)==1 and submitted[0]['variation']=={'inspiration':'','creation_mode':'random'}
         page.locator('#variation-inspiration').fill('先拍袖口，再拉远')
-        expect(page.locator('#variation-submit')).to_have_text('按灵感生成')
+        expect(page.locator('#variation-submit')).to_have_text('按此灵感生成视频')
         if os.environ.get('INSPIRATION_PREVIEW_DIR'):
             page.locator('#variation-editor').screenshot(path=str(Path(os.environ['INSPIRATION_PREVIEW_DIR'])/f'guided-{width}.png'))
         page.locator('#variation-submit').click()
         expect(page.locator('#production-status')).to_contain_text('测试提交保留输入')
-        assert len(submitted)==2 and submitted[1]['variation']=={'inspiration':'先拍袖口，再拉远','creation_mode':'guided'}
+        assert len(submitted)==1 and submitted[0]['variation']=={'inspiration':'先拍袖口，再拉远','creation_mode':'guided'}
         expect(page.locator('#variation-inspiration')).to_have_value('先拍袖口，再拉远')
         page.locator('#studio-generate-submit').click()
         expect(page.locator('#production-status')).to_contain_text('测试提交保留输入')
-        assert len(submitted)==3 and 'variation' not in submitted[2]
+        assert len(submitted)==2 and submitted[1]['variation']=={'inspiration':'先拍袖口，再拉远','creation_mode':'guided'}
         page.locator('#variation-clear').click()
         expect(page.locator('#variation-inspiration')).to_have_value('')
         expect(page.locator('#variation-editor')).to_be_visible()
         page.locator('#variation-inspiration').fill('  \n　')
-        expect(page.locator('#variation-submit')).to_have_text('🎲 灵感随机生成')
-        page.locator('#variation-submit').click()
+        expect(page.locator('#variation-submit')).to_be_disabled()
+        page.locator('#studio-generate-submit').click()
         expect(page.locator('#production-status')).to_contain_text('测试提交保留输入')
-        assert len(submitted)==4 and submitted[3]['variation']=={'inspiration':'','creation_mode':'random'}
+        assert len(submitted)==3 and 'variation' not in submitted[2]
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         assert not errors
     finally:ctx.close()
 
 
-def test_ordinary_user_success_clears_editor_without_private_variation(browser,accounts_clients):
+def test_ordinary_user_success_preserves_confirmed_inspiration_without_private_variation(browser,accounts_clients):
     _,_,(admin,alice,_)=accounts_clients
     admin.put('/api/variation-settings',json={'api_key':'private-planner-key'})
     draft=complete_draft(alice)
@@ -89,8 +86,11 @@ def test_ordinary_user_success_clears_editor_without_private_variation(browser,a
         expect(page.locator('#production-status')).to_contain_text('任务已加入队列')
         assert submitted[0]['variation']=={'inspiration':'先拍袖口，再拉远','creation_mode':'guided'}
         expect(page.locator('#variation-editor')).to_be_visible()
-        expect(page.locator('#variation-inspiration')).to_have_value('')
-        expect(page.locator('#variation-submit')).to_have_text('🎲 灵感随机生成')
+        expect(page.locator('#variation-inspiration')).to_have_value('先拍袖口，再拉远')
+        expect(page.locator('#variation-submit')).to_have_text('按此灵感生成视频')
+        detail = alice.get('/api/production/runs/' + alice.get('/api/production/runs').json()['items'][0]['id']).json()
+        assert detail['confirmed_inspiration'] == '先拍袖口，再拉远'
+        assert 'variation' not in detail
         assert not errors
     finally:ctx.close()
 

@@ -29,6 +29,7 @@ _DRAFT_FIELDS = {'source_clip','person_reference_mode','person_video_asset_id','
 _DRAFT_FIELDS |= {kind+suffix for kind in ACCESSORY_LABELS for suffix in ('_asset_ids','_enabled')}
 _DRAFT_FIELDS.update({'person_input_policy','target_duration'})
 _DRAFT_FIELDS.update({'prompt_template_id','prompt_rule_version'})
+_DRAFT_FIELDS.add('inspiration')
 _MASK_FIELDS = {'blur_style','style','shape','mask_mode','robust_tracking','mask_scale','mosaic_size','threshold','detection_size','keep_audio'}
 
 
@@ -56,6 +57,11 @@ def get_router(settings_getter, local_guard):
     async def inspiration_assist(payload: object = Body(...)):
         from .inspiration_assist import generate
         return await generate(settings_getter(), payload)
+
+    @router.post('/inspiration-random')
+    async def inspiration_random(payload: object = Body(...)):
+        from .inspiration_preview import generate
+        return await generate(settings_getter(), store(), payload)
 
     @contextmanager
     def active_quota():
@@ -99,6 +105,9 @@ def get_router(settings_getter, local_guard):
     def validate_changes(values, current=None):
         if set(values)-_DRAFT_FIELDS:
             raise ValueError('草稿包含不支持的字段。')
+        if 'inspiration' in values:
+            from .variation import normalize_request
+            values['inspiration'] = normalize_request({'inspiration':values['inspiration']})['inspiration']
         from .prompt_templates import RULE_VERSIONS
         if 'prompt_rule_version' in values and values['prompt_rule_version'] not in RULE_VERSIONS:
             raise ValueError('提示词规则版本不正确。')

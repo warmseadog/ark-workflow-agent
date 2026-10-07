@@ -219,8 +219,8 @@
     <section id="variation-editor" class="variation-editor" aria-label="拍摄灵感">
       <label for="variation-inspiration">拍摄灵感（选填）</label>
       <textarea id="variation-inspiration" maxlength="2000" rows="3" aria-describedby="inspiration-help" placeholder="例如：先拍衣服细节，再慢慢拉远看到全身"></textarea>
-      <p class="field-hint" id="inspiration-help">填写想法后可用 AI 润色，再点击“按灵感生成”，按你的想法制作视频，不额外加入随机创意。留空时点击骰子按钮，由 AI 自由构思并直接生成。上方“生成视频”不使用此处灵感。</p>
-      <div class="variation-actions"><button type="button" class="secondary" id="variation-clear">清空</button><button type="button" class="secondary" id="inspiration-assist" disabled>AI 润色</button><button type="submit" class="primary" id="variation-submit" title="随机加入拍摄灵感并直接生成视频" aria-describedby="inspiration-help" disabled><span aria-hidden="true">🎲</span> 灵感随机生成</button></div>
+      <p class="field-hint" id="inspiration-help">随机生成20～100字的拍摄灵感，每次尝试不同拍摄风格。可修改或润色，满意后再生成视频。</p>
+      <div class="variation-actions"><button type="button" class="secondary" id="variation-clear">清空</button><button type="button" class="secondary" id="inspiration-undo" hidden>撤销替换</button><button type="button" class="secondary" id="inspiration-assist" disabled>AI 润色</button><button type="button" class="secondary" id="inspiration-random" disabled>🎲 随机生成灵感</button><button type="submit" class="primary" id="variation-submit" aria-describedby="inspiration-help" disabled>按此灵感生成视频</button></div>
       <p id="inspiration-status" class="field-hint inspiration-status" role="status" aria-live="polite" hidden></p>
     </section>
     <p id="production-status" class="production-status" role="status" aria-live="polite"></p>

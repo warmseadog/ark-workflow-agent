@@ -19,8 +19,26 @@
   const variationInput = document.getElementById('variation-inspiration');
   const variationClear = document.getElementById('variation-clear');
   const inspirationAssist = document.getElementById('inspiration-assist');
+  const inspirationRandom = document.getElementById('inspiration-random');
+  const inspirationUndo = document.getElementById('inspiration-undo');
   const inspirationStatus = document.getElementById('inspiration-status');
   let inspirationBusy = false, inspirationSequence = 0, inspirationEdit = 0, inspirationController = null;
+  let previousInspiration = null, inspirationMaterials = null;
+  const inspirationFileKeys = new WeakMap();
+  let inspirationFileSequence = 0;
+  function inspirationFileKey(file) {
+    if (!file) return null;
+    if (file.id) return file.id;
+    if (!inspirationFileKeys.has(file)) inspirationFileKeys.set(file, ++inspirationFileSequence);
+    return inspirationFileKeys.get(file);
+  }
+  function inspirationMaterialKey() {
+    return JSON.stringify([inspirationFileKey(sourceItem()), personMode, personVideo?.id, window.portraitPeople?.selected,
+      Object.values(imageFiles).map(files => files.map(inspirationFileKey)),
+      extraKinds.map(kind => document.getElementById(kind+'-enabled').checked),
+      document.getElementById('scene-description').value, window.generationOptions?.sourceClip?.(),
+      window.generationOptions?.targetDuration?.(), publicModel()]);
+  }
   function inspirationNote(text, error = false) {
     if (!inspirationStatus) return;
     inspirationStatus.textContent = text; inspirationStatus.hidden = !text;
@@ -30,47 +48,68 @@
     inspirationSequence++;
     inspirationController?.abort(); inspirationController = null; inspirationBusy = false;
     if (inspirationAssist) { inspirationAssist.textContent = 'AI 润色'; inspirationAssist.removeAttribute('aria-busy'); }
+    if (inspirationRandom) inspirationRandom.removeAttribute('aria-busy');
     inspirationNote('');
   }
   function resetVariation() {
     if (!variationEditor) return;
     invalidateInspiration(); inspirationEdit++;
     variationInput.value = ''; variationEditor.hidden = false;
+    previousInspiration = null; inspirationMaterials = null;
+    if (inspirationUndo) inspirationUndo.hidden = true;
   }
   variationInput?.addEventListener('input', () => {
     inspirationEdit++;
+    previousInspiration = null; inspirationUndo.hidden = true;
     if (!inspirationBusy) inspirationNote('');
-    updateButtons();
+    changed(); updateButtons();
   });
   variationClear?.addEventListener('click', () => {
-    resetVariation(); updateButtons(); variationInput.focus();
+    resetVariation(); changed(); updateButtons(); variationInput.focus();
   });
-  inspirationAssist?.addEventListener('click', async () => {
-    if (inspirationAssist.disabled || inspirationBusy || pageInactive || !variationInput.value.trim()) return;
+  inspirationUndo?.addEventListener('click', () => {
+    if (previousInspiration === null) return;
+    invalidateInspiration(); variationInput.value = previousInspiration; inspirationEdit++;
+    previousInspiration = null; inspirationUndo.hidden = true;
+    changed(); updateButtons(); inspirationNote('已恢复上一版灵感。');
+  });
+  async function requestInspiration(random) {
+    const button = random ? inspirationRandom : inspirationAssist;
+    if (button.disabled || inspirationBusy || pageInactive || (!random && !variationInput.value.trim())) return;
     const sequence = ++inspirationSequence, edit = inspirationEdit, draftId = draft?.id;
+    const original = variationInput.value, materials = inspirationMaterialKey();
     const controller = new AbortController(); inspirationController = controller;
     // Backend allows at most 30 seconds; this is only a browser/network safety net.
     const timer = setTimeout(() => controller.abort(), 35000);
-    inspirationBusy = true; inspirationAssist.textContent = '正在润色…';
-    inspirationAssist.setAttribute('aria-busy', 'true'); inspirationNote('正在润色你的灵感…'); updateButtons();
+    inspirationBusy = true; button.textContent = random ? '正在生成灵感…' : '正在润色…';
+    button.setAttribute('aria-busy', 'true'); inspirationNote(random ? '正在尝试不同拍摄风格…' : '正在润色你的灵感…'); updateButtons();
     const current = () => sequence === inspirationSequence && draft?.id === draftId && !pageInactive;
     try {
-      const data = await api('/inspiration-assist', 'POST', {inspiration: variationInput.value.trim()}, {signal: controller.signal});
+      const saved = random ? await flushDraft() : null;
+      if (!current()) return;
+      const data = await api(random ? '/inspiration-random' : '/inspiration-assist', 'POST',
+        random ? {draft_id:saved.id, revision:saved.revision} : {inspiration:original.trim()}, {signal:controller.signal});
       if (!current()) return;
       if (edit !== inspirationEdit) { inspirationNote('你已修改内容，AI 建议未覆盖当前输入。'); return; }
-      if (typeof data.inspiration !== 'string' || !data.inspiration.trim() || data.inspiration.length > 500) throw new Error('未获取到有效灵感，请重试。');
+      if (materials !== inspirationMaterialKey()) { inspirationNote('素材已变化，请重新生成灵感。当前内容已保留。'); return; }
+      if (typeof data.inspiration !== 'string' || [...data.inspiration.trim()].length < 20 || [...data.inspiration.trim()].length > 100) throw new Error('未获取到20～100字的灵感，请重试。');
+      previousInspiration = original; inspirationUndo.hidden = !original;
       variationInput.value = data.inspiration; inspirationEdit++;
-      inspirationNote('润色已完成，可继续修改，点击“按灵感生成”制作视频。');
+      inspirationMaterials = materials; changed();
+      inspirationNote((random ? '灵感已生成' + (data.style ? ' · '+data.style : '') : '润色已完成') + '，可修改，确认后点击“按此灵感生成视频”。');
     } catch (error) {
-      if (current()) inspirationNote(error.name === 'AbortError' ? '润色超时，请重试。原内容已保留。' : error.message, true);
+      if (current()) inspirationNote(error.name === 'AbortError' ? '灵感请求超时，请重试。原内容已保留。' : error.message, true);
     } finally {
       clearTimeout(timer);
       if (current()) {
         inspirationBusy = false; inspirationController = null;
         inspirationAssist.textContent = 'AI 润色'; inspirationAssist.removeAttribute('aria-busy'); updateButtons();
+        inspirationRandom.removeAttribute('aria-busy');
       }
     }
-  });
+  }
+  inspirationAssist?.addEventListener('click', () => requestInspiration(false));
+  inspirationRandom?.addEventListener('click', () => requestInspiration(true));
   const status = document.getElementById('production-status');
   generationForm.dataset.promptRuleVersion = 'legacy-v1';
   let promptPreviewKey = '', promptPreviewPromise = null, promptPreviewResult = '', promptPreviewTimer;
@@ -450,15 +489,17 @@
     generateButton.formNoValidate = Boolean(pendingSubmission);
     if (variationSubmit) {
       const guided = Boolean(variationInput.value.trim());
-      variationSubmit.textContent = guided ? '按灵感生成' : '🎲 灵感随机生成';
-      variationSubmit.title = guided ? '按你填写的灵感直接生成视频，不额外加入随机创意' : '随机构思拍摄灵感并直接生成视频';
-      variationSubmit.disabled = generateButton.disabled || Boolean(pendingSubmission);
+      variationSubmit.textContent = '按此灵感生成视频';
+      variationSubmit.disabled = generateButton.disabled || Boolean(pendingSubmission) || !guided;
       variationInput.disabled = sourceLocked || Boolean(pendingSubmission);
       if (variationClear) variationClear.disabled = sourceLocked || Boolean(pendingSubmission);
       if (inspirationAssist) inspirationAssist.disabled = sourceLocked || !sessionReady || Boolean(pendingSubmission) || inspirationBusy || !variationInput.value.trim();
+      inspirationRandom.disabled = sourceLocked || !sessionReady || Boolean(pendingSubmission) || inspirationBusy || !hasSource() || !imageFiles.clothing.length;
+      if (!inspirationBusy) inspirationRandom.textContent = guided ? '🎲 换一个' : '🎲 随机生成灵感';
+      inspirationUndo.disabled = sourceLocked || Boolean(pendingSubmission) || inspirationBusy;
     }
     for (const id of ['replace-source-video', 'remove-source-video']) document.getElementById(id).hidden = !hasSource();
-    if (!busy) generateButton.textContent = pendingSubmission ? '确认上次提交结果' : window.delegatedEditor ? '为该用户重新生成 →' : '生成视频 →';
+    if (!busy) generateButton.textContent = pendingSubmission ? '确认上次提交结果' : variationInput?.value.trim() ? '按此灵感生成视频 →' : window.delegatedEditor ? '为该用户重新生成 →' : '生成视频 →';
     updateReadiness(durationOver);
   }
   function lock(value) {
@@ -909,7 +950,8 @@
   generationForm.addEventListener('submit', async event => {
     event.preventDefault();
     const inspiration = variationInput?.value.trim() || '';
-    const variationRequested = event.submitter === variationSubmit && Boolean(variationSubmit);
+    const variationRequested = Boolean(inspiration);
+    if (event.submitter === variationSubmit && !inspiration) return;
     if (busy || sourceImportBusy || !sessionReady || (!pendingSubmission && !sourceForm.reportValidity())) return;
     updateButtons();
     if (!pendingSubmission && generateButton.disabled) return;
@@ -922,14 +964,13 @@
         const saved = await flushDraft();
         if (!variationRequested) await ensurePromptPreview();
         pendingSubmission = {draft_id: saved.id, revision: saved.revision, idempotency_key: crypto.randomUUID()};
-        if (variationRequested) pendingSubmission.variation = {inspiration, creation_mode: inspiration ? 'guided' : 'random'};
+        if (variationRequested) pendingSubmission.variation = {inspiration, creation_mode:'guided'};
         // Persist before the request: a lost response must retry the identical submission.
         localStorage.setItem(pendingKey, JSON.stringify(pendingSubmission));
       }
       const submitted = await api('/runs', 'POST', pendingSubmission);
       pendingSubmission = null; localStorage.removeItem(pendingKey);
       runs.set(submitted.id, submitted); renderRuns();
-      resetVariation();
       status.textContent = '任务已加入队列，可继续准备下一个视频';
     } catch (error) {
       // A definitive validation error cannot have accepted the task. Network/5xx remains uncertain.
@@ -974,6 +1015,10 @@
   }
   function changed() {
     if (!sessionReady || restoring || pageInactive) return;
+    if (inspirationMaterials && variationInput.value.trim() && inspirationMaterials !== inspirationMaterialKey()) {
+      inspirationMaterials = null;
+      inspirationNote('素材或生成设置已变化，建议检查或重新生成灵感。');
+    }
     schedulePromptPreview();
     // Submission feedback belongs to the previous revision. Keep uncertain
     // submissions intact so their idempotency key can still be recovered.
@@ -1168,6 +1213,7 @@
     const selectedPerson = window.portraitPeople?.selected || null;
     const values = {source_clip:window.generationOptions?.sourceClip?.() || null,target_duration:window.generationOptions?.targetDuration?.() ?? null,person_input_policy:personInputPolicy,person_reference_mode:personMode,person_video_asset_id:personVideo?.id || null,person_id:selectedPerson, name:draftName || draft?.name || '未命名视频', prompt:promptInput.value, mask:maskValues(), model:publicModel()};
     values.prompt_template_id = window.productionPrompt.templateId;
+    values.inspiration = variationInput?.value || '';
     values.prompt_rule_version = window.productionPrompt.ruleVersion;
     if (!promptEditable) {
       delete values.prompt; delete values.prompt_template_id; delete values.prompt_rule_version;
@@ -1235,7 +1281,7 @@
       document.getElementById('scene-description').value = item.scene_description || '';
       document.getElementById('hairstyle-mask-scale').value = item.hairstyle_mask?.mask_scale ?? 1;
       document.getElementById('hairstyle-mask-threshold').value = item.hairstyle_mask?.threshold ?? 0.2;
-      if (draft?.id !== item.id) resetVariation();
+      resetVariation(); variationInput.value = item.inspiration || '';
       draft = item; draftName=item.name; drafts.set(item.id,item); syncTaskName();
       window.portraitPeople?.restore(item.person_id);
       promptInput.value = item.prompt ?? defaultPrompt;
@@ -1258,6 +1304,7 @@
   async function changeDraft(action) {
     if (sourceImportBusy) { toast('参考视频正在导入，请完成后再切换草稿。'); return; }
     if (busy || !sessionReady) return;
+    invalidateInspiration();
     lock(true); draftControls(true);
     try {
       await flushDraft();
@@ -1290,6 +1337,7 @@
   retrySave.addEventListener('click', () => sessionReady ? flushDraft().catch(() => {}) : initialize());
   recoverDraft.addEventListener('click', async () => {
     if (busy || sourceImportBusy) return;
+    invalidateInspiration();
     lock(true); draftControls(true);
     try {
       const values = await captureDraft();
