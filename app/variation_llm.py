@@ -99,7 +99,7 @@ def plan_variation(config, *, context, frames, references, on_diagnostic=None, c
         from .variation_prompts import USER_PRIORITY_SYSTEM
         system = USER_PRIORITY_SYSTEM+'\n测试版创作 Skill（遵循输出格式，创意以用户意图为准）：\n'+config.active_skill
     if creative_rules:
-        system += '\n\n本次随机创作规则（取代预设拍法选择规则，其他约束仍有效）：\n'+creative_rules
+        system += '\n\n本次创作规则（取代预设拍法选择规则，其他约束仍有效）：\n'+creative_rules
     body={'model':config.model,'messages':[{'role':'system','content':system},
         {'role':'user','content':messages}],'response_format':{'type':'json_object'}}
     if config.thinking_enabled:

@@ -12,9 +12,10 @@ BLOCKED_MESSAGE = '拍摄灵感与人物、穿搭或场景等固定条件冲突�
 
 def normalize_request(value):
     if not isinstance(value,dict) or 'inspiration' not in value or set(value)-{'inspiration','creation_mode'}:raise ValueError('换拍法请求格式不正确。')
-    if 'creation_mode' in value and value['creation_mode'] != 'random':raise ValueError('灵感创作模式不正确。')
+    if 'creation_mode' in value and value['creation_mode'] not in ('random','guided'):raise ValueError('灵感创作模式不正确。')
     text=value['inspiration']
     if not isinstance(text,str) or len(text)>2000 or '\x00' in text:raise ValueError('拍摄灵感最多 2000 字。')
+    if value.get('creation_mode') == 'guided' and not text.strip():raise ValueError('请先填写灵感，或使用灵感随机生成。')
     return {**value,'inspiration':text.strip()}
 
 
@@ -25,7 +26,7 @@ def same_intent(old, new):
 
 
 def is_legacy_blank(request):
-    return bool(request) and not request['inspiration'] and request.get('creation_mode') != 'random'
+    return bool(request) and not request['inspiration'] and request.get('creation_mode') is None
 
 
 def preflight(settings,store,draft,request):
@@ -40,10 +41,10 @@ def preflight(settings,store,draft,request):
     values['hashes']=[store.get_asset(x)['sha256'] for x in active]
     frozen = {**request,'config':asdict(config),'group_key':hashlib.sha256(json.dumps(values,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),
               'skill_version':config.skill_version}
-    if request.get('creation_mode') == 'random':
-        from .random_inspiration import CREATIVE_RULES
-        frozen['creative_rules'] = CREATIVE_RULES
-        frozen['skill_version'] = hashlib.sha256((config.skill_version+'\n'+CREATIVE_RULES).encode()).hexdigest()
+    if request.get('creation_mode') in ('random','guided'):
+        from .random_inspiration import CREATIVE_RULES, GUIDED_RULES
+        frozen['creative_rules'] = GUIDED_RULES if request['creation_mode']=='guided' else CREATIVE_RULES
+        frozen['skill_version'] = hashlib.sha256((config.skill_version+'\n'+frozen['creative_rules']).encode()).hexdigest()
     return frozen
 
 
@@ -88,8 +89,10 @@ def prepare(settings,store,run,video,faces,clothes,extra,config):
         'original_prompt':run['snapshot']['prompt'],'scene_description':extra.get('scene_description',''),
         'suggested_recipe':state['recipe'],'recent_recipes':state['recent_recipes']}
     random = frozen.get('creation_mode') == 'random'
-    if random:
+    guided = frozen.get('creation_mode') == 'guided'
+    if random or guided:
         context.pop('suggested_recipe');context.pop('recent_recipes')
+    if random:
         # Read at planning time so tasks queued together see earlier completed plans.
         # Freeze on first attempt so recovery cannot silently change creative inputs.
         creative_context = state.get('creative_context')
@@ -108,7 +111,7 @@ def prepare(settings,store,run,video,faces,clothes,extra,config):
             with os.fdopen(fd,'w',encoding='utf-8') as stream:json.dump(value,stream,ensure_ascii=False)
             path.replace(directory/'variation-diagnostic.json')
         finally:path.unlink(missing_ok=True)
-    options = {'creative_rules':frozen['creative_rules']} if random else {}
+    options = {'creative_rules':frozen['creative_rules']} if random or guided else {}
     plan=plan_variation(llm,context=context,frames=frames,references=references,on_diagnostic=diagnostic,**options)
     if random and not plan['blocked']:
         from .random_inspiration import similar_plan, compact_plan
@@ -126,9 +129,9 @@ def prepare(settings,store,run,video,faces,clothes,extra,config):
         plan={**plan,'prompt_mode':llm.prompt_mode,'user_inspiration':frozen['inspiration']}
     elif llm.prompt_mode == 'motion':
         plan={**plan,'prompt_mode':'motion'}
-    if random:
+    if random or guided:
         # Trusted provenance comes from the frozen task, never from model JSON.
-        plan={**plan,'creation_mode':'random'}
+        plan={**plan,'creation_mode':frozen['creation_mode']}
     store.update_variation(ident,plan=plan,llm_model=llm.model,skill_version=frozen['skill_version'])
     # Planner explanations may quote private prompts. Keep them in the plan,
     # never copy them into public task error/message fields.

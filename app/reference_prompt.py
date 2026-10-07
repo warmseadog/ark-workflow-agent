@@ -25,14 +25,19 @@ def compose_exclusive_prompt(prompt, roles, *, person_video=False, scene_descrip
     refs = {role:f'@Image{i}' for i,role in enumerate(roles,1) if role in primary}
     identity = '@Video2' if person_video else refs.get('人物')
     rules = [f'本次规则：{"独立参考优先，未指定配饰继承穿搭参考" if yoyo else "独立参考优先"}（{rule_version}）。以下来源分工优先于正文中的冲突描述。']
-    if variation_plan is not None:
+    if variation_plan is not None and variation_plan.get('creation_mode') == 'guided':
+        rules.append('按灵感生成任务：使用本次原始素材生成独立视频。@Video1 提供核心展示意图及未被独立参考覆盖的场景、光照和视觉风格，不继承其中的人物、发型和服装。镜头按本次摄影方案执行；用户要求保留原运镜、构图或节奏时应保留，不为制造差异而改变拍法。保持同一场景布局、光源方向、色温、调色和质感；不得默认新增人物、对白、字幕或花哨转场。')
+    elif variation_plan is not None:
         rules.append('换个拍法任务：直接使用本次原始素材生成独立视频。@Video1 只提供核心展示意图及未被独立参考覆盖的场景、光照和视觉风格；不复制其运镜、构图和镜头节奏，不继承其中的人物、发型和服装。镜头按本次摄影方案执行。保持同一场景布局、光源方向、色温、调色和质感；仅允许视角变化引起的自然透视、反光和遮挡变化。不得默认新增人物、对白、字幕或花哨转场。')
     elif follow_source:
         rules.append('视频编辑任务：唯一编辑目标为 @Video1；保持原视频时长、画面比例、动作与镜头节奏，不延长或新增镜头。其他视频仅作人物身份参考。')
     if variation_plan is None:
         rules.append('动作来源：@Video1。严格遵循动作顺序、关键姿态、步态、移动方向、运镜、构图和节奏；不自行增加动作或镜头，不采用其中的人脸、发型和服装，不生成打码痕迹。')
     else:
-        if variation_plan.get('prompt_mode') == 'motion':
+        if variation_plan.get('creation_mode') == 'guided':
+            rules.append('按用户灵感生成：严格落实本次摄影方案的动作、顺序、速度与运镜，不额外加入随机动作、镜头或风格，不为追求多样性重排拍法。只补足自然衔接，不新增剧情，不生成打码痕迹。')
+            if variation_plan.get('prompt_mode') == 'motion':rules.append('镜头通常2～3秒，按已规划时序执行。')
+        elif variation_plan.get('prompt_mode') == 'motion':
             from .variation_motion import MOTION_FINAL_RULE
             rules.append(MOTION_FINAL_RULE)
         else:

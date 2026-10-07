@@ -60,7 +60,7 @@
       if (edit !== inspirationEdit) { inspirationNote('你已修改内容，AI 建议未覆盖当前输入。'); return; }
       if (typeof data.inspiration !== 'string' || !data.inspiration.trim() || data.inspiration.length > 500) throw new Error('未获取到有效灵感，请重试。');
       variationInput.value = data.inspiration; inspirationEdit++;
-      inspirationNote('润色已完成，可继续修改，点击骰子按钮直接生成视频。');
+      inspirationNote('润色已完成，可继续修改，点击“按灵感生成”制作视频。');
     } catch (error) {
       if (current()) inspirationNote(error.name === 'AbortError' ? '润色超时，请重试。原内容已保留。' : error.message, true);
     } finally {
@@ -449,6 +449,9 @@
     generateButton.disabled = sourceLocked || !sessionReady || (!pendingSubmission && (window.generationOptions?.available() === false || referenceOverLimit() || durationOver || (personMode === 'video' && (!personVideoCheck || !personVideoCheck.can_use)) || !(hasSource() && (personMode === 'video' ? personVideo && (personInputPolicy === 'auto_virtual' || window.portraitPeople?.selected) : imageFiles.face.length) && imageFiles.clothing.length)));
     generateButton.formNoValidate = Boolean(pendingSubmission);
     if (variationSubmit) {
+      const guided = Boolean(variationInput.value.trim());
+      variationSubmit.textContent = guided ? '按灵感生成' : '🎲 灵感随机生成';
+      variationSubmit.title = guided ? '按你填写的灵感直接生成视频，不额外加入随机创意' : '随机构思拍摄灵感并直接生成视频';
       variationSubmit.disabled = generateButton.disabled || Boolean(pendingSubmission);
       variationInput.disabled = sourceLocked || Boolean(pendingSubmission);
       if (variationClear) variationClear.disabled = sourceLocked || Boolean(pendingSubmission);
@@ -919,7 +922,7 @@
         const saved = await flushDraft();
         if (!variationRequested) await ensurePromptPreview();
         pendingSubmission = {draft_id: saved.id, revision: saved.revision, idempotency_key: crypto.randomUUID()};
-        if (variationRequested) pendingSubmission.variation = {inspiration, creation_mode: 'random'};
+        if (variationRequested) pendingSubmission.variation = {inspiration, creation_mode: inspiration ? 'guided' : 'random'};
         // Persist before the request: a lost response must retry the identical submission.
         localStorage.setItem(pendingKey, JSON.stringify(pendingSubmission));
       }

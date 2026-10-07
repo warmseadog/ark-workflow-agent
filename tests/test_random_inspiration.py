@@ -120,7 +120,7 @@ def test_random_requires_planner_and_rejects_unknown_modes(client):
     result=client.post('/api/production/runs',json=payload)
     assert result.status_code==422
     assert not ProductionStore(main.settings.storage_dir).list_runs()
-    for invalid in (None, '', 'guided', [], {}):
+    for invalid in (None, '', 'unknown', [], {}):
         payload['variation']['creation_mode']=invalid
         assert client.post('/api/production/runs',json=payload).status_code==422
 

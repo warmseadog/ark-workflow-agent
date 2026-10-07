@@ -40,10 +40,12 @@ def test_inline_editor_optional_inspiration_and_single_submission(browser,client
         expect(page.locator('#production-status')).to_contain_text('测试提交保留输入')
         assert len(submitted)==1 and submitted[0]['variation']=={'inspiration':'','creation_mode':'random'}
         page.locator('#variation-inspiration').fill('先拍袖口，再拉远')
-        expect(page.locator('#variation-submit')).to_have_text('🎲 灵感随机生成')
+        expect(page.locator('#variation-submit')).to_have_text('按灵感生成')
+        if os.environ.get('INSPIRATION_PREVIEW_DIR'):
+            page.locator('#variation-editor').screenshot(path=str(Path(os.environ['INSPIRATION_PREVIEW_DIR'])/f'guided-{width}.png'))
         page.locator('#variation-submit').click()
         expect(page.locator('#production-status')).to_contain_text('测试提交保留输入')
-        assert len(submitted)==2 and submitted[1]['variation']['inspiration']=='先拍袖口，再拉远'
+        assert len(submitted)==2 and submitted[1]['variation']=={'inspiration':'先拍袖口，再拉远','creation_mode':'guided'}
         expect(page.locator('#variation-inspiration')).to_have_value('先拍袖口，再拉远')
         page.locator('#studio-generate-submit').click()
         expect(page.locator('#production-status')).to_contain_text('测试提交保留输入')
@@ -85,9 +87,10 @@ def test_ordinary_user_success_clears_editor_without_private_variation(browser,a
         expect(page.locator('#variation-submit')).to_be_enabled()
         page.locator('#variation-submit').click()
         expect(page.locator('#production-status')).to_contain_text('任务已加入队列')
-        assert submitted[0]['variation']=={'inspiration':'先拍袖口，再拉远','creation_mode':'random'}
+        assert submitted[0]['variation']=={'inspiration':'先拍袖口，再拉远','creation_mode':'guided'}
         expect(page.locator('#variation-editor')).to_be_visible()
         expect(page.locator('#variation-inspiration')).to_have_value('')
+        expect(page.locator('#variation-submit')).to_have_text('🎲 灵感随机生成')
         assert not errors
     finally:ctx.close()
 

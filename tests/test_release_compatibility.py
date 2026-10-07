@@ -9,14 +9,15 @@ def api():
     return importlib.import_module('app.release_compatibility')
 
 
-def test_old_reader_rejects_random_inspiration_tasks(tmp_path):
+@pytest.mark.parametrize('mode',['random','guided'])
+def test_old_reader_rejects_random_inspiration_tasks(tmp_path,mode):
     data=tmp_path/'data';data.mkdir();target=tmp_path/'old';target.mkdir()
     path=data/'state.db'
     with sqlite3.connect(path) as db:
         db.execute('CREATE TABLE production_runs(private TEXT)')
-        db.execute('INSERT INTO production_runs VALUES (?)', (json.dumps({'variation':{'creation_mode':'random'}}),))
+        db.execute('INSERT INTO production_runs VALUES (?)', (json.dumps({'variation':{'creation_mode':mode}}),))
     before=path.read_bytes()
-    with pytest.raises(ValueError, match='camera-variation-random-v1'):
+    with pytest.raises(ValueError, match='camera-variation-'+mode+'-v1'):
         api().assert_rollback_compatible(target,data)
     assert path.read_bytes()==before
 

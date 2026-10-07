@@ -347,9 +347,9 @@ class ProductionStore:
                 from .variation_llm import RECIPES
                 intent=private['variation']
                 recent=[json.loads(row[0])['recipe'] for row in db.execute('SELECT data FROM production_variations WHERE group_key=? ORDER BY rowid DESC LIMIT 4',(intent['group_key'],))]
-                recipe='' if intent.get('creation_mode') == 'random' else next((r for r in RECIPES if r not in recent),RECIPES[0])
+                recipe='' if intent.get('creation_mode') in ('random','guided') else next((r for r in RECIPES if r not in recent),RECIPES[0])
                 state={'recipe':recipe,'recent_recipes':recent,'inspiration':intent['inspiration'],'skill_version':intent['skill_version'],'llm_model':intent['config']['model']}
-                if intent.get('creation_mode') == 'random':state['creation_mode']='random'
+                if intent.get('creation_mode') in ('random','guided'):state['creation_mode']=intent['creation_mode']
                 db.execute('INSERT INTO production_variations VALUES (?,?,?)',(ident,intent['group_key'],json.dumps(state,ensure_ascii=False)))
             db.execute('INSERT INTO production_runs\n                (id,draft_id,revision,idempotency_key,snapshot,private,status,stage,message,created_at,updated_at)\n                VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                 (ident,draft_id,revision,key,json.dumps(draft,ensure_ascii=False),json.dumps(private,ensure_ascii=False),

@@ -60,6 +60,8 @@ def assert_rollback_compatible(target_release,storage_root,*,database_paths=(),e
                     if table=='production_variations' and db.execute('SELECT 1 FROM production_variations LIMIT 1').fetchone():
                         required.add('camera-variation-v1')
                     if table=='production_runs' and 'private' in columns:
+                        if db.execute("SELECT 1 FROM production_runs WHERE json_extract(private,'$.variation.creation_mode')='guided' LIMIT 1").fetchone():
+                            required.add('camera-variation-guided-v1')
                         if db.execute("SELECT 1 FROM production_runs WHERE json_extract(private,'$.variation.creation_mode')='random' LIMIT 1").fetchone():
                             required.add('camera-variation-random-v1')
                         if db.execute("SELECT 1 FROM production_runs WHERE json_extract(private,'$.variation.config.prompt_mode')='motion' OR json_type(private,'$.variation.config.motion_skill') IS NOT NULL LIMIT 1").fetchone():
