@@ -9,6 +9,23 @@ def api():
     return importlib.import_module('app.release_compatibility')
 
 
+@pytest.mark.parametrize('source', ['config', 'snapshot'])
+def test_old_reader_rejects_motion_profile_without_modifying_data(tmp_path, source):
+    data=tmp_path/'data';data.mkdir();target=tmp_path/'old';target.mkdir()
+    if source == 'config':
+        path=data/'variation-settings.json'
+        path.write_text(json.dumps({'prompt_mode':'motion','motion_skill':'approved'}))
+    else:
+        path=data/'state.db'
+        with sqlite3.connect(path) as db:
+            db.execute('CREATE TABLE production_runs(private TEXT)')
+            db.execute('INSERT INTO production_runs VALUES (?)', (json.dumps({'variation':{'config':{'prompt_mode':'motion'}}}),))
+    before=path.read_bytes()
+    with pytest.raises(ValueError, match='camera-variation-motion-v1'):
+        api().assert_rollback_compatible(target, data)
+    assert path.read_bytes() == before
+
+
 def test_old_reader_rejects_camera_variation_tasks(tmp_path):
     data=tmp_path/'data';data.mkdir();target=tmp_path/'old';target.mkdir()
     with sqlite3.connect(data/'state.db') as db:

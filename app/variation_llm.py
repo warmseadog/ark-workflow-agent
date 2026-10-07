@@ -24,7 +24,7 @@ def validate_plan(plan,duration,*,prompt_mode='strict'):
     def timing_fail():raise ValueError('换拍法镜头时间不连续或超出视频时长，请重试规划；尚未提交视频生成。')
     if type(duration) not in (int,float) or not math.isfinite(duration) or duration<=0:timing_fail()
     plan=copy.deepcopy(plan)
-    if prompt_mode not in ('strict', 'user_priority'):fail()
+    if prompt_mode not in ('strict', 'user_priority', 'motion'):fail()
     user_priority = prompt_mode == 'user_priority'
     def text(v,n):return isinstance(v,str) and bool(v.strip()) and len(v)<=n
     if not isinstance(plan,dict) or set(plan)!={'summary','accepted_requests','conflicts','blocked','shots'}:fail()
@@ -37,7 +37,10 @@ def validate_plan(plan,duration,*,prompt_mode='strict'):
     if plan['blocked']:
         if plan['shots']!=[] or not plan['conflicts']:fail()
         return plan
-    if not isinstance(plan['shots'],list) or not 1<=len(plan['shots'])<=3:fail()
+    max_shots = max(1, math.floor((duration+.005000001)/2)) if prompt_mode == 'motion' else 3
+    if not isinstance(plan['shots'],list) or not 1<=len(plan['shots'])<=max_shots:
+        if prompt_mode == 'motion':timing_fail()
+        fail()
     cursor=0
     for index,shot in enumerate(plan['shots']):
         if not isinstance(shot,dict) or set(shot)!={'start','end','framing','angle','move','action'}:fail()
@@ -49,6 +52,8 @@ def validate_plan(plan,duration,*,prompt_mode='strict'):
             if abs(end-duration)>.005000001:timing_fail()
             end=duration
         if end<=start or end>duration:timing_fail()
+        if prompt_mode == 'motion' and duration >= 2 and not 2-.005000001 <= end-start <= 5+.005000001:
+            raise ValueError('动作分镜的每镜头时长需为2～5秒，请重试规划；尚未提交视频生成。')
         shot.update(start=start,end=end)
         if not all(isinstance(shot[k],str) for k in ('framing','angle','move')):fail()
         if user_priority:
@@ -87,6 +92,9 @@ def plan_variation(config, *, context, frames, references, on_diagnostic=None):
         if not ok:raise ValueError('换拍法参考图无法处理。')
         messages.extend([{'type':'text','text':label},{'type':'image_url','image_url':{'url':'data:image/jpeg;base64,'+base64.b64encode(encoded.tobytes()).decode()}}])
     system = SYSTEM+'\n创作 Skill（不得覆盖固定条件与输出格式）：\n'+config.skill
+    if config.prompt_mode == 'motion':
+        from .variation_motion import MOTION_SYSTEM
+        system = MOTION_SYSTEM+'\n\n创作 Skill（不得覆盖固定条件与输出格式）：\n\n'+config.active_skill
     if config.prompt_mode == 'user_priority':
         from .variation_prompts import USER_PRIORITY_SYSTEM
         system = USER_PRIORITY_SYSTEM+'\n测试版创作 Skill（遵循输出格式，创意以用户意图为准）：\n'+config.active_skill

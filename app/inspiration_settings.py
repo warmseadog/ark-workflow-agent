@@ -15,11 +15,12 @@ SKILL_PATH = Path(__file__).parent / 'skills' / 'shooting-inspiration' / 'SKILL.
 _lock = RLock()
 
 
-@lru_cache(maxsize=2)
+@lru_cache(maxsize=3)
 def skill_text(prompt_mode='strict'):
-    if prompt_mode not in ('strict', 'user_priority'):
+    if prompt_mode not in ('strict', 'user_priority', 'motion'):
         raise ValueError('提示词版本不正确。')
     path = SKILL_PATH.with_name('USER_PRIORITY.md') if prompt_mode == 'user_priority' else SKILL_PATH
+    if prompt_mode == 'motion':path = SKILL_PATH.with_name('MOTION.md')
     return path.read_text(encoding='utf-8').split('---', 2)[-1].strip()
 
 

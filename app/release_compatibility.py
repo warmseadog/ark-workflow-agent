@@ -47,6 +47,8 @@ def assert_rollback_compatible(target_release,storage_root,*,database_paths=(),e
             except (ValueError,OSError):raise ReleaseError('Variation configuration compatibility inspection failed') from None
             if {'thinking_enabled','reasoning_effort','max_completion_tokens'} & config.keys():
                 required.add('camera-variation-reasoning-v1')
+            if config.get('prompt_mode') == 'motion' or {'motion_template','motion_skill'} & config.keys():
+                required.add('camera-variation-motion-v1')
     databases=discover_databases(storage_root,database_paths=database_paths,extra_roots=extra_roots)
     for path in databases:
         try:
@@ -58,6 +60,8 @@ def assert_rollback_compatible(target_release,storage_root,*,database_paths=(),e
                     if table=='production_variations' and db.execute('SELECT 1 FROM production_variations LIMIT 1').fetchone():
                         required.add('camera-variation-v1')
                     if table=='production_runs' and 'private' in columns:
+                        if db.execute("SELECT 1 FROM production_runs WHERE json_extract(private,'$.variation.config.prompt_mode')='motion' OR json_type(private,'$.variation.config.motion_skill') IS NOT NULL LIMIT 1").fetchone():
+                            required.add('camera-variation-motion-v1')
                         if db.execute("SELECT 1 FROM production_runs WHERE json_type(private,'$.variation.config.thinking_enabled') IS NOT NULL LIMIT 1").fetchone():
                             required.add('camera-variation-reasoning-v1')
                     if table=='prompt_templates' and 'rule_version' in columns:

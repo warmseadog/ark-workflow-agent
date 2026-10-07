@@ -86,6 +86,8 @@ def prepare(settings,store,run,video,faces,clothes,extra,config):
     if llm.prompt_mode == 'user_priority':
         # This provenance comes from the frozen task, never from model output.
         plan={**plan,'prompt_mode':llm.prompt_mode,'user_inspiration':frozen['inspiration']}
+    elif llm.prompt_mode == 'motion':
+        plan={**plan,'prompt_mode':'motion'}
     store.update_variation(ident,plan=plan,llm_model=llm.model,skill_version=frozen['skill_version'])
     # Planner explanations may quote private prompts. Keep them in the plan,
     # never copy them into public task error/message fields.

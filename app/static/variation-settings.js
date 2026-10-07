@@ -18,7 +18,7 @@
     } finally {clearTimeout(timer);}
   }
   function fill(c){
-    for(const key of ['model','base_url','timeout_seconds','template','skill','reasoning_effort','max_completion_tokens','prompt_mode','user_priority_template','user_priority_skill'])form.elements[key].value=c[key];
+    for(const key of ['model','base_url','timeout_seconds','template','skill','reasoning_effort','max_completion_tokens','prompt_mode','user_priority_template','user_priority_skill','motion_template','motion_skill'])form.elements[key].value=c[key];
     mode();
     form.elements.thinking_enabled.checked=c.thinking_enabled;
     form.elements.enabled.checked=c.enabled;form.elements.api_key.value='';form.elements.clear_api_key.checked=false;

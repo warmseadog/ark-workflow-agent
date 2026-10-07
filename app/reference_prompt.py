@@ -32,7 +32,11 @@ def compose_exclusive_prompt(prompt, roles, *, person_video=False, scene_descrip
     if variation_plan is None:
         rules.append('动作来源：@Video1。严格遵循动作顺序、关键姿态、步态、移动方向、运镜、构图和节奏；不自行增加动作或镜头，不采用其中的人脸、发型和服装，不生成打码痕迹。')
     else:
-        rules.append('保留原视频的核心展示内容，允许为新拍法服务的轻微姿态调整；不新增剧情，不生成打码痕迹。')
+        if variation_plan.get('prompt_mode') == 'motion':
+            from .variation_motion import MOTION_FINAL_RULE
+            rules.append(MOTION_FINAL_RULE)
+        else:
+            rules.append('保留原视频的核心展示内容，允许为新拍法服务的轻微姿态调整；不新增剧情，不生成打码痕迹。')
     if identity:
         rules.append(f'人物来源：{identity}。锁定脸型、五官比例、肤色及人物身份，全片一致；忽略所有其他素材中的人物身份，不自行美化或重塑五官。')
     if person_video:
@@ -74,6 +78,8 @@ def compose_exclusive_prompt(prompt, roles, *, person_video=False, scene_descrip
     if variation_plan is not None:
         from .variation_llm import render_plan
         rules = [line.replace('背面细节仅在原动作自然露出时使用，不新增转身或镜头。','背面细节仅在参考充分时使用，不默认新增转身。').replace('保留 @Video1 的动作与镜头：','摄影按本次方案执行：') for line in rules]
+        if variation_plan.get('prompt_mode') == 'motion':
+            rules = [line.replace('背面细节仅在参考充分时使用，不默认新增转身。','参考充分时允许合理转身及侧背面展示，参考不足时不编造未展示的服装结构或场景细节。') for line in rules]
         base = render_plan(variation_plan)
     else:
         base = normalize_reference_mentions(strip_reference_rules(prompt), person_video)

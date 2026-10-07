@@ -1,5 +1,31 @@
+import re
 from playwright.sync_api import expect
 from tests.test_inspiration_browser import assistant_page, browser, client
+
+
+def test_motion_profile_can_be_saved_reloaded_and_switched_back(assistant_page, client):
+    page, state = assistant_page
+    page.goto('https://testserver/admin/settings#variation')
+    form = page.locator('#variation-form')
+    expect(form.locator('fieldset')).to_be_enabled()
+    original = client.get('/api/variation-settings').json()['config']
+    form.locator('[name=prompt_mode]').select_option('motion')
+    expect(form.locator('[name=motion_skill]')).to_be_visible()
+    expect(form.locator('[name=skill]')).to_be_disabled()
+    form.locator('button[type=submit]').click()
+    expect(page.locator('#variation-status')).to_contain_text('已保存')
+    expect(page.locator('#inspiration-config-info')).to_contain_text('丰富动作')
+    page.reload()
+    expect(form.locator('[name=prompt_mode]')).to_have_value('motion')
+    expect(form.locator('[name=motion_skill]')).to_have_value(re.compile('相邻镜头应在人物动作'))
+    current = client.get('/api/variation-settings').json()['config']
+    assert current['skill'] == original['skill']
+    assert current['template'] == original['template']
+    form.locator('[name=prompt_mode]').select_option('strict')
+    form.locator('button[type=submit]').click()
+    expect(page.locator('#variation-status')).to_contain_text('已保存')
+    assert client.get('/api/variation-settings').json()['config']['prompt_mode'] == 'strict'
+    assert not state['errors']
 
 
 def test_profile_switch_preserves_two_independent_editors(assistant_page, client):

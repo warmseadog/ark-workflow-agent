@@ -9,6 +9,7 @@ from threading import RLock
 from .generation_settings import validate_url
 from .tenancy import config_root
 from .variation_prompts import USER_PRIORITY_TEMPLATE, USER_PRIORITY_SKILL
+from .variation_motion import MOTION_SKILL, MOTION_SYSTEM
 
 DEFAULT_TEMPLATE = '使用当前同一组素材，保留人物、发型、穿搭、配饰、场景、光照和视觉风格，设计一种新的拍法。通过景别、机位、构图、运镜或展示重点制造差异，保留便于后期裁剪拼接的稳定片段。默认不增加人物、物品、对白、字幕或花哨转场。'
 DEFAULT_SKILL = '''你是人物穿搭展示视频的摄影导演。借鉴分镜统筹、摄影语言与视觉一致性方法。
@@ -36,19 +37,24 @@ class VariationConfig:
     prompt_mode: str = 'strict'
     user_priority_template: str = USER_PRIORITY_TEMPLATE
     user_priority_skill: str = USER_PRIORITY_SKILL
+    motion_template: str = DEFAULT_TEMPLATE
+    motion_skill: str = MOTION_SKILL
 
     @property
     def active_template(self):
+        if self.prompt_mode == 'motion':return self.motion_template
         return self.user_priority_template if self.prompt_mode == 'user_priority' else self.template
 
     @property
     def active_skill(self):
+        if self.prompt_mode == 'motion':return self.motion_skill
         return self.user_priority_skill if self.prompt_mode == 'user_priority' else self.skill
 
     @property
     def skill_version(self):
         text = self.active_template+'\n'+self.active_skill
         if self.prompt_mode == 'user_priority': text = 'user-priority-v1\n'+text
+        if self.prompt_mode == 'motion': text = 'motion-v1\n'+MOTION_SYSTEM+'\n'+text
         return hashlib.sha256(text.encode()).hexdigest()
 
     def problem(self):
@@ -67,7 +73,7 @@ def config_path(settings):
 
 def _validate(values):
     if type(values['enabled']) is not bool:raise ValueError('启用选项不正确。')
-    if not isinstance(values['prompt_mode'], str) or values['prompt_mode'] not in {'strict', 'user_priority'}:
+    if not isinstance(values['prompt_mode'], str) or values['prompt_mode'] not in {'strict', 'user_priority', 'motion'}:
         raise ValueError('提示词版本不正确。')
     for name in ('base_url','model','api_key'):
         value=values[name]
@@ -80,7 +86,7 @@ def _validate(values):
     if type(values['thinking_enabled']) is not bool:raise ValueError('深度思考选项不正确。')
     if not isinstance(values['reasoning_effort'],str) or values['reasoning_effort'] not in {'low','medium','high'}:raise ValueError('思考深度应为 low、medium 或 high。')
     if type(values['max_completion_tokens']) is not int or not 1024<=values['max_completion_tokens']<=131072:raise ValueError('输出预算需为 1024–131072 tokens。')
-    for name,limit in [('template',10000),('skill',20000),('user_priority_template',10000),('user_priority_skill',20000)]:
+    for name,limit in [('template',10000),('skill',20000),('user_priority_template',10000),('user_priority_skill',20000),('motion_template',10000),('motion_skill',20000)]:
         value=values[name]
         if not isinstance(value,str) or not value.strip() or len(value)>limit or '\x00' in value:raise ValueError(f'{name} 应为 1–{limit} 字纯文本。')
     return VariationConfig(**values)
