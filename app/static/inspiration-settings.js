@@ -38,7 +38,7 @@
       const response = await fetch('/api/inspiration-settings', {method, cache: 'no-store', signal: controller.signal,
         headers: values ? {'Content-Type': 'application/json'} : {}, body: values ? JSON.stringify(values) : undefined});
       const data = await response.json();
-      if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : '辅助配置请求失败');
+      if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : '润色配置请求失败');
       return data.config;
     } finally { clearTimeout(timer); }
   }
@@ -46,7 +46,7 @@
     infoVersion++;
     fields.disabled = true; retry.hidden = true;
     try { fill(await request()); fields.disabled = false; note(''); }
-    catch (error) { note('无法加载灵感辅助配置，请重试。', true); retry.hidden = false; }
+    catch (error) { note('无法加载润色配置，请重试。', true); retry.hidden = false; }
   }
   form.elements.inherit_provider.addEventListener('change', mode);
   form.addEventListener('submit', async event => {
@@ -58,7 +58,7 @@
     values.timeout_seconds = Number(values.timeout_seconds); values.max_tokens = Number(values.max_tokens);
     infoVersion++;
     fields.disabled = true; note('正在保存…');
-    try { fill(await request('PUT', values)); note('灵感辅助配置已保存。'); }
+    try { fill(await request('PUT', values)); note('润色配置已保存。'); }
     catch (error) { note(error.name === 'AbortError' ? '保存超时，请重新加载核对结果。' : error.message, true); }
     finally { fields.disabled = false; }
   });

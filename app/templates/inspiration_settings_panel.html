@@ -1,12 +1,12 @@
 <div class="card">
-  <h3>AI 灵感辅助</h3>
-  <p class="hint">仅使用用户文字和内置创意 Skill，生成一条可编辑的拍摄灵感。不创建视频任务，不修改上方拍法规划配置。</p>
-  <p class="hint">辅助提示词跟随上方“提示词版本”切换，原版与用户意图优先测试版独立保留；辅助模型和超时仍使用本区配置。</p>
+  <h3>AI 润色</h3>
+  <p class="hint">仅润色用户已填写的拍摄灵感，保留原意并回填可编辑结果。空白内容不可润色。润色不创建视频任务；制作页的骰子按钮会直接创建随机灵感视频任务。</p>
+  <p class="hint">润色提示词跟随上方“提示词版本”切换；润色模型和超时使用本区配置。</p>
   <form id="inspiration-settings-form" autocomplete="off"><fieldset disabled>
-    <label class="check"><input name="enabled" type="checkbox">启用 AI 灵感辅助</label>
+    <label class="check"><input name="enabled" type="checkbox">启用 AI 润色</label>
     <label class="check"><input name="inherit_provider" type="checkbox">复用上方拍法模型的接口地址与密钥</label>
-    <label>辅助模型 ID<input name="model" maxlength="2048" placeholder="复用接口时留空，使用上方模型"></label>
-    <p class="hint">豆包 Seed 模型的辅助调用独立关闭深度思考；其他接口请选用非思考文本模型。可填写同接口下有权限使用的快速模型。</p>
+    <label>润色模型 ID<input name="model" maxlength="2048" placeholder="复用接口时留空，使用上方模型"></label>
+    <p class="hint">豆包 Seed 模型的润色调用独立关闭深度思考；其他接口请选用非思考文本模型。可填写同接口下有权限使用的快速模型。</p>
     <div data-inspiration-provider>
       <label>独立接口基础地址<input name="base_url" type="url" maxlength="2048"></label>
       <label>独立 API Key<input name="api_key" type="password" autocomplete="new-password" maxlength="2048" placeholder="留空保留已保存密钥"></label>
@@ -16,8 +16,8 @@
     <div class="form-grid"><label>总超时（秒）<input name="timeout_seconds" type="number" min="5" max="30" required></label><label>输出预算（tokens）<input name="max_tokens" type="number" min="128" max="1024" required></label></div>
     <p class="hint" id="inspiration-config-info"></p>
     <p class="hint">Skill 来源：<a href="https://github.com/dexhunter/seedance2-skill/blob/516284d5bab58361bfdfed3cc96cee3e837d4c44/zh/SKILL.md" target="_blank" rel="noopener noreferrer">dexhunter/seedance2-skill 中文版</a>，项目精简适配。Skill 随版本发布，不在请求中联网加载。</p>
-    <div class="actions"><button type="submit" class="primary">保存灵感辅助配置</button></div>
+    <div class="actions"><button type="submit" class="primary">保存润色配置</button></div>
   </fieldset></form>
   <p id="inspiration-settings-status" class="notice" role="status" hidden></p>
-  <button type="button" id="inspiration-settings-reload" class="secondary" hidden>重新加载辅助配置</button>
+  <button type="button" id="inspiration-settings-reload" class="secondary" hidden>重新加载润色配置</button>
 </div>

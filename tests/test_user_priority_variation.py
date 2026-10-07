@@ -157,7 +157,7 @@ def test_assist_follows_profile_even_with_independent_model_and_keeps_text_only(
     original_system = calls[-1]['messages'][0]['content']
     switched = client.put('/api/variation-settings', json={'prompt_mode': 'user_priority'})
     assert switched.status_code == 200, switched.text
-    for idea in (IDEA, ''):
+    for idea in (IDEA, '保留固定机位'):
         assert client.post('/api/production/inspiration-assist', json={'inspiration': idea}).status_code == 200
         system = calls[-1]['messages'][0]['content']
         assert '用户意图优先' in system and system != original_system

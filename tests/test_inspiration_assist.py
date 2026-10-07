@@ -22,7 +22,7 @@ def mock_provider(monkeypatch, *, text='先以近景展示，再缓慢拉远至�
     return calls
 
 
-@pytest.mark.parametrize('inspiration', ['', '  \n ', '先拍衣服，再拉远'])
+@pytest.mark.parametrize('inspiration', ['先拍衣服，再拉远', '  保留固定机位  '])
 def test_assist_works_without_assets_and_never_creates_video(client, monkeypatch, inspiration):
     variation_settings.save_config(main.settings, {
         'api_key': 'private-key', 'thinking_enabled': True,
@@ -67,7 +67,7 @@ def test_invalid_outputs_never_return_as_inspiration(client, monkeypatch, text, 
 
 def test_unconfigured_assist_does_not_call_llm(client, monkeypatch):
     calls = mock_provider(monkeypatch)
-    assert client.post('/api/production/inspiration-assist', json={'inspiration': ''}).status_code == 503
+    assert client.post('/api/production/inspiration-assist', json={'inspiration': '保留固定机位'}).status_code == 503
     assert not calls
 
 
@@ -85,12 +85,12 @@ def test_config_is_independent_and_private(accounts_clients, monkeypatch):
         assert user.get('/api/inspiration-settings').status_code == 403
         assert user.put('/api/inspiration-settings', json={'enabled': False}).status_code == 403
     calls = mock_provider(monkeypatch)
-    result = alice.post('/api/production/inspiration-assist', json={'inspiration': ''})
+    result = alice.post('/api/production/inspiration-assist', json={'inspiration': '保留固定机位'})
     assert result.status_code == 200, result.text
     assert calls[0]['model'] == 'fast-text'
     changed = admin.put('/api/inspiration-settings', json={'base_url': 'https://other.example/v1'})
     assert changed.status_code == 200 and not changed.json()['config']['has_api_key']
-    assert alice.post('/api/production/inspiration-assist', json={'inspiration': ''}).status_code == 503
+    assert alice.post('/api/production/inspiration-assist', json={'inspiration': '保留固定机位'}).status_code == 503
 
 
 def test_config_validates_types_and_budget(client):
@@ -100,7 +100,7 @@ def test_config_validates_types_and_budget(client):
 
 
 def test_assist_requires_login_and_csrf(protected):
-    response = protected.post('/api/production/inspiration-assist', json={'inspiration': ''})
+    response = protected.post('/api/production/inspiration-assist', json={'inspiration': '保留固定机位'})
     assert response.status_code in (401, 403)
 
 
@@ -120,7 +120,7 @@ def test_concurrent_requests_rejected_and_cancelled_request_releases_lease(clien
                 'choices': [{'finish_reason': 'stop', 'message': {'content': '固定中景，自然展示。'}}]})
 
         monkeypatch.setattr(httpx.AsyncClient, 'send', send)
-        first = asyncio.create_task(generate(main.settings, {'inspiration': ''}))
+        first = asyncio.create_task(generate(main.settings, {'inspiration': '保留固定机位'}))
         done, _ = await asyncio.wait([first, asyncio.create_task(entered.wait())],
                                      timeout=5, return_when=asyncio.FIRST_COMPLETED)
         if first in done:
@@ -135,7 +135,7 @@ def test_concurrent_requests_rejected_and_cancelled_request_releases_lease(clien
             with pytest.raises(asyncio.CancelledError):
                 await first
         release.set()
-        assert (await generate(main.settings, {'inspiration': ''}))['inspiration'] == '固定中景，自然展示。'
+        assert (await generate(main.settings, {'inspiration': '保留固定机位'}))['inspiration'] == '固定中景，自然展示。'
 
     asyncio.run(scenario())
 
@@ -150,14 +150,14 @@ def test_whole_request_deadline_and_transport_errors_are_sanitized(client, monke
         raise AssertionError('deadline did not cancel')
 
     monkeypatch.setattr(httpx.AsyncClient, 'send', delayed)
-    result = client.post('/api/production/inspiration-assist', json={'inspiration': ''})
+    result = client.post('/api/production/inspiration-assist', json={'inspiration': '保留固定机位'})
     assert result.status_code == 504
 
     async def failed(self, request, **kwargs):
         raise httpx.ConnectError('private-key internal provider detail')
 
     monkeypatch.setattr(httpx.AsyncClient, 'send', failed)
-    result = client.post('/api/production/inspiration-assist', json={'inspiration': ''})
+    result = client.post('/api/production/inspiration-assist', json={'inspiration': '保留固定机位'})
     assert result.status_code == 502 and 'private-key' not in result.text
 
 
@@ -187,10 +187,10 @@ def test_delegated_assist_uses_actor_permissions_and_requires_csrf(accounts_clie
     response = admin.post(path, json={'inspiration': '近景'})
     assert response.status_code == 200, response.text
     assert len(calls) == 1
-    assert bob.post(path, json={'inspiration': ''}).status_code == 403
+    assert bob.post(path, json={'inspiration': '保留固定机位'}).status_code == 403
     assert admin.post('/api/admin/delegated/' + 'f' * 32 + '/production/inspiration-assist',
-                      json={'inspiration': ''}).status_code == 404
-    assert alice.post('/api/production/inspiration-assist', json={'inspiration': ''},
+                      json={'inspiration': '保留固定机位'}).status_code == 404
+    assert alice.post('/api/production/inspiration-assist', json={'inspiration': '保留固定机位'},
                       headers={'X-CSRF-Token': ''}).status_code == 403
     assert len(calls) == 1
 

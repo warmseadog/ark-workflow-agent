@@ -39,11 +39,16 @@ def test_assist_without_assets_handles_success_error_and_inflight_edits(assistan
     page, state = assistant_page
     page.goto('https://testserver/')
     editor, button = page.locator('#variation-inspiration'), page.locator('#inspiration-assist')
+    expect(button).to_be_disabled()
+    expect(button).to_have_text('AI 润色')
+    editor.fill('  \n　')
+    expect(button).to_be_disabled()
+    editor.fill('先拍衣服，再拉远')
     expect(button).to_be_enabled()
     expect(page.locator('#studio-generate-submit')).to_be_disabled()
     button.click()
     expect(button).to_be_disabled()
-    assert state['assist'] == [{'inspiration': ''}]
+    assert state['assist'] == [{'inspiration': '先拍衣服，再拉远'}]
     state['held'].pop().fulfill(json={'inspiration': '先拍局部，再拉远至全身。', 'request_id': 'one'})
     expect(editor).to_have_value('先拍局部，再拉远至全身。')
     button.click()
@@ -59,6 +64,7 @@ def test_assist_without_assets_handles_success_error_and_inflight_edits(assistan
     expect(editor).to_have_value('用户的新想法')
     page.locator('#variation-clear').click()
     expect(editor).to_have_value('')
+    expect(button).to_be_disabled()
     assert not state['runs'] and not state['errors']
 
 
@@ -92,16 +98,18 @@ def test_clear_invalidates_pending_assist_and_allows_a_fresh_request(assistant_p
     old = state['held'].pop()
     page.locator('#variation-clear').click()
     expect(editor).to_have_value('')
+    expect(button).to_be_disabled()
+    editor.fill('新的想法')
     expect(button).to_be_enabled()
     button.click()
     expect(button).to_be_disabled()
     old.fulfill(json={'inspiration': '旧响应不能覆盖新请求', 'request_id': 'old'})
-    expect(editor).to_have_value('')
+    expect(editor).to_have_value('新的想法')
     expect(button).to_be_disabled()
     state['held'].pop().fulfill(json={'inspiration': '新的拍摄灵感', 'request_id': 'new'})
     expect(editor).to_have_value('新的拍摄灵感')
     expect(button).to_be_enabled()
-    assert state['assist'] == [{'inspiration': '准备清空的灵感'}, {'inspiration': ''}]
+    assert state['assist'] == [{'inspiration': '准备清空的灵感'}, {'inspiration': '新的想法'}]
     assert not state['runs'] and not state['errors']
 
 

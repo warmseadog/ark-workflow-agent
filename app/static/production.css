@@ -512,6 +512,7 @@
 .variation-editor label{display:block;font-weight:600;margin-bottom:8px}
 .variation-editor textarea{display:block;width:100%;box-sizing:border-box;resize:vertical;min-height:96px}
 .variation-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+#inspiration-assist:disabled { color:#929292; background:#ededed; border-color:#dedede; cursor:not-allowed; opacity:1; box-shadow:none; }
 .inspiration-status{margin:12px 0 0;overflow-wrap:anywhere}
 .inspiration-status[data-error="true"]{color:#9c3838}
 .variation-actions a{margin-right:auto;font-size:13px}

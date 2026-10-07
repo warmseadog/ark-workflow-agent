@@ -335,7 +335,8 @@ class ProductionStore:
                 if row['draft_id'] != draft_id or row['revision'] != revision:
                     raise Conflict('提交标识已用于另一份输入，请核对任务列表。')
                 old=json.loads(row['private']).get('variation');new=private.get('variation')
-                if bool(old)!=bool(new) or (old and old['inspiration']!=new['inspiration']):
+                from .variation import same_intent
+                if not same_intent(old,new):
                     raise Conflict('提交标识已用于不同拍法或灵感，请核对上次提交。')
                 return self._run(row)
             self.check_queue_limit(db,max_queued)
@@ -346,8 +347,9 @@ class ProductionStore:
                 from .variation_llm import RECIPES
                 intent=private['variation']
                 recent=[json.loads(row[0])['recipe'] for row in db.execute('SELECT data FROM production_variations WHERE group_key=? ORDER BY rowid DESC LIMIT 4',(intent['group_key'],))]
-                recipe=next((r for r in RECIPES if r not in recent),RECIPES[0])
+                recipe='' if intent.get('creation_mode') == 'random' else next((r for r in RECIPES if r not in recent),RECIPES[0])
                 state={'recipe':recipe,'recent_recipes':recent,'inspiration':intent['inspiration'],'skill_version':intent['skill_version'],'llm_model':intent['config']['model']}
+                if intent.get('creation_mode') == 'random':state['creation_mode']='random'
                 db.execute('INSERT INTO production_variations VALUES (?,?,?)',(ident,intent['group_key'],json.dumps(state,ensure_ascii=False)))
             db.execute('INSERT INTO production_runs\n                (id,draft_id,revision,idempotency_key,snapshot,private,status,stage,message,created_at,updated_at)\n                VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                 (ident,draft_id,revision,key,json.dumps(draft,ensure_ascii=False),json.dumps(private,ensure_ascii=False),
@@ -370,6 +372,18 @@ class ProductionStore:
         with self.connection() as db:
             row=db.execute('SELECT data FROM production_variations WHERE run_id=?',(ident,)).fetchone()
         return json.loads(row['data']) if row else {}
+
+    def recent_variation_plans(self, group_key, exclude_id):
+        from .random_inspiration import compact_plan
+        with self.connection() as db:
+            rows=db.execute('SELECT data FROM production_variations WHERE group_key=? AND run_id!=? ORDER BY rowid DESC LIMIT 20',(group_key,exclude_id)).fetchall()
+        plans=[]
+        for row in rows:
+            plan=json.loads(row['data']).get('plan')
+            if plan and not plan.get('blocked') and plan.get('shots'):
+                plans.append(compact_plan(plan))
+                if len(plans)==4:break
+        return plans
 
     def update_variation(self, ident, **changes):
         with self.connection() as db:

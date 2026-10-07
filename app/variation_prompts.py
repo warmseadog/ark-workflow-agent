@@ -21,7 +21,8 @@ def compose_user_priority_prompt(plan, roles, *, person_video=False, scene_descr
     """Use real reference ordering without reintroducing strict creative locks."""
     from .variation_llm import render_plan
     idea = plan.get('user_inspiration', '')
-    if not isinstance(idea, str) or not idea.strip() or len(idea) > 2000 or '\x00' in idea:
+    autonomous = plan.get('creation_mode') == 'random' and isinstance(idea,str) and not idea.strip()
+    if not isinstance(idea, str) or (not idea.strip() and not autonomous) or len(idea) > 2000 or '\x00' in idea:
         raise ValueError('测试版缺少任务冻结的用户灵感，请重新创建任务。')
     bindings = {f'@image{i}' for i in range(1, len(roles)+1)} | {'@video1'}
     if person_video: bindings.add('@video2')
@@ -31,6 +32,8 @@ def compose_user_priority_prompt(plan, roles, *, person_video=False, scene_descr
             return match[0] if match[0].lower() in bindings else '＠'+match[0][1:]
         return re.sub(r'@(?:Image|Video|Audio)\s*\d+', replace, text, flags=re.I)
     idea = literal_unbound_mentions(idea)
+    if autonomous:
+        idea = '用户未限定拍摄想法，请落实本次随机摄影方案；人物、造型和环境以所提供素材为准。'
     rows = ['本次提示词版本：用户意图优先（测试版）。',
             '本次用户要求是创作依据，优先于下面的摄影方案与素材默认状态；方案与用户要求冲突时以用户要求为准。',
             '【本次用户要求】\n' + idea + '\n【用户要求结束】',

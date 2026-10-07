@@ -11,10 +11,21 @@ BLOCKED_MESSAGE = '拍摄灵感与人物、穿搭或场景等固定条件冲突�
 
 
 def normalize_request(value):
-    if not isinstance(value,dict) or set(value)!={'inspiration'}:raise ValueError('换拍法请求格式不正确。')
+    if not isinstance(value,dict) or 'inspiration' not in value or set(value)-{'inspiration','creation_mode'}:raise ValueError('换拍法请求格式不正确。')
+    if 'creation_mode' in value and value['creation_mode'] != 'random':raise ValueError('灵感创作模式不正确。')
     text=value['inspiration']
     if not isinstance(text,str) or len(text)>2000 or '\x00' in text:raise ValueError('拍摄灵感最多 2000 字。')
-    return {'inspiration':text.strip()}
+    return {**value,'inspiration':text.strip()}
+
+
+def same_intent(old, new):
+    if bool(old) != bool(new):return False
+    return not old or (old['inspiration'] == new['inspiration']
+                       and old.get('creation_mode') == new.get('creation_mode'))
+
+
+def is_legacy_blank(request):
+    return bool(request) and not request['inspiration'] and request.get('creation_mode') != 'random'
 
 
 def preflight(settings,store,draft,request):
@@ -27,8 +38,13 @@ def preflight(settings,store,draft,request):
     active=[draft['source_asset_id'],*(draft.get('face_asset_ids',[]) if draft.get('person_reference_mode')!='video' else [draft['person_video_asset_id']]),*draft['clothing_asset_ids']]
     active += [x for k in OPTIONAL_KINDS if draft.get(k+'_enabled') for x in draft.get(k+'_asset_ids',[])]
     values['hashes']=[store.get_asset(x)['sha256'] for x in active]
-    return {**request,'config':asdict(config),'group_key':hashlib.sha256(json.dumps(values,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),
-            'skill_version':config.skill_version}
+    frozen = {**request,'config':asdict(config),'group_key':hashlib.sha256(json.dumps(values,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),
+              'skill_version':config.skill_version}
+    if request.get('creation_mode') == 'random':
+        from .random_inspiration import CREATIVE_RULES
+        frozen['creative_rules'] = CREATIVE_RULES
+        frozen['skill_version'] = hashlib.sha256((config.skill_version+'\n'+CREATIVE_RULES).encode()).hexdigest()
+    return frozen
 
 
 def source_frames(video,directory):
@@ -71,6 +87,16 @@ def prepare(settings,store,run,video,faces,clothes,extra,config):
     context={'duration':duration,'inspiration':frozen['inspiration'],'default_template':llm.active_template,
         'original_prompt':run['snapshot']['prompt'],'scene_description':extra.get('scene_description',''),
         'suggested_recipe':state['recipe'],'recent_recipes':state['recent_recipes']}
+    random = frozen.get('creation_mode') == 'random'
+    if random:
+        context.pop('suggested_recipe');context.pop('recent_recipes')
+        # Read at planning time so tasks queued together see earlier completed plans.
+        # Freeze on first attempt so recovery cannot silently change creative inputs.
+        creative_context = state.get('creative_context')
+        if creative_context is None:
+            creative_context = {'creation_nonce':ident, 'recent_plans':store.recent_variation_plans(frozen['group_key'],ident)}
+            store.update_variation(ident,creative_context=creative_context)
+        context.update(creative_context)
     def diagnostic(value):
         # Private prompt-bearing data must not enter the public variation state.
         import os,tempfile
@@ -82,12 +108,27 @@ def prepare(settings,store,run,video,faces,clothes,extra,config):
             with os.fdopen(fd,'w',encoding='utf-8') as stream:json.dump(value,stream,ensure_ascii=False)
             path.replace(directory/'variation-diagnostic.json')
         finally:path.unlink(missing_ok=True)
-    plan=plan_variation(llm,context=context,frames=frames,references=references,on_diagnostic=diagnostic)
+    options = {'creative_rules':frozen['creative_rules']} if random else {}
+    plan=plan_variation(llm,context=context,frames=frames,references=references,on_diagnostic=diagnostic,**options)
+    if random and not plan['blocked']:
+        from .random_inspiration import similar_plan, compact_plan
+        recent = context['recent_plans']
+        if similar_plan(plan,recent):
+            # Only one automatic retry per execution; a manual retry stays explicit.
+            store.update_run(ident,message='拍法与近期方案相似，正在重新构思')
+            context={**context,'avoid_plan':compact_plan(plan),
+                     'revision_request':'本方案与近期方案过于相似，请在不违背用户要求的前提下重新构思，不能只改措辞。'}
+            plan=plan_variation(llm,context=context,frames=frames,references=references,on_diagnostic=diagnostic,**options)
+            if not plan['blocked'] and similar_plan(plan,recent):
+                raise ValueError('随机拍法与近期方案仍过于相似，请重试规划或调整灵感；尚未提交视频生成。')
     if llm.prompt_mode == 'user_priority':
         # This provenance comes from the frozen task, never from model output.
         plan={**plan,'prompt_mode':llm.prompt_mode,'user_inspiration':frozen['inspiration']}
     elif llm.prompt_mode == 'motion':
         plan={**plan,'prompt_mode':'motion'}
+    if random:
+        # Trusted provenance comes from the frozen task, never from model JSON.
+        plan={**plan,'creation_mode':'random'}
     store.update_variation(ident,plan=plan,llm_model=llm.model,skill_version=frozen['skill_version'])
     # Planner explanations may quote private prompts. Keep them in the plan,
     # never copy them into public task error/message fields.

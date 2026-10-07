@@ -354,15 +354,17 @@ def get_router(settings_getter, local_guard):
                 existing=store().get_run(previous['id'],private=True)['private'].get('variation')
                 incoming=payload.get('variation')
                 # Previously accepted blank variations keep their frozen intent.
-                # New blank submissions are equivalent to plain generation.
-                if not existing and incoming and not incoming['inspiration']:
+                # Legacy blank submissions remain plain; explicit random ones do not.
+                from .variation import same_intent, is_legacy_blank
+                if not existing and is_legacy_blank(incoming):
                     incoming=None
-                if bool(existing)!=bool(incoming) or (existing and existing['inspiration']!=incoming['inspiration']):
+                if not same_intent(existing,incoming):
                     raise Conflict('提交标识已用于不同拍法或灵感，请核对上次提交。')
                 if previous['id'] in store().deleted_run_ids(): raise Conflict('此前提交的任务已删除，请刷新并发起新的提交。')
                 if previous['draft_id']!=draft_id or previous['revision']!=revision: raise Conflict('提交标识已用于另一份输入。')
                 return decorate_run(previous)
-            if payload.get('variation') and not payload['variation']['inspiration']:
+            from .variation import is_legacy_blank
+            if is_legacy_blank(payload.get('variation')):
                 payload.pop('variation')
             with queue_admission.reserve(settings_getter(),key,max_queued=queue_limit()):
                 return create_validated(draft_id,revision,key)

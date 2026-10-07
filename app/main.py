@@ -411,7 +411,7 @@ def get_inspiration_settings(request: Request):
     try:
         return {'config': inspiration_settings.load_config(settings).public(settings)}
     except (ValueError, OSError):
-        raise HTTPException(500, '无法读取灵感辅助配置。') from None
+        raise HTTPException(500, '无法读取润色配置。') from None
 
 
 @app.put('/api/inspiration-settings')
@@ -424,7 +424,7 @@ def put_inspiration_settings(request: Request, payload: object = Body(...)):
     except (ValueError, TypeError) as error:
         raise HTTPException(422, str(error)) from None
     except OSError:
-        raise HTTPException(500, '无法保存灵感辅助配置，请检查存储权限。') from None
+        raise HTTPException(500, '无法保存润色配置，请检查存储权限。') from None
 
 
 @app.put('/api/continuation-settings')

@@ -49,9 +49,9 @@ class InspirationConfig:
 
     def problem(self):
         if not self.enabled:
-            return 'AI 灵感辅助暂不可用，可直接填写拍摄想法。'
+            return 'AI 润色暂不可用，可直接填写拍摄想法。'
         if not self.model or not self.api_key:
-            return 'AI 灵感辅助尚未配置，请联系管理员；也可直接填写拍摄想法。'
+            return 'AI 润色尚未配置，请联系管理员；也可直接填写拍摄想法。'
         return ''
 
     def public(self, settings):
@@ -71,11 +71,11 @@ def config_path(settings):
 def _validate(values):
     for name in ('enabled', 'inherit_provider'):
         if type(values[name]) is not bool:
-            raise ValueError('灵感辅助开关格式不正确。')
+            raise ValueError('润色开关格式不正确。')
     for name in ('base_url', 'model', 'api_key'):
         value = values[name]
         if not isinstance(value, str) or len(value) > 2048 or any(ord(c) < 32 for c in value):
-            raise ValueError('灵感辅助接口配置格式不正确。')
+            raise ValueError('润色接口配置格式不正确。')
         values[name] = value.strip()
     values['base_url'] = validate_endpoint(values['base_url'])
     if not values['inherit_provider'] and not values['model']:
@@ -83,9 +83,9 @@ def _validate(values):
     if any(ord(c) < 33 or ord(c) > 126 for c in values['api_key']):
         raise ValueError('API Key 应为不含空格的英文字符。')
     if type(values['timeout_seconds']) is not int or not 5 <= values['timeout_seconds'] <= 30:
-        raise ValueError('灵感辅助超时需为 5–30 秒。')
+        raise ValueError('润色超时需为 5–30 秒。')
     if type(values['max_tokens']) is not int or not 128 <= values['max_tokens'] <= 1024:
-        raise ValueError('灵感辅助输出预算需为 128–1024 tokens。')
+        raise ValueError('润色输出预算需为 128–1024 tokens。')
     return InspirationConfig(**values)
 
 
@@ -100,14 +100,14 @@ def load_config(settings):
                 raise ValueError()
             return _validate({**asdict(InspirationConfig()), **values})
         except (ValueError, TypeError, KeyError):
-            raise ValueError('灵感辅助配置无法读取，请由管理员检查。') from None
+            raise ValueError('润色配置无法读取，请由管理员检查。') from None
 
 
 def save_config(settings, values):
     with _lock:
         current = load_config(settings)
         if not isinstance(values, dict) or set(values) - set(asdict(current)) - {'clear_api_key'}:
-            raise ValueError('包含不支持的灵感辅助配置字段。')
+            raise ValueError('包含不支持的润色配置字段。')
         if type(values.get('clear_api_key', False)) is not bool:
             raise ValueError('清除密钥选项不正确。')
         merged = {**asdict(current), **{k: v for k, v in values.items() if k != 'clear_api_key'}}

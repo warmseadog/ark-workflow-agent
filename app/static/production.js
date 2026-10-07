@@ -29,7 +29,7 @@
   function invalidateInspiration() {
     inspirationSequence++;
     inspirationController?.abort(); inspirationController = null; inspirationBusy = false;
-    if (inspirationAssist) { inspirationAssist.textContent = 'AI 灵感辅助'; inspirationAssist.removeAttribute('aria-busy'); }
+    if (inspirationAssist) { inspirationAssist.textContent = 'AI 润色'; inspirationAssist.removeAttribute('aria-busy'); }
     inspirationNote('');
   }
   function resetVariation() {
@@ -40,18 +40,19 @@
   variationInput?.addEventListener('input', () => {
     inspirationEdit++;
     if (!inspirationBusy) inspirationNote('');
+    updateButtons();
   });
   variationClear?.addEventListener('click', () => {
     resetVariation(); updateButtons(); variationInput.focus();
   });
   inspirationAssist?.addEventListener('click', async () => {
-    if (inspirationAssist.disabled || inspirationBusy || pageInactive) return;
+    if (inspirationAssist.disabled || inspirationBusy || pageInactive || !variationInput.value.trim()) return;
     const sequence = ++inspirationSequence, edit = inspirationEdit, draftId = draft?.id;
     const controller = new AbortController(); inspirationController = controller;
     // Backend allows at most 30 seconds; this is only a browser/network safety net.
     const timer = setTimeout(() => controller.abort(), 35000);
-    inspirationBusy = true; inspirationAssist.textContent = '正在生成灵感…';
-    inspirationAssist.setAttribute('aria-busy', 'true'); inspirationNote('正在生成灵感…'); updateButtons();
+    inspirationBusy = true; inspirationAssist.textContent = '正在润色…';
+    inspirationAssist.setAttribute('aria-busy', 'true'); inspirationNote('正在润色你的灵感…'); updateButtons();
     const current = () => sequence === inspirationSequence && draft?.id === draftId && !pageInactive;
     try {
       const data = await api('/inspiration-assist', 'POST', {inspiration: variationInput.value.trim()}, {signal: controller.signal});
@@ -59,14 +60,14 @@
       if (edit !== inspirationEdit) { inspirationNote('你已修改内容，AI 建议未覆盖当前输入。'); return; }
       if (typeof data.inspiration !== 'string' || !data.inspiration.trim() || data.inspiration.length > 500) throw new Error('未获取到有效灵感，请重试。');
       variationInput.value = data.inspiration; inspirationEdit++;
-      inspirationNote('灵感已填入，可修改后生成。');
+      inspirationNote('润色已完成，可继续修改，点击骰子按钮直接生成视频。');
     } catch (error) {
-      if (current()) inspirationNote(error.name === 'AbortError' ? '灵感生成超时，请重试。原内容已保留。' : error.message, true);
+      if (current()) inspirationNote(error.name === 'AbortError' ? '润色超时，请重试。原内容已保留。' : error.message, true);
     } finally {
       clearTimeout(timer);
       if (current()) {
         inspirationBusy = false; inspirationController = null;
-        inspirationAssist.textContent = 'AI 灵感辅助'; inspirationAssist.removeAttribute('aria-busy'); updateButtons();
+        inspirationAssist.textContent = 'AI 润色'; inspirationAssist.removeAttribute('aria-busy'); updateButtons();
       }
     }
   });
@@ -451,7 +452,7 @@
       variationSubmit.disabled = generateButton.disabled || Boolean(pendingSubmission);
       variationInput.disabled = sourceLocked || Boolean(pendingSubmission);
       if (variationClear) variationClear.disabled = sourceLocked || Boolean(pendingSubmission);
-      if (inspirationAssist) inspirationAssist.disabled = sourceLocked || !sessionReady || Boolean(pendingSubmission) || inspirationBusy;
+      if (inspirationAssist) inspirationAssist.disabled = sourceLocked || !sessionReady || Boolean(pendingSubmission) || inspirationBusy || !variationInput.value.trim();
     }
     for (const id of ['replace-source-video', 'remove-source-video']) document.getElementById(id).hidden = !hasSource();
     if (!busy) generateButton.textContent = pendingSubmission ? '确认上次提交结果' : window.delegatedEditor ? '为该用户重新生成 →' : '生成视频 →';
@@ -905,7 +906,7 @@
   generationForm.addEventListener('submit', async event => {
     event.preventDefault();
     const inspiration = variationInput?.value.trim() || '';
-    const variationRequested = event.submitter === variationSubmit && Boolean(variationSubmit) && Boolean(inspiration);
+    const variationRequested = event.submitter === variationSubmit && Boolean(variationSubmit);
     if (busy || sourceImportBusy || !sessionReady || (!pendingSubmission && !sourceForm.reportValidity())) return;
     updateButtons();
     if (!pendingSubmission && generateButton.disabled) return;
@@ -918,7 +919,7 @@
         const saved = await flushDraft();
         if (!variationRequested) await ensurePromptPreview();
         pendingSubmission = {draft_id: saved.id, revision: saved.revision, idempotency_key: crypto.randomUUID()};
-        if (variationRequested) pendingSubmission.variation = {inspiration};
+        if (variationRequested) pendingSubmission.variation = {inspiration, creation_mode: 'random'};
         // Persist before the request: a lost response must retry the identical submission.
         localStorage.setItem(pendingKey, JSON.stringify(pendingSubmission));
       }
