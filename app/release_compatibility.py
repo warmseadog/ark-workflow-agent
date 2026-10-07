@@ -59,7 +59,11 @@ def assert_rollback_compatible(target_release,storage_root,*,database_paths=(),e
                     columns={row[1] for row in db.execute('PRAGMA table_info('+quote+')')}
                     if table=='production_variations' and db.execute('SELECT 1 FROM production_variations LIMIT 1').fetchone():
                         required.add('camera-variation-v1')
+                        if 'data' in columns and db.execute("SELECT 1 FROM production_variations WHERE json_type(data,'$.timing_policy') IS NOT NULL OR json_type(data,'$.plan.timing_policy') IS NOT NULL OR json_extract(data,'$.timing_upgrade_requested')=1 LIMIT 1").fetchone():
+                            required.add('camera-variation-timing-tolerant-v1')
                     if table=='production_runs' and 'private' in columns:
+                        if db.execute("SELECT 1 FROM production_runs WHERE json_type(private,'$.variation.timing_policy') IS NOT NULL LIMIT 1").fetchone():
+                            required.add('camera-variation-timing-tolerant-v1')
                         if db.execute("SELECT 1 FROM production_runs WHERE json_extract(private,'$.variation.creation_mode')='guided' LIMIT 1").fetchone():
                             required.add('camera-variation-guided-v1')
                         if db.execute("SELECT 1 FROM production_runs WHERE json_extract(private,'$.variation.creation_mode')='random' LIMIT 1").fetchone():

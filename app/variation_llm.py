@@ -19,12 +19,15 @@ framing枚举：wide/medium/close/detail；angle：eye_level/slight_low/slight_s
 不输出新人物、换装、换场景、重新布光或画风变更。每个镜头只选择一个主要运镜。'''
 
 
-def validate_plan(plan,duration,*,prompt_mode='strict'):
+def validate_plan(plan,duration,*,prompt_mode='strict',timing_policy=None,repairs=None):
+    from .variation_timing import TIMING_POLICY, normalize_timing
     def fail():raise ValueError('换拍法规划返回格式异常，请重试规划；尚未提交视频生成。')
     def timing_fail():raise ValueError('换拍法镜头时间不连续或超出视频时长，请重试规划；尚未提交视频生成。')
     if type(duration) not in (int,float) or not math.isfinite(duration) or duration<=0:timing_fail()
     plan=copy.deepcopy(plan)
     if prompt_mode not in ('strict', 'user_priority', 'motion'):fail()
+    if timing_policy not in (None, TIMING_POLICY):fail()
+    tolerant = prompt_mode == 'motion' and timing_policy == TIMING_POLICY
     user_priority = prompt_mode == 'user_priority'
     def text(v,n):return isinstance(v,str) and bool(v.strip()) and len(v)<=n
     if not isinstance(plan,dict) or set(plan)!={'summary','accepted_requests','conflicts','blocked','shots'}:fail()
@@ -38,9 +41,13 @@ def validate_plan(plan,duration,*,prompt_mode='strict'):
         if plan['shots']!=[] or not plan['conflicts']:fail()
         return plan
     max_shots = max(1, math.floor((duration+.005000001)/2)) if prompt_mode == 'motion' else 3
-    if not isinstance(plan['shots'],list) or not 1<=len(plan['shots'])<=max_shots:
+    if not isinstance(plan['shots'],list) or not plan['shots'] or (not tolerant and len(plan['shots'])>max_shots):
         if prompt_mode == 'motion':timing_fail()
         fail()
+    if tolerant:
+        for shot in plan['shots']:
+            if not isinstance(shot,dict) or set(shot)!={'start','end','framing','angle','move','action'}:fail()
+        normalize_timing(plan['shots'],duration,repairs if repairs is not None else [])
     cursor=0
     for index,shot in enumerate(plan['shots']):
         if not isinstance(shot,dict) or set(shot)!={'start','end','framing','angle','move','action'}:fail()
@@ -52,7 +59,7 @@ def validate_plan(plan,duration,*,prompt_mode='strict'):
             if abs(end-duration)>.005000001:timing_fail()
             end=duration
         if end<=start or end>duration:timing_fail()
-        if prompt_mode == 'motion' and duration >= 2 and not 2-.005000001 <= end-start <= 3+.005000001:
+        if prompt_mode == 'motion' and not tolerant and duration >= 2 and not 2-.005000001 <= end-start <= 3+.005000001:
             raise ValueError('动作分镜的每镜头时长需为2～3秒，请重试规划；尚未提交视频生成。')
         shot.update(start=start,end=end)
         if not all(isinstance(shot[k],str) for k in ('framing','angle','move')):fail()
@@ -76,7 +83,7 @@ def render_plan(plan):
     return '\n'.join(rows)
 
 
-def plan_variation(config, *, context, frames, references, on_diagnostic=None, creative_rules=None):
+def plan_variation(config, *, context, frames, references, on_diagnostic=None, creative_rules=None,timing_policy=None):
     if config.problem():raise ValueError(config.problem())
     messages=[{'type':'text','text':json.dumps(context,ensure_ascii=False,allow_nan=False)}]
     for label,path in [(f'动作视频打码帧 {f["timestamp"]:.2f}秒',f['path']) for f in frames]+references:
@@ -100,6 +107,10 @@ def plan_variation(config, *, context, frames, references, on_diagnostic=None, c
         system = USER_PRIORITY_SYSTEM+'\n测试版创作 Skill（遵循输出格式，创意以用户意图为准）：\n'+config.active_skill
     if creative_rules:
         system += '\n\n本次创作规则（取代预设拍法选择规则，其他约束仍有效）：\n'+creative_rules
+    if timing_policy:
+        from .variation_timing import TIMING_POLICY, TIMING_RULE
+        if timing_policy != TIMING_POLICY or config.prompt_mode != 'motion':raise ValueError('分镜时长规则版本不正确。')
+        system += '\n\n'+TIMING_RULE
     body={'model':config.model,'messages':[{'role':'system','content':system},
         {'role':'user','content':messages}],'response_format':{'type':'json_object'}}
     if config.thinking_enabled:
@@ -132,10 +143,11 @@ def plan_variation(config, *, context, frames, references, on_diagnostic=None, c
     except (KeyError,IndexError,TypeError):
         error=ValueError('换拍法 LLM 未返回有效 JSON 方案，尚未提交视频生成。')
         diagnose_failure(error);raise error from None
+    repairs=[]
     try:
-        result=validate_plan(plan,context['duration'],prompt_mode=config.prompt_mode)
+        result=validate_plan(plan,context['duration'],prompt_mode=config.prompt_mode,timing_policy=timing_policy,repairs=repairs)
     except ValueError as exc:
-        if on_diagnostic:on_diagnostic({'raw_plan':raw,'duration':context['duration'],'validation':'failed','error':str(exc)})
+        if on_diagnostic:on_diagnostic({'raw_plan':raw,'duration':context['duration'],'validation':'failed','error':str(exc),'timing_policy':timing_policy,'repairs':repairs})
         raise
-    if on_diagnostic:on_diagnostic({'raw_plan':raw,'duration':context['duration'],'validation':'passed','normalized_plan':result})
+    if on_diagnostic:on_diagnostic({'raw_plan':raw,'duration':context['duration'],'validation':'passed','normalized_plan':result,'timing_policy':timing_policy,'repairs':repairs})
     return result

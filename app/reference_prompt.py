@@ -42,6 +42,9 @@ def compose_exclusive_prompt(prompt, roles, *, person_video=False, scene_descrip
             rules.append(MOTION_FINAL_RULE)
         else:
             rules.append('保留原视频的核心展示内容，允许为新拍法服务的轻微姿态调整；不新增剧情，不生成打码痕迹。')
+        from .variation_timing import TIMING_POLICY, FINAL_TIMING_RULE
+        if variation_plan.get('prompt_mode') == 'motion' and variation_plan.get('timing_policy') == TIMING_POLICY:
+            rules.append(FINAL_TIMING_RULE)
     if identity:
         rules.append(f'人物来源：{identity}。锁定脸型、五官比例、肤色及人物身份，全片一致；忽略所有其他素材中的人物身份，不自行美化或重塑五官。')
     if person_video:

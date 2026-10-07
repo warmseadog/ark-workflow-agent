@@ -626,6 +626,14 @@ class ProductionStore:
             if row['status'] != 'needs_attention' or row['error_kind'] == 'submission_uncertain' or not (row['provider_task_id'] or row['result_url'] or base_ready or variation_retry):
                 raise Conflict('此任务无法直接恢复，请核对详情后复制为新草稿。')
             self.check_queue_limit(db,max_queued)
+            if variation_retry:
+                frozen=json.loads(row['private']).get('variation',{})
+                profile=frozen.get('config',{})
+                skill=profile.get('motion_skill','')
+                if profile.get('prompt_mode')=='motion' and not frozen.get('timing_policy') and '2～3秒' in skill and '2～5秒' not in skill:
+                    variation_data=json.loads(variation['data'])
+                    variation_data['timing_upgrade_requested']=True
+                    db.execute('UPDATE production_variations SET data=? WHERE run_id=?',(json.dumps(variation_data,ensure_ascii=False),ident))
             continuation = json.loads(state['data']) if state else {}
             if continuation.get('terminal_failure') or continuation.get('quality_rejected'):
                 # Only an explicit user resume after a failure or rejected seam

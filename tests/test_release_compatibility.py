@@ -9,6 +9,24 @@ def api():
     return importlib.import_module('app.release_compatibility')
 
 
+@pytest.mark.parametrize('table,field,value', [
+    ('production_runs','private',{'variation':{'timing_policy':'motion-timing-tolerant-v1'}}),
+    ('production_variations','data',{'timing_policy':'motion-timing-tolerant-v1'}),
+    ('production_variations','data',{'plan':{'timing_policy':'motion-timing-tolerant-v1'}}),
+    ('production_variations','data',{'timing_upgrade_requested':True}),
+])
+def test_tolerant_tasks_block_incompatible_downgrade(tmp_path,table,field,value):
+    data=tmp_path/'data';data.mkdir();target=tmp_path/'old';target.mkdir()
+    path=data/'state.db'
+    with sqlite3.connect(path) as db:
+        db.execute(f'CREATE TABLE {table}({field} TEXT)')
+        db.execute(f'INSERT INTO {table} VALUES (?)',(json.dumps(value),))
+    before=path.read_bytes()
+    with pytest.raises(ValueError,match='camera-variation-timing-tolerant-v1'):
+        api().assert_rollback_compatible(target,data)
+    assert path.read_bytes()==before
+
+
 @pytest.mark.parametrize('mode',['random','guided'])
 def test_old_reader_rejects_random_inspiration_tasks(tmp_path,mode):
     data=tmp_path/'data';data.mkdir();target=tmp_path/'old';target.mkdir()

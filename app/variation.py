@@ -41,10 +41,14 @@ def preflight(settings,store,draft,request):
     values['hashes']=[store.get_asset(x)['sha256'] for x in active]
     frozen = {**request,'config':asdict(config),'group_key':hashlib.sha256(json.dumps(values,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),
               'skill_version':config.skill_version}
+    if config.prompt_mode == 'motion':
+        from .variation_timing import TIMING_POLICY
+        frozen['timing_policy'] = TIMING_POLICY
+        frozen['skill_version'] = hashlib.sha256((frozen['skill_version']+'\n'+TIMING_POLICY).encode()).hexdigest()
     if request.get('creation_mode') in ('random','guided'):
         from .random_inspiration import CREATIVE_RULES, GUIDED_RULES
         frozen['creative_rules'] = GUIDED_RULES if request['creation_mode']=='guided' else CREATIVE_RULES
-        frozen['skill_version'] = hashlib.sha256((config.skill_version+'\n'+frozen['creative_rules']).encode()).hexdigest()
+        frozen['skill_version'] = hashlib.sha256((frozen['skill_version']+'\n'+frozen['creative_rules']).encode()).hexdigest()
     return frozen
 
 
@@ -76,6 +80,15 @@ def prepare(settings,store,run,video,faces,clothes,extra,config):
         return state['plan']
     store.update_run(ident,stage='variation_planning',message='正在结合素材与灵感设计新拍法',progress=48)
     frozen=run['private']['variation'];llm=VariationConfig(**frozen['config'])
+    from .variation_timing import TIMING_POLICY, PlanTimingError
+    policy = frozen.get('timing_policy') or state.get('timing_policy')
+    # Only an explicitly executed/retried, unplanned 2–3s task adopts tolerance.
+    # Completed plans above and historical 2–5s snapshots keep their semantics.
+    if not policy and state.get('timing_upgrade_requested') and llm.prompt_mode == 'motion' and '2～3秒' in llm.active_skill and '2～5秒' not in llm.active_skill:
+        policy = TIMING_POLICY
+    if policy:
+        if policy != TIMING_POLICY or llm.prompt_mode != 'motion':raise ValueError('分镜时长规则版本不正确。')
+        store.update_variation(ident,timing_policy=policy)
     duration,frames=source_frames(video,Path(video).parent/'variation-frames')
     from .model_catalog import capabilities
     if not capabilities(config.model,config.protocol)['follow_source'] and config.duration>0:duration=config.duration
@@ -100,6 +113,17 @@ def prepare(settings,store,run,video,faces,clothes,extra,config):
             creative_context = {'creation_nonce':ident, 'recent_plans':store.recent_variation_plans(frozen['group_key'],ident)}
             store.update_variation(ident,creative_context=creative_context)
         context.update(creative_context)
+    if policy:
+        from .reference_prompt import strip_reference_rules
+        context['original_prompt'] = strip_reference_rules(context['original_prompt'])
+    diagnostic_path=settings.storage_dir/'work'/ident/'variation-diagnostic.json'
+    previous_diagnostic = None
+    if diagnostic_path.is_file() and diagnostic_path.stat().st_size <= 2_000_000:
+        try:
+            previous_diagnostic=json.loads(diagnostic_path.read_text(encoding='utf-8'))
+            if not isinstance(previous_diagnostic,dict):previous_diagnostic=None
+        except (ValueError,OSError):pass
+    attempts=[]
     def diagnostic(value):
         # Private prompt-bearing data must not enter the public variation state.
         import os,tempfile
@@ -107,28 +131,56 @@ def prepare(settings,store,run,video,faces,clothes,extra,config):
         directory.mkdir(parents=True,exist_ok=True)
         fd,name=tempfile.mkstemp(dir=directory,prefix='.plan-',suffix='.json')
         path=Path(name)
+        attempts.append(value)
         try:
-            with os.fdopen(fd,'w',encoding='utf-8') as stream:json.dump(value,stream,ensure_ascii=False)
+            history=(previous_diagnostic or {}).get('attempts') or ([previous_diagnostic] if previous_diagnostic else [])
+            if not isinstance(history,list):history=[]
+            output={**value,'attempts':attempts,'previous_attempts':history[-10:]}
+            with os.fdopen(fd,'w',encoding='utf-8') as stream:json.dump(output,stream,ensure_ascii=False)
             path.replace(directory/'variation-diagnostic.json')
         finally:path.unlink(missing_ok=True)
     options = {'creative_rules':frozen['creative_rules']} if random or guided else {}
-    plan=plan_variation(llm,context=context,frames=frames,references=references,on_diagnostic=diagnostic,**options)
-    if random and not plan['blocked']:
-        from .random_inspiration import similar_plan, compact_plan
-        recent = context['recent_plans']
-        if similar_plan(plan,recent):
-            # Only one automatic retry per execution; a manual retry stays explicit.
-            store.update_run(ident,message='拍法与近期方案相似，正在重新构思')
-            context={**context,'avoid_plan':compact_plan(plan),
-                     'revision_request':'本方案与近期方案过于相似，请在不违背用户要求的前提下重新构思，不能只改措辞。'}
-            plan=plan_variation(llm,context=context,frames=frames,references=references,on_diagnostic=diagnostic,**options)
-            if not plan['blocked'] and similar_plan(plan,recent):
-                raise ValueError('随机拍法与近期方案仍过于相似，请重试规划或调整灵感；尚未提交视频生成。')
+    if policy:options['timing_policy']=policy
+    plan=None
+    # A manual retry may reuse the original rejected 2–3s output if it now passes
+    # every validator. This makes no provider request and never runs at deployment.
+    if policy and previous_diagnostic and not frozen.get('timing_policy') and not random:
+        try:
+            from .variation_llm import validate_plan
+            from .continuation_llm import _json_object
+            if abs(previous_diagnostic['duration']-duration) < 1e-9:
+                candidate=json.loads(previous_diagnostic['raw_plan'],object_pairs_hook=_json_object)
+                repairs=[]
+                plan=validate_plan(candidate,duration,prompt_mode=llm.prompt_mode,timing_policy=policy,repairs=repairs)
+                diagnostic({'raw_plan':previous_diagnostic['raw_plan'],'duration':duration,'validation':'passed',
+                            'normalized_plan':plan,'timing_policy':policy,'repairs':repairs,'reused_diagnostic':True})
+        except (ValueError,TypeError,KeyError):plan=None
+    # Timing repair and random diversity share one extra planner call.
+    if plan is None:
+        for attempt in range(2):
+            try:
+                plan=plan_variation(llm,context=context,frames=frames,references=references,on_diagnostic=diagnostic,**options)
+            except PlanTimingError as exc:
+                if not policy or attempt:raise
+                store.update_run(ident,message='正在调整分镜节奏')
+                context={**context,'revision_request':str(exc)+' 请保留用户动作要求，优先2～3秒，接受1～4秒，重新安排连续完整的分镜。'}
+                if attempts:context['previous_plan']=attempts[-1].get('raw_plan','')
+                continue
+            if random and not plan['blocked']:
+                from .random_inspiration import similar_plan, compact_plan
+                if similar_plan(plan,context['recent_plans']):
+                    if attempt:raise ValueError('随机拍法与近期方案仍过于相似，请重试规划或调整灵感；尚未提交视频生成。')
+                    store.update_run(ident,message='拍法与近期方案相似，正在重新构思')
+                    context={**context,'avoid_plan':compact_plan(plan),
+                             'revision_request':'本方案与近期方案过于相似，请在不违背用户要求的前提下重新构思，不能只改措辞。'}
+                    continue
+            break
     if llm.prompt_mode == 'user_priority':
         # This provenance comes from the frozen task, never from model output.
         plan={**plan,'prompt_mode':llm.prompt_mode,'user_inspiration':frozen['inspiration']}
     elif llm.prompt_mode == 'motion':
         plan={**plan,'prompt_mode':'motion'}
+    if policy:plan={**plan,'timing_policy':policy}
     if random or guided:
         # Trusted provenance comes from the frozen task, never from model JSON.
         plan={**plan,'creation_mode':frozen['creation_mode']}
