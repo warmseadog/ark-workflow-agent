@@ -244,10 +244,12 @@ class ArkPortraitClient:
             raise PortraitError('人物授权不可用，请重新认证或检查账号和项目。')
         return item
 
-    def list_groups(self):
+    def list_groups(self, *, name=None):
         result, tokens, token = [], set(), None
         for _ in range(10):
             payload = {'Filter': {'GroupType': self.person_type}, 'ProjectName': self.config.project_name, 'MaxResults': 100}
+            if name is not None:
+                payload['Filter']['Name'] = name
             if token: payload['NextToken'] = token
             page = self._request('ListAssetGroups', payload)
             if not isinstance(page.get('Items'), list): raise PortraitError('人物列表格式异常。')

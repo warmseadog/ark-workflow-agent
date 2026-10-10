@@ -142,7 +142,7 @@ def process(input_path, output_path, settings, options, config):
         with input_path.open('rb') as source:
             with requests.post(endpoint, headers=headers,
                     files={'video': (input_path.name, source, 'video/mp4')},
-                    data={'options': json.dumps(options.model_dump(mode='json', exclude={'replace_image'}))},
+                    data={'options': json.dumps(options.model_dump(mode='json', exclude={'replace_image', 'local_options'}))},
                     timeout=(min(15, config.timeout_seconds), config.timeout_seconds),
                     stream=True, allow_redirects=False) as response:
                 if response.status_code != 200:

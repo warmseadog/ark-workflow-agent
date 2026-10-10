@@ -10,7 +10,7 @@ PLATFORMS = {
     'bilibili': ('bilibili.com', 'b23.tv', 'bili2233.cn'),
 }
 LABELS = {'douyin': '抖音', 'xiaohongshu': '小红书', 'kuaishou': '快手', 'bilibili': 'B 站'}
-URL_RE = re.compile(r'https?://[^\s<>\u4e00-\u9fff，。！？；：、【】（）《》「」『』“”‘’\x00-\x1f]+', re.I)
+URL_RE = re.compile(r'https?://[^\s<>\[\]\u4e00-\u9fff，。！？；：、【】（）《》「」『』“”‘’\x00-\x1f]+', re.I)
 
 def platform_for_url(url):
     try:

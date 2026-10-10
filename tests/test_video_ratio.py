@@ -99,6 +99,6 @@ def test_preview_uses_requested_ratio_but_keeps_shared_cache_unframed(preview,mo
         assert submitted.status_code==200,submitted.text
         done=terminal(client,submitted.json()['id'])
         assert done['status']=='defaced'
-    assert len(redactions)==1
+    assert len(redactions)==3
     assert calls==[(b'video-redacted','16:9'),(b'video-redacted','1:1'),(b'video-redacted','adaptive')]
     assert post(client,ratio='invalid').status_code==422

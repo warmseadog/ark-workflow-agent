@@ -33,11 +33,11 @@ def test_preview_cache_keeps_original_and_keys_both_settings(tmp_path,monkeypatc
     monkeypatch.setattr(hair,'_detect_faces',lambda frame,threshold:seen.append(threshold) or [[30,40,70,80,.9]])
     first=hair.process_hairstyle(cfg,asset)
     again=hair.process_hairstyle(cfg,asset,{'mask_scale':1,'threshold':.2})
-    assert first['path']==again['path'] and seen==[.2]
+    assert first['path']!=again['path'] and seen==[.2,.2]
     assert first['settings']=={'mask_scale':1.,'threshold':.2} and first['faces_detected']==1
     assert np.array_equal(np.array(Image.open(asset['path'])),original)
     changed=hair.process_hairstyle(cfg,asset,{'mask_scale':1.05,'threshold':.15})
-    assert changed['path']!=first['path'] and seen==[.2,.15]
+    assert changed['path']!=first['path'] and seen==[.2,.2,.15]
     Path(asset['path']).write_bytes(b'changed')
     with pytest.raises(ValueError):hair.process_hairstyle(cfg,asset)
 
@@ -72,7 +72,7 @@ def test_mask_cache_verifies_output_and_rebuilds_unverified_entries(tmp_path, mo
     assert rebuilt['source_sha256'] == asset['sha256']
     assert rebuilt['output_sha256'] != asset['sha256']
     assert rebuilt['source_asset_id'] == 'hair-source'
-    # An identical independent upload can reuse pixels without inheriting an ID.
+    # An independent upload is processed independently without inheriting an ID.
     again = hair.process_hairstyle(cfg, {**asset, 'id': 'second-upload'})
     assert again['source_asset_id'] == 'second-upload'
 
@@ -90,6 +90,7 @@ def test_preview_api_validates_kind_and_returns_local_image(tmp_path,monkeypatch
     data=client.post('/api/production/hairstyle/preview',json={'asset_id':'hair'}).json()
     assert data['faces_detected']==1 and data['settings']['mask_scale']==1
     assert client.get(data['url']).headers['content-type']=='image/png'
+    assert client.get(data['url']).headers['cache-control']=='private, no-store'
     assert 'path' not in data
     assert client.post('/api/production/hairstyle/preview',json={'asset_id':'face'}).status_code==422
     assert client.get('/api/production/hairstyle/preview/not-a-key').status_code==404

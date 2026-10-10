@@ -1,0 +1,21 @@
+[Unit]
+Description=Retain recent verified Ark release snapshots
+After=ark-video-workflow.service
+
+[Service]
+Type=oneshot
+User=root
+Environment=ARK_SNAPSHOT_KEEP_LAST=2
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/ark-video-workflow/venv/bin/python -B /opt/ark-video-workflow/maintenance/snapshot_retention.py --config /etc/ark-video-release/config.json --keep-last ${ARK_SNAPSHOT_KEEP_LAST} --apply
+TimeoutStartSec=20min
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ark-video-workflow-backups
+

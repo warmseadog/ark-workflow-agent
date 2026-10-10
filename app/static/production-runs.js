@@ -55,6 +55,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     if(phase?.cached)return '复用缓存'+(phase.seconds>0?'（'+elapsed(phase.seconds)+'）':'');
     if(!phase||phase.status==='unknown'||phase.seconds==null)return '未记录';
     if(phase.status==='pending')return '尚未执行';
+    if(phase.refreshed)return '重新打码（'+elapsed(phase.seconds)+(phase.status==='running'?'，进行中':'')+'）';
     return elapsed(phase.seconds)+(phase.status==='running'?'（进行中）':'');
   }
   function phaseSummary(item){
@@ -172,7 +173,7 @@ window.createProductionRuns = ({api,changeDraft,retryWithoutAudio,accessoryLabel
     if(item.can_restore_draft&&item.copy_url)add('restore','复制到我的草稿',()=>restoreTask(item));
     if(!item.read_only){
     add('copy','复制为草稿',()=>changeDraft(()=>api('/runs/'+encodeURIComponent(item.id)+'/copy','POST',{})));
-    if(item.can_cancel)add('cancel','取消排队',async()=>{await api('/runs/'+item.id+'/cancel','POST',{});await refresh();});
+    if(item.can_cancel)add('cancel','取消任务',async()=>{await api('/runs/'+item.id+'/cancel','POST',{});await refresh();});
     if(item.can_resume)add('resume',item.error_kind==='continuation_seam_mismatch'?'重新生成尾段':'继续查询 / 下载',async()=>{
       if(item.error_kind==='continuation_seam_mismatch'&&!window.confirm('保留原基础片，重新调用视频模型生成尾段？本次会产生新的模型调用费用。'))return;
       await api('/runs/'+item.id+'/resume','POST',{});await refresh();

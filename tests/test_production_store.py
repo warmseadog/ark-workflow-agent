@@ -24,13 +24,61 @@ def test_snapshot_is_immutable_and_duplicate_submission_does_not_create_run(tmp_
     with pytest.raises(Conflict): store.create_run(draft['id'],2,'same-key',{})
 
 
-def test_claim_and_cancel_are_atomic(tmp_path):
+def test_claimed_run_can_cancel_before_submission(tmp_path):
     store=ProductionStore(tmp_path)
     draft=store.create_draft({})
     run=store.create_run(draft['id'],1,'key',{})
     assert store.claim_next()['id']==run['id']
     assert store.claim_next() is None
-    with pytest.raises(Conflict): store.cancel_run(run['id'])
+    assert store.cancel_run(run['id'])['status'] == 'cancelled'
+
+
+@pytest.mark.parametrize('stage', ['queued', 'authorizing', 'preprocess', 'upload', 'variation_planning'])
+def test_local_processing_can_cancel_in_detail_and_list(tmp_path, stage):
+    store = ProductionStore(tmp_path)
+    draft = store.create_draft({})
+    run = store.create_run(draft['id'], 1, 'key', {})
+    store.update_run(run['id'], status='running', stage=stage)
+    assert store.get_run(run['id'])['can_cancel']
+    assert store.page_runs(1, 10, [])['items'][0]['can_cancel']
+    assert store.cancel_run(run['id'])['status'] == 'cancelled'
+    assert not store.begin_submission(run['id'])
+
+
+def test_submission_atomically_prevents_cancellation(tmp_path):
+    store = ProductionStore(tmp_path)
+    draft = store.create_draft({})
+    run = store.create_run(draft['id'], 1, 'key', {})
+    store.claim_next()
+    assert store.begin_submission(run['id'])
+    assert not store.get_run(run['id'])['can_cancel']
+    assert not store.page_runs(1, 10, [])['items'][0]['can_cancel']
+    with pytest.raises(Conflict):
+        store.cancel_run(run['id'])
+
+
+def test_concurrent_cancel_and_submission_have_only_one_winner(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    store = ProductionStore(tmp_path)
+    draft = store.create_draft({})
+    for index in range(8):
+        run = store.create_run(draft['id'], 1, str(index), {})
+        store.update_run(run['id'], status='running', stage='upload')
+        barrier = Barrier(2)
+        def act(cancel):
+            barrier.wait(timeout=5)
+            try:
+                return bool(store.cancel_run(run['id'])) if cancel else store.begin_submission(run['id'])
+            except Conflict:
+                return False
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(act, [True, False]))
+        assert sum(outcomes) == 1
+        current = store.get_run(run['id'])
+        assert (current['status'] == 'cancelled') == outcomes[0]
+        if outcomes[1]:
+            assert current['stage'] == 'submitting'
 
 
 def test_recovery_never_resubmits_uncertain_submission(tmp_path):

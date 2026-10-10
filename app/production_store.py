@@ -17,6 +17,11 @@ from .reference_roles import ACCESSORY_LABELS
 _connection_setup_lock = RLock()
 
 
+def can_cancel_before_submission(run, has_remote=False):
+    return (run['status'] in {'queued', 'running'} and not has_remote
+            and run['stage'] in {'queued', 'authorizing', 'preprocess', 'upload', 'variation_planning'})
+
+
 def default_name(person=None):
     return datetime.fromisoformat(now()).astimezone(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
 
@@ -293,7 +298,7 @@ class ProductionStore:
         value['can_resume'] = value['status'] == 'needs_attention' and has_remote and value['error_kind'] != 'submission_uncertain'
         if value['status']=='needs_attention' and value['stage']=='variation_planning' and value['variation'] and not value['variation'].get('plan',{}).get('blocked'):
             value['can_resume']=True
-        value['can_cancel'] = value['status'] == 'queued' and not has_remote
+        value['can_cancel'] = can_cancel_before_submission(value, has_remote)
         value['can_delete'] = value['status'] != 'running' and (value['status'] != 'queued' or not has_remote)
         preparation = self.get_preparation(value['id'])
         value['person_preparation'] = self.public_preparation(preparation)
@@ -490,7 +495,7 @@ class ProductionStore:
             if variation:item['can_retry_without_audio']=False
             if variation and item['status']=='needs_attention' and item['stage']=='variation_planning' and not variation.get('plan',{}).get('blocked'):
                 item['can_resume']=True
-            item['can_cancel']=not item['legacy'] and item['status']=='queued' and not remote
+            item['can_cancel']=not item['legacy'] and can_cancel_before_submission(item, remote)
             item['can_delete']=item['status']!='running' and (item['status']!='queued' or (not item['legacy'] and not remote))
             preparation = None if item['legacy'] else self.get_preparation(item['id'])
             item['person_preparation'] = self.public_preparation(preparation)
@@ -549,10 +554,13 @@ class ProductionStore:
             db.execute('INSERT OR REPLACE INTO production_continuations VALUES (?,?)', (ident,json.dumps(state,ensure_ascii=False)))
         return state
 
-    def set_phase(self, ident, phase, *, cached=False):
+    def set_phase(self, ident, phase, *, cached=False, refreshed=False):
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
-            run_phases.transition(db, ident, phase, now(), cached=cached)
+            row = db.execute('SELECT status FROM production_runs WHERE id=?', (ident,)).fetchone()
+            if row and row['status'] == 'cancelled':
+                return
+            run_phases.transition(db, ident, phase, now(), cached=cached, refreshed=refreshed)
 
     def update_run(self, ident, **changes):
         allowed = {'status','stage','message','progress','error','error_kind','request_id','provider_task_id','result_url'}
@@ -585,17 +593,33 @@ class ProductionStore:
             db.execute("UPDATE production_runs SET status='running',updated_at=? WHERE id=?", (stamp,row['id']))
         return self.get_run(row['id'], private=True)
 
+    def begin_submission(self, ident):
+        """Claim submission under the same write lock as cancellation."""
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT * FROM production_runs WHERE id=?', (ident,)).fetchone()
+            if not row:
+                raise LookupError('找不到任务。')
+            if row['status'] == 'cancelled':
+                return False
+            if not can_cancel_before_submission(row, row['provider_task_id'] or row['result_url']):
+                raise Conflict('任务已进入模型提交阶段。')
+            db.execute("UPDATE production_runs SET stage='submitting',message='正在提交模型任务',progress=65,updated_at=? WHERE id=?", (now(), ident))
+        return True
+
     def cancel_run(self, ident):
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
-            row = db.execute('SELECT status,provider_task_id,result_url FROM production_runs WHERE id=?',(ident,)).fetchone()
+            row = db.execute('SELECT * FROM production_runs WHERE id=?',(ident,)).fetchone()
             if not row:
                 raise LookupError('找不到任务。')
-            if row['status'] != 'queued' or row['provider_task_id'] or row['result_url']:
-                raise Conflict('只能撤销尚未开始的排队任务。')
+            state = db.execute('SELECT data FROM production_continuations WHERE run_id=?', (ident,)).fetchone()
+            remote = row['provider_task_id'] or row['result_url'] or (state and json.loads(state['data']).get('base_ready'))
+            if not can_cancel_before_submission(row, remote):
+                raise Conflict('只能取消尚未提交到模型服务的任务；提交中或已提交的任务无法取消。')
             stamp = now()
             self._transition_timing(db, ident, 'cancelled', stamp)
-            db.execute("UPDATE production_runs SET status='cancelled',message='已撤销排队',updated_at=? WHERE id=?",(stamp,ident))
+            db.execute("UPDATE production_runs SET status='cancelled',message='已取消，未提交模型生成',updated_at=? WHERE id=?",(stamp,ident))
         return self.get_run(ident)
 
     @queued_write

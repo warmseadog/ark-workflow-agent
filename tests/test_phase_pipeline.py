@@ -20,7 +20,6 @@ def test_worker_measures_lock_wait_separately_from_masking_and_cache(setup, monk
     def mask(src, dst, *args):
         seconds[0] += 7
         dst.write_bytes(b'masked')
-    monkeypatch.setattr(worker, 'cache_writer', lambda _: BusyLock())
     monkeypatch.setattr(worker, 'run_deface', mask)
     for index in range(2):
         run = store.create_run(draft['id'], 1, str(index), private)
@@ -28,9 +27,9 @@ def test_worker_measures_lock_wait_separately_from_masking_and_cache(setup, monk
         result = store.get_run(run['id'])
         assert result['status'] == 'succeeded'
         phases = result['timing']['phases']
-        assert phases['waiting']['seconds'] == 3
-        assert phases['masking']['seconds'] == (0 if index else 7)
-        assert phases['masking'].get('cached', False) is bool(index)
+        assert phases['waiting']['seconds'] == 0
+        assert phases['masking']['seconds'] == 7
+        assert not phases['masking'].get('cached', False)
 
 
 def test_real_provider_upload_poll_download_are_exclusive_phases(setup, monkeypatch):
@@ -91,8 +90,8 @@ def test_hairstyle_internal_lock_and_cached_mask_are_measured(setup, monkeypatch
         assert value['status'] == 'succeeded', value['error']
         phases = value['timing']['phases']
         assert phases['waiting']['seconds'] == 2
-        assert phases['masking']['seconds'] == (0 if index else 5)
-        assert phases['masking'].get('cached', False) is bool(index)
+        assert phases['masking']['seconds'] == 5
+        assert not phases['masking'].get('cached', False)
 
 
 def test_continuation_model_upload_and_finalization_accumulate_once(setup, monkeypatch):

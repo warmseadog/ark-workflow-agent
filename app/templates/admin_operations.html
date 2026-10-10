@@ -6,6 +6,7 @@
   <link rel="stylesheet" href="/static/admin-settings.css?v=20261007-standby-1">
   <link rel="stylesheet" href="/static/account.css?v=20261005-admin-workflow-1">
   <link rel="stylesheet" href="/static/admin-operations.css?v=20261005-admin-workflow-1">
+  <link rel="stylesheet" href="/static/prompt-workbench.css?v=20261009-1">
   <script src="/static/account.js?v=20261005-admin-workflow-1"></script>
 </head>
 <body class="operations-page">
@@ -14,8 +15,9 @@
     <p>管理普通用户、共享提示词和任务；全局并发由超级管理员设置。</p>
     <section id="section-overview" class="section"><h2>任务调度</h2></section>
     <section id="variation" class="section">{% include "variation_settings_panel.html" %}</section>
-    <section id="section-prompts" class="section"><h2>提示词机制与待用版本</h2>
+    <section id="section-prompts" class="section"><h2>提示词设置</h2>
       <p id="mechanism-load-status" role="status"></p>
+      {% include "prompt_workbench.html" %}
       {% include "prompt_mechanism_panel.html" %}
       <details id="operations-direct-edit" class="card settings-details"><summary>直接编辑共享模板（保存后可能影响新建草稿）</summary>
       <p class="notice">此处为原有模板编辑入口。直接保存当前默认模板，会改变之后新建草稿的正文；旧草稿保留自身内容。仅想保存候选方案，请使用上方“保存待用版本”。</p>
@@ -35,8 +37,9 @@
       </details>
     </section>
   </main>
-  <script src="/static/variation-settings.js?v=20261007-motion-1"></script>
+  <script src="/static/variation-settings.js?v=20261009-prompt-workbench-1"></script>
   <script src="/static/scheduling-settings.js?v=20261005-admin-workflow-1"></script>
   <script src="/static/prompt-mechanism.js?v=20261007-standby-1"></script>
-  <script src="/static/admin-operations.js?v=20261007-standby-1"></script>
+  <script src="/static/prompt-workbench.js?v=20261009-1"></script>
+  <script src="/static/admin-operations.js?v=20261009-prompt-workbench-1"></script>
 </body></html>

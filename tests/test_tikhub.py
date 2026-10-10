@@ -29,6 +29,124 @@ def test_cover_and_music_are_not_treated_as_video():
     with pytest.raises(MediaPipelineError, match='视频'):
         parse_media('xiaohongshu', {'cover': {'url': 'https://cdn.example/cover.jpg'}, 'music': {'play_url': 'https://cdn.example/music.mp3'}})
 
+
+def test_douyin_live_photo_prefers_embedded_h264_over_outer_slideshow_metadata():
+    from app.tikhub import parse_media
+    data = {'aweme_detail': {'aweme_type': 68, 'is_live_photo': 1,
+        'video': {'duration': 31000, 'play_addr': {'url_list': ['https://cdn.example/outer-placeholder']}},
+        'images': [{'video': {'duration': 2867,
+            'play_addr_h264': {'url_list': ['https://cdn.example/live-h264.mp4']},
+            'play_addr': {'url_list': ['https://cdn.example/live-hevc.mp4']}}}]}}
+    plan = parse_media('douyin', data)
+    assert plan.videos == ['https://cdn.example/live-h264.mp4']
+    assert plan.live_photo
+    assert plan.audio is None  # Preserve the actual clip's audio, not the 31-second music wrapper.
+
+
+def test_douyin_multiple_live_photos_keep_order_and_ignore_still_image_urls():
+    from app.tikhub import parse_media
+    plan = parse_media('douyin', {'aweme_detail': {'images': [
+        {'url_list': ['https://cdn.example/still.jpg']},
+        {'video': {'play_addr': {'url_list': ['https://cdn.example/first.mp4']}}},
+        {'video': {'play_addr_h264': {'url_list': ['https://cdn.example/second.mp4']}}},
+    ]}})
+    assert plan.videos == ['https://cdn.example/first.mp4', 'https://cdn.example/second.mp4']
+
+
+def test_douyin_still_album_does_not_download_fake_outer_video():
+    from app.tikhub import parse_media
+    with pytest.raises(MediaPipelineError, match='静态图片'):
+        parse_media('douyin', {'aweme_detail': {'aweme_type': 68,
+            'video': {'play_addr': {'url_list': ['https://cdn.example/not-a-video']}},
+            'images': [{'url_list': ['https://cdn.example/still.jpg']}]}})
+
+
+def test_live_photo_download_normalizes_mixed_clips_and_preserves_audio(tmp_path, monkeypatch):
+    import io
+    import subprocess
+    import imageio_ffmpeg
+    import cv2
+    import numpy as np
+    from app import tikhub
+    from app.person_video import probe
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    media = {}
+    for name, size, color, audio in [('first', '64x48', 'red', True), ('second', '48x64', 'blue', False)]:
+        path = tmp_path/(name+'.mp4')
+        command = [ffmpeg, '-v', 'error', '-y', '-f', 'lavfi', '-i', f'color=c={color}:s={size}:r=24:d=1.5']
+        if audio:
+            command += ['-f', 'lavfi', '-i', 'sine=frequency=440:duration=1.5', '-c:a', 'aac']
+        subprocess.run(command+['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-t', '1.5', str(path)], check=True, capture_output=True)
+        media['https://cdn.example/'+name] = path.read_bytes()
+    monkeypatch.setattr(tikhub, 'get_tikhub_key', lambda cfg: 'test-key')
+    monkeypatch.setattr(tikhub, 'api_get', lambda *a: {'aweme_detail': {'images': [
+        {'video': {'play_addr': {'url_list': [url]}}} for url in media]}})
+    def download(url, headers):
+        assert 'Authorization' not in headers
+        response = requests.Response(); response.status_code = 200
+        response.headers['Content-Type'] = 'video/mp4'
+        response.raw = io.BytesIO(media[url])
+        return response, url
+    monkeypatch.setattr(tikhub, 'public_get', download)
+    output = tikhub.download_tikhub_video('https://v.douyin.com/live', tmp_path/'import.mp4', replace(settings, storage_dir=tmp_path))
+    info = probe(output)
+    assert info['duration'] == pytest.approx(3, abs=.15)
+    assert (info['width'], info['height'], info['fps']) == (64, 48, 30)
+    capture = cv2.VideoCapture(str(output))
+    try:
+        for second, channel in [(.5, 2), (2, 0)]:
+            capture.set(cv2.CAP_PROP_POS_MSEC, second*1000)
+            ok, frame = capture.read()
+            assert ok and frame[24, 32, channel] > 220
+    finally:
+        capture.release()
+    decoded = subprocess.run([ffmpeg, '-v', 'error', '-i', str(output), '-map', '0:a:0',
+                              '-ac', '1', '-ar', '8000', '-f', 'f32le', '-'], check=True, capture_output=True)
+    samples = np.frombuffer(decoded.stdout, dtype=np.float32)
+    assert np.max(np.abs(samples[4000:8000])) > .05
+    assert np.max(np.abs(samples[16000:20000])) < .001
+    assert not list(tmp_path.glob('tikhub-*'))
+
+
+def test_live_photo_album_does_not_accumulate_audio_padding_or_drop_final_frames(tmp_path, monkeypatch):
+    import io
+    import subprocess
+    import imageio_ffmpeg
+    import cv2
+    from app import tikhub
+    from app.person_video import probe
+    media = {}
+    for color in ('blue', 'red'):
+        path = tmp_path/(color+'.mp4')
+        subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-v', 'error', '-y', '-f', 'lavfi', '-i',
+                        f'color=c={color}:s=32x32:r=30', '-frames:v', '86', '-c:v', 'libx264', str(path)],
+                       check=True, capture_output=True)
+        media['https://cdn.example/'+color] = path.read_bytes()
+    monkeypatch.setattr(tikhub, 'get_tikhub_key', lambda cfg: 'test-key')
+    monkeypatch.setattr(tikhub, 'resolve_media', lambda *a: tikhub.MediaPlan(
+        ['https://cdn.example/blue']*29+['https://cdn.example/red'], live_photo=True))
+    def download(url, headers):
+        response = requests.Response(); response.status_code = 200
+        response.headers['Content-Type'] = 'video/mp4'; response.raw = io.BytesIO(media[url])
+        return response, url
+    monkeypatch.setattr(tikhub, 'public_get', download)
+    output = tikhub.download_tikhub_video('https://v.douyin.com/album', tmp_path/'album.mp4', replace(settings, storage_dir=tmp_path))
+    assert probe(output)['duration'] == pytest.approx(86, abs=.01)
+    decoded = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-v', 'error', '-i', str(output),
+                              '-map', '0:a:0', '-ac', '1', '-ar', '8000', '-f', 's16le', '-'],
+                             check=True, capture_output=True)
+    assert len(decoded.stdout)/(8000*2) == pytest.approx(86, abs=.1)
+    capture = cv2.VideoCapture(str(output))
+    try:
+        capture.set(cv2.CAP_PROP_POS_MSEC, 83.3*1000)
+        ok, frame = capture.read()
+        assert ok and frame[16, 16, 2] > 220
+        capture.set(cv2.CAP_PROP_POS_MSEC, 85.95*1000)
+        ok, frame = capture.read()
+        assert ok and frame[16, 16, 2] > 220
+    finally:
+        capture.release()
+
 def test_bilibili_dash_keeps_audio_and_highest_video():
     from app.tikhub import parse_media
     plan = parse_media('bilibili', {'data': {'dash': {

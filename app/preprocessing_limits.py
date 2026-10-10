@@ -14,6 +14,11 @@ def _cloud_capacity():
 
 
 cloud_slots = threading.BoundedSemaphore(_cloud_capacity())
+# All local video masking entry points (including external-service fallback)
+# share these slots in the single application process. Other CPU preparation
+# retains its existing lock and cannot accidentally serialize video masking.
+LOCAL_REDACTION_CONCURRENCY = 3
+local_redaction_slots = threading.BoundedSemaphore(LOCAL_REDACTION_CONCURRENCY)
 local_lock = threading.RLock()
 _cache_guard = threading.Lock()
 _cache_locks = {}

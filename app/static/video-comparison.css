@@ -14,7 +14,10 @@
 .comparison-controls input[type=range] { flex:1; width:100px; min-width:80px; }
 .comparison-controls select,.comparison-controls button,.comparison-heading button { min-height:36px; padding:6px 10px; border:1px solid #d5dbd0; border-radius:7px; background:white; font:inherit; font-size:13px; }
 .comparison-controls output { font-variant-numeric:tabular-nums; font-size:12px; }
-#comparison-status { font-size:12px; color:#62685d; line-height:1.5; }
+#comparison-status,#comparison-export-status { font-size:12px; color:#62685d; line-height:1.5; }
+#comparison-export-status:empty { display:none; }
+#comparison-download { white-space:nowrap; cursor:pointer; }
+#comparison-download:disabled { opacity:.55; cursor:default; }
 .run-phase-summary { display:block; font-size:11px; color:var(--muted,#697164); line-height:1.6; }
 .run-phase-details { display:flex; flex-wrap:wrap; gap:8px 18px; padding:0; list-style:none; }
 @media(max-width:600px) {

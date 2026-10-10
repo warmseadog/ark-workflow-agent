@@ -32,7 +32,7 @@ def resolve_request(request, root, actor):
     method = request.method
     allowed = False
     if resource == 'production':
-        allowed = ((method in {'GET','HEAD'} and re.fullmatch(r'/(?:model-options|drafts(?:/[a-f0-9]{32})?|assets(?:/[a-f0-9]{32}(?:/(?:file|thumbnail|preview|reference-status))?)?|runs(?:/[a-f0-9]{32}(?:/(?:playback(?:/(?:original|smooth))?|download|poster|defaced|base))?)?)', suffix))
+        allowed = ((method in {'GET','HEAD'} and re.fullmatch(r'/(?:model-options|drafts(?:/[a-f0-9]{32})?|assets(?:/[a-f0-9]{32}(?:/(?:file|thumbnail|preview|reference-status))?)?|runs(?:/[a-f0-9]{32}(?:/(?:playback(?:/(?:original|smooth))?|download|comparison|poster|defaced|base))?)?)', suffix))
                    or (method == 'POST' and suffix in {'/assets','/assets/import','/drafts','/runs','/prompt-preview','/hairstyle/preview','/inspiration-assist'})
                    or (method in {'GET','HEAD'} and re.fullmatch(r'/hairstyle/preview/[a-f0-9]+', suffix))
                    or (method == 'PUT' and re.fullmatch(r'/drafts/[a-f0-9]{32}', suffix)))
@@ -69,6 +69,7 @@ def restore_draft(root, actor, user_id, run_id, key):
     ident = hashlib.sha256((actor['id']+'\0'+user_id+'\0'+run_id+'\0'+key).encode()).hexdigest()[:32]
     values = {k:v for k,v in run['snapshot'].items() if k in _DRAFT_FIELDS}
     values.pop('name', None)
+    values['force_redaction'] = True
     values['delegation'] = {'actor_id':actor['id'], 'owner_id':user_id, 'source_run_id':run_id}
     accounts = Accounts(tenancy.config_root(root))
     with accounts.active_user(user_id):

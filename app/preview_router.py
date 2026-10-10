@@ -9,10 +9,8 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import replace
-import hashlib
 import json
 from pathlib import Path
-import shutil
 import threading
 import uuid
 
@@ -25,7 +23,7 @@ _initialized = set()
 _pending = {}
 _MASK_FIELDS = frozenset({'blur_style', 'style', 'shape', 'mask_mode',
                           'robust_tracking', 'mask_scale', 'mosaic_size',
-                          'threshold', 'detection_size', 'keep_audio'})
+                          'threshold', 'detection_size', 'keep_audio', 'local_options'})
 _FAILED = '预览处理失败，请重试。'
 _RESTARTED = '服务重启中断了预览，请重新提交。'
 _PRIVATE = {'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'}
@@ -156,47 +154,36 @@ def _update(store, ident, status, error=None):
 def _work(settings, store, ident, source_id, mask):
     try:
         from . import production_worker, redaction_service
-        from .source_clip import clip_video, fingerprint as clip_fingerprint
+        from .source_clip import clip_video
         values = json.loads(mask)
         values.pop('service_fingerprint', None)
         clip = values.pop('source_clip', None)
         ratio = values.pop('ratio', 'adaptive')
         options = production_worker.mask_options(values)
-        from .preprocessing_limits import cache_writer, local_lock
+        from .preprocessing_limits import local_lock
         # Local previews remain queued while local processing is occupied.
         # Recheck the source after that wait, before any source bytes are read.
         with local_lock if redaction_service.load_config(settings).mode == 'local' else nullcontext():
             asset, source = _source(store, source_id)
         output = _output(store, ident)
-        key = hashlib.sha256((asset['sha256'] +
-            json.dumps(options.model_dump(mode='json'), sort_keys=True) +
-            redaction_service.fingerprint(settings) + clip_fingerprint(clip)).encode()).hexdigest()
-        cache = _inside(store.storage, 'cache', 'redacted', key + '.mp4')
-        # Only identical tenant/cache inputs serialize; cloud calls share media's limiter.
-        with cache_writer(cache):
-            _update(store, ident, 'running')
-            output.parent.mkdir(parents=True, exist_ok=True)
-            temporary = output.with_name('defaced.tmp.mp4')
-            if cache.is_file():
-                shutil.copyfile(cache, temporary)
-            else:
-                with local_lock:
-                    _, source = _source(store, source_id)
-                    source = clip_video(source,output.parent/'source-clip.mp4',clip)
-                production_worker.run_deface(source, temporary, settings, options)
+        _update(store, ident, 'running')
+        output.parent.mkdir(parents=True, exist_ok=True)
+        temporary = output.with_name('defaced.tmp.mp4')
+        try:
+            with local_lock:
+                _, source = _source(store, source_id)
+                source = clip_video(source,output.parent/'source-clip.mp4',clip)
+            production_worker.run_deface(source, temporary, settings, options)
             if not temporary.is_file() or temporary.stat().st_size == 0:
                 raise ValueError('No preview output')
             temporary.replace(output)
-            if not cache.is_file():
-                cache.parent.mkdir(parents=True, exist_ok=True)
-                cache_tmp = _inside(store.storage, 'cache', 'redacted', key + '.tmp.mp4')
-                shutil.copyfile(output, cache_tmp)
-                cache_tmp.replace(cache)
             from .video_framing import reframe_video
             with local_lock:
                 framed = reframe_video(output, output.with_name('framed.mp4'), ratio)
             if framed != output:
                 framed.replace(output)
+        finally:
+            temporary.unlink(missing_ok=True)
         # Finish and release admission atomically: polling a terminal state must
         # not race with a stale pending count on the next POST.
         with _admission_lock:
@@ -238,7 +225,9 @@ def _submit(settings, store, source_id, mask):
         _pending[key] = _pending.get(key, 0) + 1
         try:
             if _executor is None:
-                _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='redaction-preview')
+                from .preprocessing_limits import LOCAL_REDACTION_CONCURRENCY
+                _executor = ThreadPoolExecutor(max_workers=LOCAL_REDACTION_CONCURRENCY,
+                                               thread_name_prefix='redaction-preview')
             _executor.submit(_work, settings, store, ident, source_id, mask)
         except Exception:
             try:

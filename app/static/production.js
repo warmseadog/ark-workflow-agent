@@ -862,9 +862,6 @@
     }
   }
   async function prepareVideo(body, fingerprint, isGeneration) {
-    if (job?.defaced_url && preparedSignature === fingerprint && (job.status === 'defaced' || (!isGeneration && job.status === 'succeeded'))) {
-      render(job, false); previewStatus.textContent = '预览已就绪'; return job;
-    }
     if (!sourceItem()) throw new Error(sourceUrl.value.trim() ? '请先确认并加载视频链接。' : '请重新选择参考视频。');
     previewStatus.textContent = '正在处理预览…';
     if (isGeneration) { generateButton.textContent = '正在准备视频…'; status.textContent = '正在准备视频'; }

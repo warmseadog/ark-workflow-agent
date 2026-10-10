@@ -2,6 +2,7 @@
   'use strict';
   const form=document.getElementById('variation-form'); if(!form)return;
   const fields=form.querySelector('fieldset'), status=document.getElementById('variation-status'), retry=document.getElementById('variation-reload');
+  let baseline={};
   const note=(text,error=false)=>{status.textContent=text;status.hidden=!text;status.dataset.error=String(error);};
   function mode(){
     for(const group of form.querySelectorAll('[data-prompt-mode]')){
@@ -18,6 +19,7 @@
     } finally {clearTimeout(timer);}
   }
   function fill(c){
+    baseline={...c};
     for(const key of ['model','base_url','timeout_seconds','template','skill','reasoning_effort','max_completion_tokens','prompt_mode','user_priority_template','user_priority_skill','motion_template','motion_skill'])form.elements[key].value=c[key];
     mode();
     form.elements.thinking_enabled.checked=c.thinking_enabled;
@@ -34,6 +36,8 @@
     event.preventDefault();if(fields.disabled||!form.reportValidity())return;
     const values=Object.fromEntries(new FormData(form));values.enabled=form.elements.enabled.checked;values.clear_api_key=form.elements.clear_api_key.checked;values.timeout_seconds=Number(values.timeout_seconds);
     values.thinking_enabled=form.elements.thinking_enabled.checked;values.max_completion_tokens=Number(values.max_completion_tokens);
+    // Other prompt editors share this store. Never resend untouched stale prose.
+    for(const key of Object.keys(values))if(values[key]===baseline[key])delete values[key];
     fields.disabled=true;note('正在保存…');
     try{const c=await request('PUT',values);fill(c);note('换拍法配置已保存，用于新任务。'+c.problem);void window.InspirationSettings?.refreshProfile();}
     catch(e){note(e.name==='AbortError'?'保存超时，请重新加载核对结果。':e.message,true);}

@@ -127,6 +127,47 @@ def test_comparison_sync_clip_continuation_single_audio_and_cleanup(browser,comp
         page.close()
 
 
+@pytest.mark.parametrize('width', [1440, 390])
+def test_comparison_download_button_exports_selected_audio_and_recovers(browser, comparison_media, width):
+    page = browser.new_page(viewport={'width': width, 'height': 900}, accept_downloads=True)
+    requests = []
+    def route(req):
+        if '/comparison?' in req.request.url:
+            requests.append(req.request.url)
+            if len(requests) == 1:
+                req.fulfill(status=503, json={'detail': '导出繁忙，请重试'})
+            else:
+                req.fulfill(content_type='video/mp4', body=base64.b64decode(comparison_media['result'].split(',')[1]))
+        else:
+            req.fulfill(content_type='text/html', body='<html><body></body></html>')
+    page.route('http://comparison.test/**', route)
+    try:
+        page.goto('http://comparison.test/')
+        page.add_style_tag(path=str(ROOT/'app/static/video-comparison.css'))
+        page.add_script_tag(path=str(ROOT/'app/static/video-comparison.js'))
+        page.evaluate("""media => {
+          window.comparison=createVideoComparison({readRun:async()=>({
+            name:'测试作品',download_url:media.result,comparison_url:'/api/production/runs/one/comparison',
+            snapshot:{source_asset_id:'s',assets:[{id:'s',kind:'video',url:media.source}]}
+          })}); comparison.open({id:'one'});
+        }""", comparison_media)
+        button = page.get_by_role('button', name='下载对比视频', exact=True)
+        expect(button).to_be_enabled()
+        page.locator('#comparison-audio').select_option('source')
+        button.click()
+        expect(page.locator('#comparison-export-status')).to_contain_text('导出繁忙')
+        expect(button).to_be_enabled()
+        with page.expect_download() as download:
+            button.click()
+        assert download.value.suggested_filename == '测试作品-对比.mp4'
+        assert requests == ['http://comparison.test/api/production/runs/one/comparison?audio=source'] * 2
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        page.locator('#comparison-close').click()
+        expect(page.locator('#comparison-download')).to_be_disabled()
+    finally:
+        page.close()
+
+
 def test_comparison_discards_closed_read_and_maps_legacy_slow_clip(browser,comparison_media):
     page = browser.new_page()
     try:
@@ -209,7 +250,7 @@ def test_super_admin_scoped_comparison_restore_retry_and_phase_details(browser,c
           window.currentAccount={id:'admin',role:'super_admin'};window.accountReady=Promise.resolve();
           window.requests=[];window.restores=[];
           const item={id:'run',user_id:'owner',username:'Owner',name:'Task',status:'succeeded',created_at:'2026-10-05T00:00:00Z',read_only:true,
-            download_url:media.result,can_restore_draft:true,restore_url:'/api/admin/delegated/owner/runs/run/restore',
+            download_url:media.result,can_restore_draft:true,copy_url:'/api/admin/delegated/owner/runs/run/restore',
             timing:{available:true,total_seconds:20,queue_seconds:1,execution_seconds:19,paused_seconds:0,
               phases:{waiting:{seconds:1,status:'complete'},masking:{seconds:0,status:'complete',cached:true},upload:{seconds:null,status:'unknown'},model:{seconds:16,status:'complete'},other:{seconds:3,status:'complete'}}}};
           const full={...item,snapshot:{source_asset_id:'action',assets:[{id:'action',kind:'video',url:media.source}]}};

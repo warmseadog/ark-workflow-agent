@@ -121,11 +121,27 @@ def _execute_record(store: WorkflowStore, task: dict[str, Any], settings: Settin
                 redaction = store.get_stage_task(data["redaction_task_id"])
                 if redaction["project_id"] != project_id or redaction["status"] != "succeeded":
                     raise ConflictError("redaction artifact is not available for this project")
-                source = redaction["output"]["artifact"]["path"]
+                original = next(asset for asset in store.list_assets(project_id)
+                                if asset['id'] == redaction['input']['source_asset_id'])
+                work = settings.storage_dir/'workflow'/project_id/'generation'/task['id']
+                work.mkdir(parents=True,exist_ok=True)
+                source_path = Path(original['uri'])
+                if original['kind'] == 'url':
+                    source_path = download_video(original['uri'],work/'source.mp4',settings)
+                options = dict(redaction['input'].get('options') or {})
+                options.pop('idempotency_key',None)
+                temporary = work/'fresh-redaction.tmp.mp4'
+                source = work/'fresh-redaction.mp4'
+                try:
+                    temporary.unlink(missing_ok=True)
+                    run_deface(source_path,temporary,freeze_redaction(settings),BlurOptions(**options))
+                    temporary.replace(source)
+                finally:
+                    temporary.unlink(missing_ok=True)
                 assets = {asset["id"]: asset for asset in store.list_assets(project_id, references=True)}
                 face = assets[data["face_asset_id"]]["uri"]
                 garment = assets[data["garment_asset_id"]]["uri"]
-            run_generation_task(store, task["id"], project_id, source, face, garment, data.get("prompt", ""),
+            run_generation_task(store, task["id"], project_id, str(source), face, garment, data.get("prompt", ""),
                                 settings=settings, execution_token=task["execution_token"], should_stop=stop.is_set)
     except Exception as error:
         # Input resolution and thread startup can fail before the worker's handler.

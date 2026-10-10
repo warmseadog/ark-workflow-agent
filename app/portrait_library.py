@@ -292,9 +292,9 @@ class PortraitLibrary:
             elif row['remote_group_id']:
                 group = api.get_group(row['remote_group_id'])
             else:
-                # list_groups returns only after complete bounded pagination. A
-                # partial/error/ambiguous listing must never authorize a create.
-                matches = {g['Id']: g for g in api.list_groups() if g.get('Name') == cloud_name}
+                # Scope the complete bounded listing to this request's name.
+                # The API filter is fuzzy, so still require one exact match.
+                matches = {g['Id']: g for g in api.list_groups(name=cloud_name) if g.get('Name') == cloud_name}
                 if len(matches) != 1:
                     raise service.PortraitError('未找到唯一可确认的官方人物组，请稍后重新检查。')
                 group_id = next(iter(matches))

@@ -21,10 +21,12 @@ window.createVideoComparison = ({readRun,onError=()=>{}}) => {
   for(const value of [.5,1,1.5,2])speed.add(new Option(value+'×',String(value)));speed.value='1';
   const audio=node('select',null,'comparison-audio');audio.setAttribute('aria-label','对比播放声音');
   for(const [value,label] of [['result','生成结果声音'],['source','原片声音'],['mute','静音']])audio.add(new Option(label,value));
-  controls.append(play,seek,time,speed,audio);
+  const download=node('button','下载对比视频','comparison-download');download.type='button';download.disabled=true;
+  controls.append(play,seek,time,speed,audio,download);
   const status=node('p','','comparison-status');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
-  dialog.append(heading,grid,controls,status);document.body.append(dialog);
-  let token=0,read=null,snapshot=null,ready=false,buffering=false,timer=null,frame=null,activeItem=null;
+  const exportStatus=node('p','','comparison-export-status');exportStatus.setAttribute('role','status');exportStatus.setAttribute('aria-live','polite');
+  dialog.append(heading,grid,controls,status,exportStatus);document.body.append(dialog);
+  let token=0,read=null,snapshot=null,ready=false,buffering=false,timer=null,frame=null,activeItem=null,exportRead=null,exportUrl=null,exportName='视频';
   const finite=value=>Number.isFinite(value)&&value>0;
   const duration=()=>finite(result.duration)?result.duration:0;
   const clock=value=>Math.floor(value/60)+':'+String(Math.floor(value%60)).padStart(2,'0');
@@ -54,6 +56,7 @@ window.createVideoComparison = ({readRun,onError=()=>{}}) => {
   function startClock(){stopClock();paint();timer=setInterval(paint,150);if(result.requestVideoFrameCallback)frame=result.requestVideoFrameCallback(tick);}
   function release(){
     token++;read?.abort();read=null;stopClock();ready=false;buffering=false;snapshot=null;activeItem=null;
+    exportRead?.abort();exportRead=null;exportUrl=null;download.disabled=true;download.textContent='下载对比视频';exportStatus.textContent='';
     for(const video of [source,result]){video.pause();video.removeAttribute('src');video.load();}
     play.disabled=seek.disabled=true;
   }
@@ -77,6 +80,23 @@ window.createVideoComparison = ({readRun,onError=()=>{}}) => {
   seek.addEventListener('input',()=>{if(ready){result.currentTime=Number(seek.value);paint();}});
   speed.addEventListener('change',()=>{result.playbackRate=Number(speed.value);paint();});
   audio.addEventListener('change',setAudio);
+  download.addEventListener('click',async()=>{
+    if(!exportUrl||exportRead)return;
+    const current=token,controller=new AbortController();exportRead=controller;
+    download.disabled=true;download.textContent='正在导出…';exportStatus.textContent='正在合成左右并排的视频，首次导出需要一些时间…';
+    try{
+      const url=new URL(exportUrl,location.href);url.searchParams.set('audio',audio.value);
+      const response=await fetch(url,{signal:controller.signal,credentials:'same-origin'});
+      if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(typeof data.detail==='string'?data.detail:'对比视频导出失败，请稍后重试。');}
+      if(!response.headers.get('content-type')?.includes('video/mp4'))throw new Error('未能取得对比视频，请刷新页面后重试。');
+      const blob=await response.blob();
+      if(current!==token||!dialog.open)return;
+      const href=URL.createObjectURL(blob),link=node('a');link.href=href;link.download=exportName+'-对比.mp4';
+      document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(href),60000);
+      exportStatus.textContent='对比视频已导出，下载已开始。';
+    }catch(error){if(current===token&&error.name!=='AbortError'){exportStatus.textContent=error.message;onError(error);}}
+    finally{if(current===token){exportRead=null;download.disabled=!exportUrl;download.textContent='下载对比视频';}}
+  });
   for(const video of [source,result])video.addEventListener('error',()=>{
     if(dialog.open&&video.getAttribute('src')){result.pause();status.textContent='对比视频暂时无法读取，请关闭后重试或下载查看。';}
   });
@@ -95,6 +115,7 @@ window.createVideoComparison = ({readRun,onError=()=>{}}) => {
         const original=full.snapshot?.assets?.find(asset=>asset.id===full.snapshot.source_asset_id&&asset.kind==='video');
         if(!original?.url||!full.download_url)throw new Error('此任务的原始动作视频或生成结果不可用，无法对比。');
         snapshot=full.snapshot;source.playbackRate=result.playbackRate=1;speed.value='1';audio.value='result';setAudio();
+        exportUrl=full.comparison_url||null;exportName=(full.name||item.name||'视频').replace(/[\\/:*?"<>|]/g,'_');download.disabled=!exportUrl;
         source.src=original.url;result.src=full.download_url;source.load();result.load();
       }catch(error){if(current!==token||error.name==='AbortError')return;status.textContent=error.message;onError(error);}
     },

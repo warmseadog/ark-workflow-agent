@@ -19,6 +19,7 @@ from process_primary_face_mosaic import (
     discover_ffmpeg,
     encoder_options,
     mosaic,
+    add_mask_controls,
 )
 from hair_mosaic import HairSegmenter, mosaic_hair
 
@@ -57,6 +58,7 @@ def main():
     parser.add_argument("--no-hair", action="store_true")
     parser.add_argument("--hair-only", action="store_true", help="Skip face mosaic and mask only segmented hair.")
     parser.add_argument("--hair-update-hz", type=float, default=6.0)
+    add_mask_controls(parser)
     args = parser.parse_args()
 
     model = Path(__file__).parents[1] / "models" / "face_detection_yunet_2023mar.onnx"
@@ -85,7 +87,7 @@ def main():
         ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
         "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{width}x{height}",
         "-r", f"{fps:.8f}", "-i", "pipe:0", "-i", str(args.input),
-        "-map", "0:v:0", "-map", "1:a:0?",
+        "-map", "0:v:0", *(['-an'] if args.no_audio else ['-map', '1:a:0?']),
         *encoder_options(video_encoder), "-c:a", "aac", "-b:a", "192k",
         "-shortest", "-movflags", "+faststart", str(args.output),
     ]
@@ -178,16 +180,16 @@ def main():
                 c[1] -= 0.06 * s[1]
                 angles = np.linspace(0, 2 * np.pi, 48, endpoint=False)
                 polygon = np.column_stack([
-                    c[0] + 0.98 * s[0] * np.cos(angles),
-                    c[1] + 1.10 * s[1] * np.sin(angles),
+                    c[0] + 0.98 * args.mask_scale * s[0] * np.cos(angles),
+                    c[1] + 1.10 * args.mask_scale * s[1] * np.sin(angles),
                 ])
                 polygon[:, 0] = np.clip(polygon[:, 0], 0, width - 1)
                 polygon[:, 1] = np.clip(polygon[:, 1], 0, height - 1)
                 if not args.hair_only:
-                    frame = mosaic(frame, polygon.astype(np.int32))
+                    frame = mosaic(frame, polygon.astype(np.int32), args.mosaic_size)
 
             if hair_mask is not None:
-                frame = mosaic_hair(frame, hair_mask)
+                frame = mosaic_hair(frame, hair_mask, mosaic_size=args.hair_mosaic_size)
 
             encoder.stdin.write(frame.tobytes())
             frame_index += 1

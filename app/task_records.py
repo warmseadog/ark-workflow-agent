@@ -115,6 +115,7 @@ def get_router(settings_getter, admin):
         except LookupError:
             available = False
         run['download_url'] = base(user,run)+'/download' if available else None
+        run['comparison_url'] = base(user,run)+'/comparison' if available and not run.get('legacy') and run.get('snapshot', {}).get('source_asset_id') else None
         return run
 
     @router.get('')
@@ -209,6 +210,17 @@ def get_router(settings_getter, admin):
             else:
                 raise LookupError('素材不存在。')
             return media_access(request,user_id,run_id,'assets/'+asset_id+'/'+kind,response)
+        return guarded(operation)
+
+    @router.api_route('/{user_id}/{run_id}/comparison', methods=['GET','HEAD'])
+    def comparison_file(request: Request, user_id: str, run_id: str, audio: str = 'result'):
+        def operation():
+            from .comparison_export import comparison_path
+            _, settings, store, run = record(user_id, run_id)
+            path = comparison_path(settings, store, run, audio)
+            filename = re.sub(r'[\\/:*?"<>|]', '_', run['name']).strip(' .') or '视频'
+            response = media_file_response(settings, path, media_type='video/mp4', filename=filename+'-对比.mp4')
+            return media_access(request, user_id, run_id, 'comparison', response)
         return guarded(operation)
 
     @router.api_route('/{user_id}/{run_id}/{kind}', methods=['GET','HEAD'])

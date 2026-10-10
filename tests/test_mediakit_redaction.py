@@ -135,6 +135,43 @@ def test_mediakit_timeout_falls_back(pipeline, monkeypatch):
     assert media.run_deface(source, output, cfg) == output
 
 
+@pytest.mark.parametrize('method,suffix,stage,has_task', [
+    ('post', '/request-media-upload-url', '申请上传地址', False),
+    ('put', '/input?signature=private', '上传视频', False),
+    ('post', '/face-blur-video', '提交打码任务', False),
+    ('get', '/api/v1/tasks/task-1', '查询打码结果', True),
+    ('get', '/output.mp4?signature=private', '下载打码结果', True),
+])
+@pytest.mark.parametrize('error_type,kind', [
+    (redaction_service.requests.ConnectTimeout, '连接超时'),
+    (redaction_service.requests.ReadTimeout, '读取响应超时'),
+])
+def test_timeout_identifies_stage_without_leaking_or_resubmitting(
+        pipeline, monkeypatch, method, suffix, stage, has_task, error_type, kind):
+    source, output, cfg, calls, pending, _ = pipeline
+    pending[:] = [pending[-1]]
+    original = getattr(redaction_service.requests, method)
+    attempts = []
+    def fail_at_stage(url, **kw):
+        if url.endswith(suffix):
+            attempts.append(url)
+            raise error_type('secret-key https://8.8.8.8/?signature=private')
+        return original(url, **kw)
+    monkeypatch.setattr(redaction_service.requests, method, fail_at_stage)
+    with pytest.raises(MediaPipelineError) as error:
+        redaction_service.process(source, output, cfg, media.BlurOptions(), cfg.redaction_service)
+    message = str(error.value)
+    assert stage in message and kind in message
+    assert '已用时' in message and '总时限 10 秒' in message
+    assert ('task-1' in message) is has_task
+    if stage == '提交打码任务':
+        assert '可能已受理' in message
+    assert 'secret-key' not in message and 'signature=private' not in message
+    assert len(attempts) == 1
+    assert len([c for c in calls if c[1].endswith('/face-blur-video')]) <= 1
+    assert not output.exists() and not list(output.parent.glob('.mask-*.mp4'))
+
+
 def test_unsupported_hair_mode_uses_local_without_upload(pipeline, monkeypatch):
     source, output, cfg, calls, _, content = pipeline
     def local(src, dst, settings, opts):

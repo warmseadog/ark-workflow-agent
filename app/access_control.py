@@ -59,6 +59,8 @@ def administrator_allowed(path, method):
     if ordinary_allowed(path, method):
         return True
     return ((path == '/api/admin/prompt-standby' and method in {'GET', 'POST'})
+            or (path == '/api/admin/prompt-workbench' and method in {'GET','PUT'})
+            or (path == '/api/admin/prompt-workbench/preview' and method == 'POST')
             or (path in {'/api/variation-settings', '/api/inspiration-settings'} and method in {'GET','PUT'}) or path == '/admin/users' or path == '/admin/templates'
             or (path in {'/admin/settings', '/api/admin/scheduling'} and method in {'GET','HEAD'})
             or path.startswith(('/api/admin/users', '/api/admin/tasks', '/api/admin/task-records', '/api/admin/audit',

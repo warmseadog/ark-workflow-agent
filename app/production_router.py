@@ -29,7 +29,7 @@ _DRAFT_FIELDS = {'source_clip','person_reference_mode','person_video_asset_id','
 _DRAFT_FIELDS |= {kind+suffix for kind in ACCESSORY_LABELS for suffix in ('_asset_ids','_enabled')}
 _DRAFT_FIELDS.update({'person_input_policy','target_duration'})
 _DRAFT_FIELDS.update({'prompt_template_id','prompt_rule_version'})
-_MASK_FIELDS = {'blur_style','style','shape','mask_mode','robust_tracking','mask_scale','mosaic_size','threshold','detection_size','keep_audio'}
+_MASK_FIELDS = {'blur_style','style','shape','mask_mode','robust_tracking','mask_scale','mosaic_size','threshold','detection_size','keep_audio','local_options'}
 
 
 def get_router(settings_getter, local_guard):
@@ -93,6 +93,7 @@ def get_router(settings_getter, local_guard):
         run['defaced_url'] = '/api/production/runs/'+run['id']+'/defaced' if (root/'work'/run['id']/'defaced.mp4').is_file() else None
         run['base_url'] = '/api/production/runs/'+run['id']+'/base' if run.get('continuation',{}).get('base_ready') and (root/'work'/run['id']/'base.mp4').is_file() else None
         run['download_url'] = '/api/production/runs/'+run['id']+'/download' if run['status']=='succeeded' and (root/'outputs'/(run['id']+'.mp4')).is_file() else None
+        run['comparison_url'] = '/api/production/runs/'+run['id']+'/comparison' if run['download_url'] and run['snapshot'].get('source_asset_id') else None
         run['snapshot'] = decorate_draft(run['snapshot'])
         return run
 
@@ -221,9 +222,9 @@ def get_router(settings_getter, local_guard):
     def hairstyle_preview_file(key:str):
         import re
         if not re.fullmatch('[0-9a-f]{64}',key):raise HTTPException(404,'预览不存在。')
-        path = settings_getter().storage_dir/'cache'/'hairstyle-mask'/(key+'.png')
+        path = settings_getter().storage_dir/'work'/'hairstyle-masks'/(key+'.png')
         if not path.is_file():raise HTTPException(404,'预览不存在，请重新生成。')
-        return FileResponse(path,media_type='image/png',headers={'Cache-Control':'private, max-age=3600'})
+        return FileResponse(path,media_type='image/png',headers={'Cache-Control':'private, no-store'})
 
     @router.post('/assets/import')
     def import_asset(payload: dict):
@@ -281,9 +282,11 @@ def get_router(settings_getter, local_guard):
             if not isinstance(model,dict) or set(model)-TASK_FIELDS:
                 raise ValueError('预览模型参数不正确。')
             config = resolve_task_config(settings_getter(), model)
-            return {'prompt':compose_exclusive_prompt(payload.get('prompt',''), payload.get('roles',[]),
-                person_video=payload.get('person_video',False), scene_description=payload.get('scene_description',''),
-                follow_source=capabilities(config.model,config.protocol)['follow_source'], rule_version=payload['rule_version'])}
+            from .prompt_config import scope, load
+            with scope(load(settings_getter())):
+                return {'prompt':compose_exclusive_prompt(payload.get('prompt',''), payload.get('roles',[]),
+                    person_video=payload.get('person_video',False), scene_description=payload.get('scene_description',''),
+                    follow_source=capabilities(config.model,config.protocol)['follow_source'], rule_version=payload['rule_version'])}
         return guarded(operation)
 
     @router.post('/drafts')
@@ -308,6 +311,9 @@ def get_router(settings_getter, local_guard):
             if 'name' in payload: values['name']=payload['name']
             if 'person_input_policy' in payload: values['person_input_policy']=payload['person_input_policy']
             validate_changes(values)
+            if payload.get('copy_from'):
+                values['force_redaction'] = True
+                values['mask'] = redaction_settings.load_config(settings_getter())
             return decorate_draft(store().create_draft(values))
         return guarded(operation)
 
@@ -417,6 +423,8 @@ def get_router(settings_getter, local_guard):
             continuation_intent = None if variation_intent else continuation_preflight(settings_getter(),store(),draft,config)
             from .portrait_generation import prepare
             private={'generation':asdict(config),'storage':asdict(storage)}
+            from .prompt_config import load as load_prompt_overrides
+            private['prompt_overrides']=load_prompt_overrides(settings_getter())
             if variation_intent:private['variation']=variation_intent
             actor = prompt_visibility.actor(settings_getter())
             if actor and actor['id'] != settings_getter().user_id:
@@ -572,6 +580,8 @@ def get_router(settings_getter, local_guard):
                     lib = PortraitLibrary(settings_getter())
                     if lib.account == preparation['account']:
                         values.update(person_id=preparation['person_id'], person_input_policy='existing_person')
+            values['force_redaction'] = True
+            values['mask'] = redaction_settings.load_config(settings_getter())
             return decorate_draft(store().create_draft(values))
         return guarded(operation)
 
@@ -618,6 +628,18 @@ def get_router(settings_getter, local_guard):
         from .playback import media_path
         path=guarded(lambda:media_path(settings_getter(),ident,quality))
         return media_file_response(settings_getter(),path,media_type='video/mp4')
+
+    @router.api_route('/runs/{ident}/comparison', methods=['GET','HEAD'])
+    def comparison_file(ident: str, audio: str = 'result'):
+        def operation():
+            from .comparison_export import comparison_path
+            storage = store()
+            storage.require_visible(ident)
+            run = storage.get_run(ident)
+            path = comparison_path(settings_getter(), storage, run, audio)
+            filename = re.sub(r'[\\/:*?"<>|]', '_', run['name']).strip(' .') or '视频'
+            return media_file_response(settings_getter(), path, media_type='video/mp4', filename=filename+'-对比.mp4')
+        return guarded(operation)
 
     @router.api_route('/runs/{ident}/{kind}', methods=['GET','HEAD'])
     def run_file(ident: str,kind: str):

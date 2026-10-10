@@ -92,6 +92,7 @@ def test_delegated_restore_preserves_owner_version_and_is_idempotent(users):
     assert operator.post(endpoint,json={'idempotency_key':'restore'}).json()['id'] == restored['id']
     assert target_store.get_draft(draft['id'])['name'] == 'Original'
     assert target_store.get_draft(restored['id'])['delegation']['actor_id'] == actor['id']
+    assert target_store.get_draft(restored['id']).get('force_redaction') is True
     prefix = '/api/admin/delegated/'+target['id']+'/production'
     assert operator.get(prefix+'/drafts/'+restored['id']).json()['prompt'] == 'frozen original'
     assert alice.get(prefix+'/drafts/'+restored['id']).status_code == 403
@@ -117,6 +118,7 @@ def test_delegated_submission_uses_owner_quota_fresh_run_and_actor_audit(users):
     assert new['private']['delegation']['actor_id'] == actor['id']
     assert new['private']['delegation']['owner_id'] == target['id']
     assert new['snapshot']['prompt'] == store.get_draft(original['id'])['prompt']
+    assert new['snapshot'].get('force_redaction') is True
     accounts.update_user(target['id'], users[1][0]['id'], max_queued=0)
     blocked = operator.post('/api/admin/delegated/'+target['id']+'/production/runs',
         json={'draft_id':restored['id'],'revision':restored['revision'],'idempotency_key':'blocked'})

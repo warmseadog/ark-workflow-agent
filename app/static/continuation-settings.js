@@ -4,6 +4,7 @@
   if (!form) return;
   const fields = form.querySelector('fieldset');
   const status = document.getElementById('continuation-status');
+  let baseline = {};
   function note(message, error = false) {
     status.textContent = message;
     status.dataset.error = String(error);
@@ -28,6 +29,7 @@
     } finally { clearTimeout(timeout); }
   }
   function fill(config) {
+    baseline = {...config};
     for (const name of ['model', 'base_url', 'timeout_seconds', 'skill']) form.elements[name].value = config[name];
     form.elements.enabled.checked = config.enabled;
     form.elements.api_key.value = '';
@@ -49,6 +51,7 @@
     values.enabled = form.elements.enabled.checked;
     values.clear_api_key = form.elements.clear_api_key.checked;
     values.timeout_seconds = Number(values.timeout_seconds);
+    for (const key of Object.keys(values)) if (values[key] === baseline[key]) delete values[key];
     fields.disabled = true;
     note('正在保存续写配置…');
     try {

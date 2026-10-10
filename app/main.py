@@ -104,6 +104,8 @@ from .support import get_router as get_support_router
 app.include_router(get_support_router(lambda:settings,templates))
 from .preview_router import get_router as get_preview_router
 app.include_router(get_preview_router(lambda:tenancy.current_settings(settings),_local_config_request))
+from .redaction_test import get_router as get_redaction_test_router
+app.include_router(get_redaction_test_router(lambda:tenancy.current_settings(settings),_local_config_request))
 
 @app.get('/people', response_class=HTMLResponse)
 def personal_people(request:Request):
@@ -271,6 +273,29 @@ def get_prompt_standby(request: Request):
         raise HTTPException(403, str(exc)) from None
 
 
+@app.get('/api/admin/prompt-workbench')
+def get_prompt_workbench(request: Request):
+    _local_config_request(request)
+    from .prompt_workbench import overview
+    return overview(tenancy.current_settings(settings))
+
+
+@app.put('/api/admin/prompt-workbench')
+def save_prompt_workbench(request: Request, payload: dict):
+    _local_config_request(request)
+    from .prompt_workbench import save
+    try:return save(tenancy.current_settings(settings),payload)
+    except ValueError as exc:raise HTTPException(422,str(exc)) from None
+
+
+@app.post('/api/admin/prompt-workbench/preview')
+def preview_prompt_workbench(request: Request, payload: dict):
+    _local_config_request(request)
+    from .prompt_workbench import preview
+    try:return preview(tenancy.current_settings(settings),payload)
+    except ValueError as exc:raise HTTPException(422,str(exc)) from None
+
+
 @app.post('/api/admin/prompt-standby')
 def save_prompt_standby(request: Request, payload: PromptStandbyInput):
     _local_config_request(request)
@@ -362,7 +387,7 @@ def get_storage_settings(request: Request):
 @app.get('/api/redaction-settings')
 def get_redaction_settings(request: Request):
     _local_config_request(request)
-    return {'config': redaction_settings.load_config(settings)}
+    return redaction_settings.public_config(settings)
 
 
 @app.get('/api/redaction-service')
@@ -457,7 +482,7 @@ def put_redaction_settings(request: Request, payload: dict):
     try:
         return {'config': redaction_settings.save_config(settings, payload)}
     except (ValueError, TypeError):
-        raise HTTPException(422, '打码参数无效，请检查数值范围；头发遮挡仅支持马赛克。') from None
+        raise HTTPException(422, '打码参数无效，请检查所选处理方式的参数和数值范围。') from None
     except OSError:
         raise HTTPException(500, '无法保存打码设置，请检查存储目录权限。') from None
 

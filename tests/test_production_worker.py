@@ -24,7 +24,7 @@ def setup(tmp_path,monkeypatch):
     return cfg,store,draft,private
 
 
-def test_whole_pipeline_runs_without_browser_and_reuses_redaction(setup,monkeypatch):
+def test_whole_pipeline_redacts_every_new_run(setup,monkeypatch):
     cfg,store,draft,private=setup
     calls=[]
     monkeypatch.setattr(worker,'run_deface',lambda src,dst,*args:calls.append(src) or dst.write_bytes(b'redacted'))
@@ -33,7 +33,7 @@ def test_whole_pipeline_runs_without_browser_and_reuses_redaction(setup,monkeypa
         worker.execute_run(cfg,store,store.claim_next())
         assert store.get_run(run['id'])['status']=='succeeded'
         assert (cfg.storage_dir/'outputs'/(run['id']+'.mp4')).read_bytes()==b'redacted'
-    assert len(calls)==1
+    assert len(calls)==2
 
 
 def test_clip_is_processed_before_redaction_and_changes_cache_key(setup,monkeypatch):
@@ -54,7 +54,7 @@ def test_clip_is_processed_before_redaction_and_changes_cache_key(setup,monkeypa
         worker.execute_run(cfg,store,store.claim_next())
         assert store.get_run(run['id'])['status']=='succeeded'
         assert store.get_run(run['id'])['snapshot']['source_clip']['start']==start
-    assert processed==[b'0',b'2']
+    assert processed==[b'0',b'2',b'2']
     assert store.page_runs(1,10,[])['items'][0]['source_clip']['duration']==4
 
 
@@ -118,6 +118,19 @@ def test_resumed_cloud_task_cannot_be_cancelled_as_local_queue(setup):
     run=store.create_run(draft['id'],1,'a',private)
     store.update_run(run['id'],provider_task_id='cloud-1')
     with pytest.raises(Conflict):store.cancel_run(run['id'])
+
+
+def test_cancel_during_preprocessing_never_submits(setup, monkeypatch):
+    cfg, store, draft, private = setup
+    run = store.create_run(draft['id'], 1, 'cancel-preprocess', private)
+    def redact(source, target, *args):
+        store.cancel_run(run['id'])
+        target.write_bytes(b'redacted')
+    monkeypatch.setattr(worker, 'run_deface', redact)
+    monkeypatch.setattr(worker.VideoProvider, 'generate', lambda *a, **kw: pytest.fail('Cancelled task submitted'))
+    worker.execute_run(cfg, store, store.claim_next())
+    assert store.get_run(run['id'])['status'] == 'cancelled'
+    assert not (cfg.storage_dir/'outputs'/(run['id']+'.mp4')).exists()
 
 
 def test_queue_has_two_workers_and_only_one_process_leader(setup, monkeypatch):

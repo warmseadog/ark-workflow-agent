@@ -39,6 +39,19 @@ def build_local_mosaic_command(
         command.append('--hair-only')
     if options.mask_mode in {'face_hair_primary', 'hair_primary'} and options.robust_tracking:
         command.append('--robust')
+    controls = options.local_options
+    if controls is not None:
+        command += ['--mosaic-size', str(options.mosaic_size), '--mask-scale', str(options.mask_scale),
+                    '--hair-mosaic-size', str(controls.hair_mosaic_size),
+                    '--detection-width', str(controls.detection_width),
+                    '--hair-update-hz', str(controls.hair_update_hz), '--encoder', controls.encoder]
+        if not options.keep_audio:
+            command.append('--no-audio')
+        if options.mask_mode == 'face_hair_all':
+            command += ['--score-threshold', str(controls.score_threshold), '--hold-frames', str(controls.hold_frames)]
+        else:
+            command += ['--primary-confidence', str(controls.primary_confidence),
+                        '--tracking-width', str(controls.tracking_width)]
     return command
 
 

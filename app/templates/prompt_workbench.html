@@ -1,0 +1,43 @@
+<div id="prompt-workbench">
+  <div class="pw-intro card">
+    <div><span class="eyebrow">PROMPT WORKBENCH</span><h3>从默认正文到最终提示词，一处看清</h3>
+    <p class="hint">选素材，看变化，再编辑规则。可查看全部内置原文与当前保存值；模拟预览不会调用模型。</p></div>
+    <button type="button" id="pw-reload" class="secondary">重新读取配置</button>
+    <p id="pw-status" class="notice" role="status">正在读取提示词…</p>
+  </div>
+  <div class="pw-layout">
+    <div class="pw-library card">
+      <h3>提示词目录 <span id="pw-count" class="badge"></span></h3>
+      <p class="hint" id="pw-scope"></p>
+      <label>查看分类<select id="pw-group"><option value="">全部提示词</option></select></label>
+      <label>搜索正文或名称<input type="search" id="pw-search" placeholder="如：包包、系统、场景"></label>
+      <div id="pw-items"></div>
+    </div>
+    <div class="pw-simulator card">
+      <h3>配置变化模拟</h3><p class="hint">默认对照：同一正文、人物和服装，不启用额外搭配。勾选后显示实际新增与替换内容。</p>
+      <fieldset id="pw-options" disabled>
+        <label>正文模板<select id="pw-template"></select></label>
+        <label>预览正文<textarea id="pw-body" rows="5" maxlength="10000"></textarea></label>
+        <div class="form-grid">
+          <label>生成模式<select id="pw-mode"><option value="normal">普通生成</option><option value="strict">拍摄灵感 · 严格参考</option><option value="motion">拍摄灵感 · 丰富动作</option><option value="user_priority">拍摄灵感 · 用户意图优先</option><option value="inspiration">AI 灵感辅助</option><option value="continuation">视频续写</option></select></label>
+          <label>视频模型行为<select id="pw-model"><option value="false">按指定时长生成</option><option value="true">Seedance 2.5 · 跟随原视频</option></select></label>
+          <label>人物参考<select id="pw-person"><option value="image">人物图片</option><option value="video">人物视频</option></select></label>
+          <label>服装补充图数量<input type="number" id="pw-supplements" min="0" max="29" value="0"></label>
+        </div>
+        <div class="pw-options-title">更多搭配与独立参考</div><div id="pw-roles" class="pw-checks"></div>
+        <label>场景描述<textarea id="pw-scene" rows="2" maxlength="2000" placeholder="留空则使用素材规则"></textarea></label>
+        <label>拍摄灵感<textarea id="pw-idea" rows="2" maxlength="2000" placeholder="例如：正常步速，自然切镜"></textarea></label>
+      </fieldset>
+      <p id="pw-preview-status" class="notice" role="status"></p>
+      <div id="pw-bindings" class="pw-bindings"></div>
+      <h4>相对基础搭配的变化</h4><div id="pw-diff" aria-live="polite"></div>
+      <details class="settings-details"><summary>系统提示词与规划输入（完整）</summary>
+        <label>发送给规划模型的系统指令<textarea id="pw-system" readonly rows="10"></textarea></label>
+        <label>规划输入示例<textarea id="pw-input" readonly rows="8"></textarea></label>
+      </details>
+      <label>最终合成文本<textarea id="pw-final" readonly rows="16"></textarea></label>
+      <div class="actions"><button type="button" id="pw-copy" class="secondary">复制最终文本</button></div>
+      <details class="settings-details"><summary>本次使用的规则段落</summary><div id="pw-applied"></div></details>
+    </div>
+  </div>
+</div>

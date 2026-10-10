@@ -153,7 +153,9 @@ def test_generate_api_completes_real_pipeline_with_all_references(client, monkey
     work = main.settings.storage_dir / 'work' / job.id
     work.mkdir(parents=True)
     (work/'defaced.mp4').write_bytes(b'redacted-input')
-    store.update(job.id, status='defaced', defaced_name='defaced.mp4')
+    (work/'source.mp4').write_bytes(b'original')
+    monkeypatch.setattr(jobs, 'run_deface', lambda src,dst,*a: dst.write_bytes(b'redacted-input'))
+    jobs.run_deface_pipeline(job.id, main.settings, work/'source.mp4', None)
     class ImmediateWorker:
         def __init__(self, target, args, kwargs=None, **_):
             self.target, self.args, self.kwargs = target, args, kwargs or {}

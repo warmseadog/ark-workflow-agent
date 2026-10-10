@@ -47,7 +47,7 @@ class HairSegmenter:
         self.segmenter.close()
 
 
-def mosaic_hair(frame, hair_mask, face_boxes=None):
+def mosaic_hair(frame, hair_mask, face_boxes=None, mosaic_size=None):
     """Pixelate hair components, optionally only those connected to target faces."""
     count, labels, stats, _ = cv2.connectedComponentsWithStats(hair_mask, 8)
     frame_h, frame_w = frame.shape[:2]
@@ -90,6 +90,8 @@ def mosaic_hair(frame, hair_mask, face_boxes=None):
         roi = frame[y0:y1, x0:x1]
         bx = max(7, min(20, (x1 - x0) // 14))
         by = max(7, min(24, (y1 - y0) // 14))
+        if mosaic_size is not None:
+            bx, by = max(1, (x1 - x0) // mosaic_size), max(1, (y1 - y0) // mosaic_size)
         tiny = cv2.resize(roi, (bx, by), interpolation=cv2.INTER_AREA)
         pixels = cv2.resize(tiny, (x1 - x0, y1 - y0), interpolation=cv2.INTER_NEAREST)
         alpha = (local_mask.astype(np.float32) / 255.0)[..., None]

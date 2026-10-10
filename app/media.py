@@ -20,6 +20,19 @@ from .media_errors import MediaPipelineError
 from .video_links import extract_video_url, platform_for_url
 
 
+class LocalMosaicOptions(BaseModel):
+    """Versioned opt-in controls: absent on historical task snapshots."""
+    model_config = ConfigDict(extra='forbid', strict=True, allow_inf_nan=False)
+    hair_mosaic_size: int = Field(default=20, ge=4, le=100)
+    detection_width: int = Field(default=540, ge=160, le=1920)
+    tracking_width: int = Field(default=960, ge=160, le=1920)
+    hair_update_hz: float = Field(default=6.0, ge=1, le=60)
+    primary_confidence: float = Field(default=0.15, ge=0.05, le=1)
+    score_threshold: float = Field(default=0.65, ge=0.05, le=1)
+    hold_frames: int = Field(default=12, ge=0, le=120)
+    encoder: Literal['auto','libx264','h264_nvenc','h264_qsv','h264_amf','h264_videotoolbox'] = 'auto'
+
+
 class BlurOptions(BaseModel):
     """Per-job deface options exposed by the UI."""
 
@@ -34,6 +47,7 @@ class BlurOptions(BaseModel):
     detection_size: int | None = Field(default=None)
     keep_audio: bool = True
     replace_image: Path | None = None
+    local_options: LocalMosaicOptions | None = None
 
     @field_validator('mask_scale', 'threshold')
     @classmethod
@@ -162,7 +176,7 @@ def run_deface(
     options = options or BlurOptions.from_settings(settings)
     from . import redaction_service
     service = redaction_service.load_config(settings)
-    from .preprocessing_limits import cloud_slots, local_lock
+    from .preprocessing_limits import cloud_slots, local_redaction_slots
     from .run_phases import notify
     if service.mode == 'http':
         try:
@@ -178,7 +192,7 @@ def run_deface(
             temporary = Path(name)
             try:
                 notify('waiting')
-                with local_lock:
+                with local_redaction_slots:
                     notify('masking')
                     _run_local_deface(input_path, temporary, settings, options)
                     redaction_service.validate_output(temporary, settings, input_path)
@@ -189,7 +203,7 @@ def run_deface(
             finally:
                 temporary.unlink(missing_ok=True)
     notify('waiting')
-    with local_lock:
+    with local_redaction_slots:
         notify('masking')
         return _run_local_deface(input_path, output_path, settings, options)
 

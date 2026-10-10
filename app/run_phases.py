@@ -41,7 +41,7 @@ def _elapsed(start, end):
     return max(0, (datetime.fromisoformat(end) - datetime.fromisoformat(start)).total_seconds())
 
 
-def transition(db, ident, phase, stamp, *, state=None, interrupted=False, cached=False):
+def transition(db, ident, phase, stamp, *, state=None, interrupted=False, cached=False, refreshed=False):
     if phase is not None and phase not in PHASES:
         raise ValueError('Invalid run phase')
     row = db.execute('SELECT * FROM production_run_phases WHERE run_id=?', (ident,)).fetchone()
@@ -50,7 +50,7 @@ def transition(db, ident, phase, stamp, *, state=None, interrupted=False, cached
     if state is None and row['state'] != 'running':
         return
     values = json.loads(row['data'])
-    if row['phase'] == phase and (state is None or state == row['state']) and not interrupted and not cached:
+    if row['phase'] == phase and (state is None or state == row['state']) and not interrupted and not cached and not refreshed:
         return
     previous = row['phase']
     if previous:
@@ -60,6 +60,11 @@ def transition(db, ident, phase, stamp, *, state=None, interrupted=False, cached
         elif value['seconds'] is not None:
             value['seconds'] += _elapsed(row['since'], stamp)
             value['status'] = 'complete'
+    if refreshed and phase:
+        values[phase]['refreshed'] = True
+        values[phase].pop('cached', None)
+    if phase == 'masking' and not cached:
+        values[phase].pop('cached', None)
     if cached and phase:
         values[phase]['cached'] = True
         # A cache hit marks completion without opening a masking interval.

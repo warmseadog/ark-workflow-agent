@@ -2,13 +2,13 @@
 from __future__ import annotations
 from dataclasses import asdict
 from contextlib import nullcontext
-import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
 import threading
 import time
+import uuid
 
 from .production_store import ProductionStore
 from .generation_settings import GenerationConfig
@@ -17,11 +17,12 @@ from .reference_media import publish_video
 from .media import BlurOptions, run_deface
 from .hairstyle_mask import process_hairstyle
 from .video_provider import VideoProvider, ProviderError
-from .source_clip import clip_video, fingerprint as clip_fingerprint
+from .source_clip import clip_video
 from .video_framing import reframe_video
 from .reference_roles import ACCESSORY_LABELS, snapshot_content_roles
 from . import scheduling_settings
-from .preprocessing_limits import local_lock, cache_writer
+from .preprocessing_limits import local_lock
+from .prompt_config import frozen_run
 
 _preprocess_lock = local_lock
 _managers = {}
@@ -60,6 +61,27 @@ def authorize_run_inputs(settings, store, snapshot):
                 raise ValueError(f'{label}「{name}」不可用：{error} 请更换或移除该素材；可选参考也可以关闭后重新提交。') from None
 
 
+def run_reference_roles(store, snapshot):
+    """Add original video names without making remote recovery depend on files."""
+    roles = snapshot_content_roles(snapshot)
+    for index, role in roles.items():
+        if role not in {'参考视频', '人物参考视频'}:
+            continue
+        label = '动作参考视频' if role == '参考视频' else role
+        asset_id = snapshot.get('source_asset_id' if role == '参考视频' else 'person_video_asset_id')
+        try:
+            name = store.get_asset(asset_id).get('name', '') if asset_id else ''
+        except (LookupError, OSError, ValueError):
+            name = ''
+        # Names are display metadata; strip any client path before sanitizing.
+        name = str(name).replace('\\', '/').rsplit('/', 1)[-1]
+        from .security import safe_error
+        name = safe_error(name, limit=120)
+        roles[index] = f'{label}「{name}」' if name else label
+    return roles
+
+
+@frozen_run
 def execute_run(settings, store, run):
     ident = run['id']
     if store.get_run(ident)['status'] in {'cancelled', 'succeeded'}:
@@ -83,7 +105,7 @@ def execute_run(settings, store, run):
         settings = redaction_service.freeze(settings)
         faces, clothes, video_url = [], [], None
         image_asset_uris = {}
-        extra_references = {'reference_roles':snapshot_content_roles(snapshot)} if provider_id or result_url else {}
+        extra_references = {'reference_roles':run_reference_roles(store, snapshot)}
         if not provider_id and not result_url and not base_ready:
             authorize_run_inputs(settings, store, snapshot)
             from .model_catalog import capabilities
@@ -148,43 +170,38 @@ def execute_run(settings, store, run):
             if snapshot.get('scene_enabled',False):
                 extra_references['scene_description'] = snapshot.get('scene_description','')
             options = mask_options(snapshot['mask'])
-            key = hashlib.sha256((source['sha256'] + json.dumps(options.model_dump(mode='json'), sort_keys=True) + redaction_service.fingerprint(settings) + clip_fingerprint(snapshot.get('source_clip'))).encode()).hexdigest()
-            cache = settings.storage_dir / 'cache' / 'redacted' / (key + '.mp4')
             store.update_run(ident, stage='preprocess', message='等待视频预处理', progress=5)
             store.set_phase(ident, 'waiting')
-            with cache_writer(cache):
-                store.set_phase(ident, 'other')
-                if not defaced.is_file():
-                    if cache.is_file():
-                        store.set_phase(ident, 'masking', cached=True)
-                        shutil.copyfile(cache, defaced)
-                    else:
-                        store.update_run(ident, message='正在处理视频打码', progress=15)
-                        temporary = work / 'defaced.tmp.mp4'
-                        store.set_phase(ident, 'masking')
-                        from .run_phases import observe
-                        with observe(lambda phase, **kw: store.set_phase(ident, phase, **kw)):
-                            run_deface(source_path, temporary, settings, options)
-                        store.set_phase(ident, 'other')
-                        temporary.replace(defaced)
-                        cache.parent.mkdir(parents=True, exist_ok=True)
-                        cache_tmp = cache.with_suffix('.tmp.mp4')
-                        shutil.copyfile(defaced, cache_tmp)
-                        cache_tmp.replace(cache)
-                else:
-                    store.set_phase(ident, 'masking', cached=True)
-                if capabilities(config.model, config.protocol)['follow_source'] and config.ratio != 'adaptive':
-                    store.update_run(ident, message='正在调整参考视频画面比例', progress=45)
-                    store.set_phase(ident, 'waiting')
-                    with _preprocess_lock:
-                        store.set_phase(ident, 'other')
-                        framed = reframe_video(defaced, work/'framed.mp4', config.ratio)
-                    if framed != defaced:
-                        framed.replace(defaced)
+            if store.get_run(ident)['status'] == 'cancelled':
+                return
+            # Every attempt before provider submission starts from the original source.
+            # Submitted provider tasks are polled above without entering this branch.
+            store.update_run(ident, message='正在处理视频打码', progress=15)
+            temporary = work / 'defaced.tmp.mp4'
+            temporary.unlink(missing_ok=True)
+            store.set_phase(ident, 'masking')
+            from .run_phases import observe
+            try:
+                with observe(lambda phase, **kw: store.set_phase(ident, phase, **kw)):
+                    run_deface(source_path, temporary, settings, options)
+                temporary.replace(defaced)
+            finally:
+                temporary.unlink(missing_ok=True)
+            store.set_phase(ident, 'other')
+            if capabilities(config.model, config.protocol)['follow_source'] and config.ratio != 'adaptive':
+                store.update_run(ident, message='正在调整参考视频画面比例', progress=45)
+                store.set_phase(ident, 'waiting')
+                with _preprocess_lock:
+                    store.set_phase(ident, 'other')
+                    framed = reframe_video(defaced, work/'framed.mp4', config.ratio)
+                if framed != defaced:
+                    framed.replace(defaced)
+            if store.get_run(ident)['status'] == 'cancelled':
+                return
             if config.mode=='http' and capabilities(config.model,config.protocol)['person_video']:
                 from .reference_adaptation import adapt_video, record_adaptation
                 store.update_run(ident,message='正在检查参考视频尺寸',progress=46)
-                adapted,notice=adapt_video(defaced,settings.storage_dir/'cache'/'model-inputs',
+                adapted,notice=adapt_video(defaced,work/'model-input'/uuid.uuid4().hex,
                     max_seconds=capabilities(config.model,config.protocol)['max_video_seconds'])
                 if notice:
                     # Public video sharing admits only task-scoped masked files.
@@ -198,6 +215,8 @@ def execute_run(settings, store, run):
                 extra_references['variation_plan']=prepare_variation(settings,store,run,defaced,faces,clothes,extra_references,config)
                 extra_references['on_prompt']=lambda text:store.update_variation(ident,final_prompt=text)
             if config.mode == 'http' and config.protocol == 'ark':
+                if store.get_run(ident)['status'] == 'cancelled':
+                    return
                 store.update_run(ident, stage='upload', message='正在上传打码视频', progress=55)
                 if storage.enabled:
                     store.set_phase(ident, 'upload')
@@ -208,7 +227,8 @@ def execute_run(settings, store, run):
             # Check after preprocessing/upload and immediately before a NEW
             # provider submission. Existing task polling keeps its frozen data.
             authorize_run_inputs(settings, store, snapshot)
-            store.update_run(ident, stage='submitting', message='正在提交模型任务', progress=65)
+            if not store.begin_submission(ident):
+                return
         def progress(message, percent):
             store.update_run(ident, message=message, progress=percent)
         def submitted(task_id):

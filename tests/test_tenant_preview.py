@@ -67,9 +67,10 @@ def preview(tmp_path, monkeypatch):
     with TestClient(app) as client:
         yield client, tenants, gate, entered, calls, failures, module, getter, guard
         gate.set()
-        # Drain the real single executor before monkeypatch and tmp_path teardown.
+        # Drain every worker before monkeypatch and tmp_path teardown.
         if module._executor is not None:
-            module._executor.submit(lambda: None).result(timeout=20)
+            module._executor.shutdown(wait=True)
+            module._executor = None
 
 
 def headers(user='1'):
@@ -137,7 +138,7 @@ def test_service_change_uses_separate_preview_and_cache(preview):
     assert calls[0][2].redaction_service.mode == 'local'
     assert calls[1][2].redaction_service.mode == 'http'
     terminal(client, post(client).json()['id'])
-    assert len(calls) == 2
+    assert len(calls) == 3
 
 
 @pytest.mark.parametrize('mode', ['local', 'http'])
@@ -161,9 +162,9 @@ def test_coverage_fix_invalidates_legacy_preview_and_media_cache(preview, monkey
     assert new['status'] == 'defaced'
     assert new['id'] != old['id']
     assert len(calls) == 2
-    assert len(list((tenants['1'].storage_dir/'cache'/'redacted').glob('*.mp4'))) == 2
+    assert not list((tenants['1'].storage_dir/'cache'/'redacted').glob('*.mp4'))
     assert terminal(client, post(client).json()['id'])['status'] == 'defaced'
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert client.get(old['defaced_url'], headers=headers()).status_code == 200
 
 
@@ -181,7 +182,7 @@ def test_clip_preview_uses_segment_and_separate_cache(preview,monkeypatch):
         job=terminal(client,response.json()['id'])
         assert job['status']=='defaced'
         assert client.get(job['defaced_url'],headers=headers()).content==str(start).encode()+b'-redacted'
-    assert len(calls)==2
+    assert len(calls)==3
     with ProductionStore(tenants['1'].storage_dir).connection() as db:
         row = db.execute('SELECT * FROM production_previews WHERE id=?', (job['id'],)).fetchone()
     assert row['status'] == 'defaced' and row['source_asset_id'] == 'source'
@@ -203,7 +204,7 @@ def test_duplicate_admission_and_per_user_capacity(preview):
     assert post(client, 'three').status_code == 429
     with ProductionStore(tenants['1'].storage_dir).connection() as db:
         assert db.execute('SELECT count(*) FROM production_previews').fetchone()[0] == 2
-    assert len(calls) == 1
+    assert 1 <= len(calls) <= 2
     gate.set()
     assert terminal(client, first['id'])['status'] == 'defaced'
 
@@ -224,7 +225,10 @@ def test_global_capacity_across_users_and_router_instances(preview):
     assert entered.wait(5)
     asset(tenants['11'])
     assert post(client, user='11').status_code == 429
-    assert len(calls) == 1
+    deadline = time.monotonic() + 3
+    while len(calls) < 3 and time.monotonic() < deadline:
+        time.sleep(.01)
+    assert len(calls) == 3
     gate.set()
     for user, ident in jobs:
         assert terminal(client, ident, user)['status'] == 'defaced'
@@ -273,8 +277,8 @@ def test_cache_reuse_stays_inside_tenant(preview):
         for _ in range(2):
             job = post(client, user=user).json()
             assert terminal(client, job['id'], user)['status'] == 'defaced'
-    assert len(calls) == 2
-    assert calls[0][2].storage_dir != calls[1][2].storage_dir
+    assert len(calls) == 4
+    assert calls[0][2].storage_dir != calls[2][2].storage_dir
 
 
 def test_asset_kind_paths_missing_files_and_unknown_fields(preview, tmp_path):
@@ -350,7 +354,7 @@ def test_mask_aliases_deduplicate_and_queued_defaults_are_frozen(preview):
     assert calls[0][3]['mask_scale'] == 1.4
 
 
-def test_symlink_source_and_cache_cannot_escape_tenant(preview, tmp_path):
+def test_symlink_source_is_rejected_and_retired_cache_is_ignored(preview, tmp_path):
     client, tenants, _, _, calls, *_ = preview
     foreign = tmp_path/'foreign'
     foreign.mkdir()
@@ -367,9 +371,10 @@ def test_symlink_source_and_cache_cannot_escape_tenant(preview, tmp_path):
     asset(tenants['2'])
     (tenants['2'].storage_dir/'cache').symlink_to(foreign, target_is_directory=True)
     job = post(client, user='2').json()
-    assert terminal(client, job['id'], '2')['status'] == 'failed'
-    assert not calls
+    assert terminal(client, job['id'], '2')['status'] == 'defaced'
+    assert len(calls) == 1
     assert list(foreign.iterdir()) == [foreign/'source.mp4']
+    assert (foreign/'source.mp4').read_bytes() == b'private foreign content'
 
 
 def test_restart_recovery_once_per_database(preview):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import uuid
+import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -88,7 +89,7 @@ class JobStore:
     def find_active_for_candidate(self, candidate_id: str) -> Job | None:
         with self._lock:
             for job in self._jobs.values():
-                if job.candidate_id == candidate_id and job.status in {"queued", "running", "defaced", "succeeded"}:
+                if job.candidate_id == candidate_id and job.status in {"queued", "running"}:
                     return job
             if not self.persistent:
                 return None
@@ -96,7 +97,7 @@ class JobStore:
                 from sqlalchemy import select
                 record = db.scalar(select(JobRecord).where(
                     JobRecord.candidate_id == candidate_id,
-                    JobRecord.status.in_(["queued", "running", "defaced", "succeeded"])))
+                    JobRecord.status.in_(["queued", "running"])))
                 if record is None:
                     return None
                 job = Job(**database.job_dict(record))
@@ -182,6 +183,11 @@ def run_deface_pipeline(
 
         defaced_path = job_dir / "defaced.mp4"
         blur_options = blur_options or BlurOptions.from_settings(settings)
+        # Retain the source and exact options, never use the preview as a new input.
+        from .artifacts import sha256_file
+        (job_dir/'redaction-input.json').write_text(json.dumps({
+            'source':str(source_path.resolve()), 'sha256':sha256_file(source_path),
+            'options':blur_options.model_dump(mode='json')}),encoding='utf-8')
         processor_name = "deface" if blur_options.mask_mode == "face" else "本地人脸/头发跟踪器"
         store.update(job_id, progress=25, message=f"正在使用{processor_name}处理")
         store.log(job_id, f"{processor_name}：模式 {blur_options.mask_mode}，样式 {blur_options.style}，遮罩 {blur_options.mask_scale} 倍，检测阈值 {blur_options.threshold}，稳定跟踪 {blur_options.robust_tracking}。")
@@ -212,7 +218,7 @@ def run_generation_pipeline(
     face_paths: list[Path] | None = None,
     clothing_paths: list[Path] | None = None,
 ) -> None:
-    """Generate the final video from a previously completed deface stage."""
+    """Generate with fresh masking of the source used by the preview stage."""
     job_dir = settings.storage_dir / "work" / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     def safe_message(value):
@@ -222,9 +228,26 @@ def run_generation_pipeline(
         job = store.get(job_id)
         if not job or not job.defaced_name:
             raise RuntimeError("请先完成视频打码，再进入下一步。")
-        defaced_path = job_dir / job.defaced_name
-        if not defaced_path.exists():
-            raise RuntimeError("找不到打码后的视频，请重新提交视频。")
+        record = job_dir/'redaction-input.json'
+        if not record.is_file():
+            raise RuntimeError("旧任务缺少原始打码参数，请重新上传视频创建任务。")
+        values = json.loads(record.read_text(encoding='utf-8'))
+        source = Path(values['source'])
+        from .artifacts import sha256_file
+        if not source.is_file() or sha256_file(source) != values['sha256']:
+            raise RuntimeError("原始视频不存在或已变化，请重新上传视频。")
+        from .redaction_service import freeze
+        attempt = job_dir / 'generation' / uuid.uuid4().hex
+        attempt.mkdir(parents=True)
+        defaced_path = attempt / 'defaced.mp4'
+        temporary = attempt / 'defaced.tmp.mp4'
+        store.update(job_id, progress=25, message="正在重新处理视频打码")
+        try:
+            temporary.unlink(missing_ok=True)
+            run_deface(source, temporary, freeze(settings), BlurOptions(**values['options']))
+            temporary.replace(defaced_path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
         output_path = settings.storage_dir / "outputs" / f"{job_id}.mp4"
         output_path.parent.mkdir(parents=True, exist_ok=True)

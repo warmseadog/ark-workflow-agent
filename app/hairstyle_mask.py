@@ -65,22 +65,12 @@ def process_hairstyle(settings, asset, values=None):
     from .artifacts import sha256_file
     digest = sha256_file(source)
     if digest != asset['sha256']:raise ValueError('发型参考图已变化，请重新上传。')
-    key = hashlib.sha256((digest+json.dumps(params,sort_keys=True)+':hair-face-v1').encode()).hexdigest()
-    root = settings.storage_dir/'cache'/'hairstyle-mask';root.mkdir(parents=True,exist_ok=True)
+    key = uuid.uuid4().hex + uuid.uuid4().hex
+    root = settings.storage_dir/'work'/'hairstyle-masks';root.mkdir(parents=True,exist_ok=True)
     output,metadata = root/(key+'.png'),root/(key+'.json')
     notify('waiting')
     with _lock:
         notify('other')
-        if output.is_file() and metadata.is_file():
-            try:
-                details = json.loads(metadata.read_text(encoding='utf-8'))
-                if (isinstance(details,dict) and details.get('source_sha256')==digest
-                        and details.get('settings')==params
-                        and details.get('output_sha256')==sha256_file(output)
-                        and type(details.get('faces_detected')) is int):
-                    notify('masking', cached=True)
-                    return {**details,'path':output,'key':key,'source_asset_id':asset.get('id')}
-            except (ValueError,OSError):pass
         try:
             notify('masking')
             with Image.open(source) as image:

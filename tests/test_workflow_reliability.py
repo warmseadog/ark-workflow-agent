@@ -42,6 +42,7 @@ def run_generation(workflow):
 
 
 def install_success_transport(monkeypatch):
+    monkeypatch.setattr(worker, "run_deface", lambda src,dst,*args: dst.write_bytes(src.read_bytes()+b"-fresh-mask"))
     monkeypatch.setattr("app.seedance.requests.get", lambda *a, **kw: response(
         {"status": "succeeded", "output_url": "https://media.example/result.mp4"}))
     monkeypatch.setattr(SeedanceClient, "_download_result",
@@ -167,7 +168,8 @@ def test_manual_resume_uses_durable_remote_identity_without_inputs(workflow, mon
 def test_startup_discovers_queued_task_and_starts_only_one_dispatcher(workflow, monkeypatch):
     # Returning an existing live dispatcher prevents restart recovery stealing active work.
     settings, store, project_id, task_id, source = workflow
-    render = store.create_stage_task(project_id, "redaction_render")
+    original = store.create_source_asset(project_id, "upload", str(source))
+    render = store.create_stage_task(project_id, "redaction_render", input_data={"source_asset_id":original["id"], "options":{}})
     store.transition_stage_task(render["id"], "running")
     store.transition_stage_task(render["id"], "succeeded", output_data={"artifact": {"path": str(source)}})
     face = store.create_reference_asset(project_id, "face", str(source))
@@ -218,7 +220,8 @@ def ready_api(workflow):
     _, store, project_id, unused_task, source = workflow
     # The fixture's unrelated empty generation should never enter the dispatcher.
     store.transition_stage_task(unused_task, "cancelled")
-    render = store.create_stage_task(project_id, "redaction_render")
+    original = store.create_source_asset(project_id, "upload", str(source))
+    render = store.create_stage_task(project_id, "redaction_render", input_data={"source_asset_id":original["id"], "options":{}})
     store.transition_stage_task(render["id"], "running")
     store.transition_stage_task(render["id"], "succeeded", output_data={"artifact": {"path": str(source)}})
     for kind in ("face", "garment"):

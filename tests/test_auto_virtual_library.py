@@ -132,7 +132,7 @@ def test_remote_id_is_committed_before_get_and_survives_restart(library, monkeyp
     assert recovered['request_id'] == first_result['request_id']
 
 
-@pytest.mark.parametrize('listing', ['unique', 'empty', 'multiple', 'incomplete', 'wrong_type', 'wrong_project'])
+@pytest.mark.parametrize('listing', ['unique', 'empty', 'multiple', 'multiple_pages', 'incomplete', 'wrong_type', 'wrong_project', 'similar_name'])
 def test_uncertain_create_only_recovers_proven_unique_complete_listing(library, monkeypatch, listing):
     first = asset(library, 'first')
     state = {'name': None, 'creates': 0}
@@ -143,11 +143,17 @@ def test_uncertain_create_only_recovers_proven_unique_complete_listing(library, 
         if action == 'GetAssetGroup':
             return group(Name=state['name'])
         assert action == 'ListAssetGroups'
+        assert payload['Filter']['Name'] == state['name']
         items = [group(Name=state['name'])]
+        if listing == 'multiple_pages':
+            if not payload.get('NextToken'):
+                return {'Items': items, 'NextToken': 'second'}
+            return {'Items': [group('group-other', Name=state['name'])]}
         if listing == 'empty': items = []
         if listing == 'multiple': items.append(group('group-other', Name=state['name']))
         if listing == 'wrong_type': items[0]['GroupType'] = 'LivenessFace'
         if listing == 'wrong_project': items[0]['ProjectName'] = 'other'
+        if listing == 'similar_name': items[0]['Name'] += '-other'
         return {'Items': items, **({'NextToken': 'repeat'} if listing == 'incomplete' else {})}
     monkeypatch.setattr(service.ArkPortraitClient, '_request', request)
     initial = library.ensure_auto_virtual([first])
@@ -155,6 +161,30 @@ def test_uncertain_create_only_recovers_proven_unique_complete_listing(library, 
     recovered = PortraitLibrary(library.settings).ensure_auto_virtual([first])
     assert recovered['status'] == ('ready' if listing == 'unique' else 'uncertain')
     assert state['creates'] == 1
+
+
+def test_uncertain_group_recovery_filters_name_in_large_project(library, monkeypatch):
+    first = asset(library, 'first')
+    state = {'name': None, 'creates': 0, 'lists': 0}
+
+    def request(self, action, payload):
+        if action == 'CreateAssetGroup':
+            state.update(name=payload['Name'], creates=state['creates'] + 1)
+            raise service.PortraitError('创建结果待确认')
+        if action == 'GetAssetGroup':
+            return group(Name=state['name'])
+        assert action == 'ListAssetGroups'
+        state['lists'] += 1
+        if payload['Filter'].get('Name') == state['name']:
+            return {'Items': [group(Name=state['name']), group('group-similar', Name=state['name'] + '-other')]}
+        return {'Items': [group(Name=state['name'])], 'NextToken': str(state['lists'])}
+
+    monkeypatch.setattr(service.ArkPortraitClient, '_request', request)
+    assert library.ensure_auto_virtual([first])['status'] == 'uncertain'
+    recovered = library.ensure_auto_virtual([first])
+    assert recovered['status'] == 'ready'
+    assert state['creates'] == 1
+    assert state['lists'] == 1
 
 
 def test_concurrent_identical_primary_has_one_cloud_create(library, monkeypatch):

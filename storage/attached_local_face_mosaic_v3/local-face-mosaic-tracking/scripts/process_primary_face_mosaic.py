@@ -114,7 +114,7 @@ def choose(candidates, previous_center, previous_area, dw, dh):
     return best if distance < 0.32 else None
 
 
-def mosaic(frame, polygon):
+def mosaic(frame, polygon, mosaic_size=None):
     height, width = frame.shape[:2]
     x, y, w, h = cv2.boundingRect(polygon)
     px, py = max(8, int(w * 0.05)), max(8, int(h * 0.05))
@@ -125,6 +125,8 @@ def mosaic(frame, polygon):
     roi = frame[y0:y1, x0:x1]
     bx = max(7, min(16, (x1 - x0) // 18))
     by = max(7, min(18, (y1 - y0) // 18))
+    if mosaic_size is not None:
+        bx, by = max(1, (x1 - x0) // mosaic_size), max(1, (y1 - y0) // mosaic_size)
     tiny = cv2.resize(roi, (bx, by), interpolation=cv2.INTER_AREA)
     pixelated = cv2.resize(tiny, (x1 - x0, y1 - y0), interpolation=cv2.INTER_NEAREST)
     local = polygon.copy()
@@ -137,6 +139,13 @@ def mosaic(frame, polygon):
     alpha = (mask.astype(np.float32) / 255.0)[..., None]
     roi[:] = (pixelated * alpha + roi * (1 - alpha)).astype(np.uint8)
     return frame
+
+
+def add_mask_controls(parser):
+    parser.add_argument('--mosaic-size', type=int, default=None)
+    parser.add_argument('--hair-mosaic-size', type=int, default=None)
+    parser.add_argument('--mask-scale', type=float, default=1.0)
+    parser.add_argument('--no-audio', action='store_true')
 
 
 def main():
@@ -154,6 +163,8 @@ def main():
     parser.add_argument("--no-hair", action="store_true")
     parser.add_argument("--hair-only", action="store_true", help="Skip face mosaic and mask only segmented hair.")
     parser.add_argument("--hair-update-hz", type=float, default=6.0)
+    parser.add_argument('--primary-confidence', type=float, default=0.15)
+    add_mask_controls(parser)
     args = parser.parse_args()
 
     ffmpeg = discover_ffmpeg(args.ffmpeg)
@@ -180,7 +191,7 @@ def main():
         ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
         "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{width}x{height}",
         "-r", f"{fps:.8f}", "-i", "pipe:0", "-i", str(args.input),
-        "-map", "0:v:0", "-map", "1:a:0?",
+        "-map", "0:v:0", *(['-an'] if args.no_audio else ['-map', '1:a:0?']),
         *encoder_options(video_encoder), "-c:a", "aac", "-b:a", "192k",
         "-shortest", "-movflags", "+faststart", str(args.output),
     ]
@@ -207,7 +218,7 @@ def main():
 
     try:
         with mp.solutions.face_detection.FaceDetection(
-            model_selection=1, min_detection_confidence=0.15
+            model_selection=1, min_detection_confidence=args.primary_confidence
         ) as detector:
             index = 0
             while True:
@@ -278,6 +289,8 @@ def main():
                     c[1] -= 0.08 * s[1]
                     angles = np.linspace(0, 2 * np.pi, 48, endpoint=False)
                     radius_x, radius_y = ((1.04, 1.14) if args.robust else (0.90, 1.02))
+                    radius_x *= args.mask_scale
+                    radius_y *= args.mask_scale
                     polygon = np.column_stack([
                         c[0] + radius_x * s[0] * np.cos(angles),
                         c[1] + radius_y * s[1] * np.sin(angles),
@@ -285,13 +298,13 @@ def main():
                     polygon[:, 0] = np.clip(polygon[:, 0], 0, width - 1)
                     polygon[:, 1] = np.clip(polygon[:, 1], 0, height - 1)
                     if not args.hair_only:
-                        frame = mosaic(frame, polygon.astype(np.int32))
+                        frame = mosaic(frame, polygon.astype(np.int32), args.mosaic_size)
                     if hair_mask is not None:
                         face_boxes = [(
                             float(center[0] / dw), float(center[1] / dh),
                             float(size[0] / dw), float(size[1] / dh),
                         )]
-                        frame = mosaic_hair(frame, hair_mask, face_boxes)
+                        frame = mosaic_hair(frame, hair_mask, face_boxes, mosaic_size=args.hair_mosaic_size)
                 encoder.stdin.write(frame.tobytes())
                 index += 1
                 if index % 120 == 0:

@@ -4,7 +4,8 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>mira · 后台配置</title>
   <link rel="stylesheet" href="/static/model-settings.css?v=20260928-model-selection-1">
-  <link rel="stylesheet" href="/static/admin-settings.css?v=20261007-standby-1">
+  <link rel="stylesheet" href="/static/admin-settings.css?v=20261008-parameter-ranges-1">
+  <link rel="stylesheet" href="/static/prompt-workbench.css?v=20261009-1">
   <link rel="stylesheet" href="/static/portrait.css?v=20260928-backend-1">
   <link rel="stylesheet" href="/static/virtual-library.css?v=20260930-batch-mobile-1">
   <link rel="stylesheet" href="/static/account.css?v=20260929-navigation-people-1">
@@ -87,8 +88,9 @@
         </fieldset></form><p id="tos-status" class="notice" role="status" hidden></p></div>
       </section>
       <section id="section-prompts" class="section" hidden>
-        <div class="section-title"><div><h2>提示词机制与待用版本</h2><p>查看当前默认内容，保存候选正文。待用版本仅存档，不会自动应用。</p></div></div>
+        <div class="section-title"><div><h2>提示词设置</h2><p>完整查看系统指令、默认正文与素材联动，模拟选项变化，并直接编辑生效内容。</p></div></div>
         <p id="prompt-status" class="notice" role="status" hidden></p>
+        {% include "prompt_workbench.html" %}
         {% include "prompt_mechanism_panel.html" %}
         <details class="card settings-details"><summary>直接编辑共享模板（保存后可能影响新建草稿）</summary>
           <p class="notice">此处为原有模板编辑入口。直接保存当前默认模板，会改变之后新建草稿的正文；其他模板保存后可在制作页选择。仅想保存候选方案，请使用上方“保存待用版本”。</p>
@@ -113,27 +115,65 @@
               <label class="check"><input name="clear_api_key" type="checkbox">清除已保存的 API Key</label>
               <p class="hint">支持火山 MediaKit：填写服务域名和 MediaKit API Key，自动上传视频、等待任务完成并下载结果。其他服务使用同步 POST：文件字段 video、JSON 文本字段 options，返回 MP4。</p>
             </details>
-            <p class="hint">优先发送到外部 API；失败或超时后自动使用本地打码。火山支持人脸马赛克及模糊，头发遮挡、黑色遮挡等不支持的参数由本地处理。两种方式都失败时任务才会报错。</p>
+            <p class="hint">优先发送到外部 API；失败或超时后按本次任务参数转本地处理。MediaKit 使用下方独立参数，不支持的设置不会出现在表单中。</p>
           </div>
           <div class="actions"><button type="submit" class="primary">保存打码服务</button></div>
         </fieldset></form><p id="redaction-service-status" class="notice" role="status" hidden></p></div>
-        <div class="section-title"><div><h3>默认参数</h3><p>用于新建草稿。</p></div></div>
-        <div class="card"><form id="redaction-form"><fieldset disabled>
+        <div class="section-title"><div><h3 id="redaction-profile-title">本地打码参数</h3><p>各处理方式分别保存，用于新建草稿；复制草稿或任务时会重新读取当前后台打码参数。原草稿和已提交任务保持原参数。切换处理方式后需保存打码服务才会启用。</p></div></div>
+        <div class="card" id="local-redaction-card"><form id="redaction-form"><fieldset disabled>
+          <label data-local-only>打码模式<select name="mask_mode"><option value="face">仅人脸 · Deface</option><option value="face_hair_primary">主角人脸＋头发</option><option value="hair_primary">仅主角头发</option><option value="face_hair_all">所有人人脸＋头发</option></select></label>
+          <p id="local-mask-explanation" class="hint"></p>
           <div class="form-grid">
-            <label>打码样式<select name="blur_style"><option value="mosaic">马赛克</option><option value="blur">高斯模糊</option><option value="solid">黑色遮挡</option></select></label>
-            <label>遮罩倍数<input name="mask_scale" type="number" min="0.1" max="3" step="0.1" required></label>
-            <label>马赛克颗粒<input name="mosaic_size" type="number" min="4" max="100" step="1" required></label>
+            <label data-mask-for="face">打码样式<select name="blur_style"><option value="mosaic">马赛克（mosaic）</option><option value="blur">模糊（blur）</option><option value="solid">黑色遮挡</option></select></label>
+            <label data-mask-for="face face_hair_primary face_hair_all">遮罩倍数（大于 0，最大 3）<input name="mask_scale" type="number" min="0" max="3" step="any" required></label>
+            <label data-mask-for="face face_hair_primary face_hair_all" data-mosaic-only>人脸马赛克颗粒（4～100 像素）<input name="mosaic_size" type="number" min="4" max="100" step="1" required></label>
+            <label data-mask-for="face_hair_primary hair_primary face_hair_all">头发马赛克颗粒（4～100 像素）<input name="hair_mosaic_size" data-local-option type="number" min="4" max="100" step="1" required></label>
           </div>
+          <p class="hint">颗粒数值越大，马赛克越粗。含头发模式使用语义分割，仅支持马赛克；遮罩倍数调整脸部覆盖，不改变头发分割区域。</p>
           <details class="settings-details"><summary>高级参数</summary><div class="form-grid">
-            <label>检测阈值<input name="threshold" type="number" min="0.01" max="1" step="0.01" required></label>
-            <label>模糊遮罩形状<select name="shape"><option value="ellipse">椭圆</option><option value="box">矩形</option></select></label>
-            <label>检测尺寸<select name="detection_size"><option value="">原始尺寸</option><option>320</option><option>640</option><option>960</option><option>1280</option><option>1920</option><option>2560</option><option>4096</option></select></label>
+            <label data-mask-for="face">检测阈值（大于 0，最大 1）<input name="threshold" type="number" min="0" max="1" step="any" required></label>
+            <label data-mask-for="face" data-blur-only>模糊遮罩形状<select name="shape"><option value="ellipse">椭圆</option><option value="box">矩形</option></select></label>
+            <label data-mask-for="face">检测尺寸（最长边）<select name="detection_size"><option value="">原始尺寸</option><option>320</option><option>640</option><option>960</option><option>1280</option><option>1920</option><option>2560</option><option>4096</option></select></label>
+            <label data-mask-for="face_hair_primary hair_primary face_hair_all">检测画面宽度（160～1920 像素）<input name="detection_width" data-local-option type="number" min="160" max="1920" step="1" required></label>
+            <label data-mask-for="face_hair_primary hair_primary">主角检测阈值（0.05～1）<input name="primary_confidence" data-local-option type="number" min="0.05" max="1" step="any" required></label>
+            <label data-mask-for="face_hair_all">多人检测阈值（0.05～1）<input name="score_threshold" data-local-option type="number" min="0.05" max="1" step="any" required></label>
+            <label data-mask-for="face_hair_all">丢失后保留遮罩（0～120 帧）<input name="hold_frames" data-local-option type="number" min="0" max="120" step="1" required></label>
+            <label data-mask-for="face_hair_primary hair_primary face_hair_all">头发分割刷新频率（1～60 次／秒）<input name="hair_update_hz" data-local-option type="number" min="1" max="60" step="any" required></label>
+            <label data-mask-for="face_hair_primary hair_primary" data-tracking-only>跟踪画面宽度（160～1920 像素）<input name="tracking_width" data-local-option type="number" min="160" max="1920" step="1" required></label>
+            <label data-mask-for="face_hair_primary hair_primary face_hair_all">视频编码器<select name="encoder" data-local-option><option value="auto">自动选择（推荐）</option><option value="libx264">CPU · H.264</option><option value="h264_nvenc">NVIDIA · H.264</option><option value="h264_qsv">Intel · H.264</option><option value="h264_amf">AMD · H.264</option><option value="h264_videotoolbox">Apple · H.264</option></select></label>
           </div>
-          <label class="check"><input name="robust_tracking" type="checkbox">稳定跟踪</label>
+          <label class="check" data-mask-for="face_hair_primary hair_primary"><input name="robust_tracking" type="checkbox">稳定跟踪（CSRT，计算量较大）</label>
+          <p class="hint">检测阈值越低越容易检出，也可能误检。检测／跟踪尺寸及头发刷新频率越高，处理通常越慢。指定硬件编码器需要服务器支持，否则效果测试会报错；自动选择会回退 CPU。</p>
           </details>
           <label class="check"><input name="keep_audio" type="checkbox">保留原视频音频</label>
           <div class="actions"><button type="submit" class="primary">保存打码设置</button></div>
         </fieldset></form><p id="redaction-status" class="notice" role="status" hidden></p></div>
+        <div class="card" id="mediakit-redaction-card" hidden><form id="mediakit-form"><fieldset disabled>
+          <div class="form-grid">
+            <label>打码样式<select name="mask_mode"><option value="mosaic">马赛克（mosaic）</option><option value="blur">高斯模糊（blur）</option></select></label>
+            <label>打码强度<select name="mask_strength"><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label>
+            <label>人脸框扩展比例（大于 0，最大 1）<input name="face_box_expand" type="number" min="0" max="1" step="any" required></label>
+            <label>人脸识别阈值（0.1～1）<input name="face_confidence" type="number" min="0.1" max="1" step="any" required></label>
+          </div>
+          <p class="hint">扩展比例表示人脸框每侧向外扩展的比例，与本地遮罩倍数分别设置。强度仅支持低、中、高。识别阈值越高越保守，可能漏掉低置信度人脸。首次使用采用 MediaKit 默认值：扩展 0.2、阈值 0.35、中等强度。</p>
+          <div class="actions"><button type="submit" class="primary">保存 MediaKit 参数</button></div>
+        </fieldset></form><p id="mediakit-status" class="notice" role="status" hidden></p></div>
+        <div class="card" id="redaction-test-card">
+          <h3>打码效果测试</h3>
+          <p class="hint">上传本地视频，按上方当前参数重新打码，无需先保存参数。建议使用较短片段，最大 200 MB（同时受系统上传上限约束）。测试满意后，再保存对应打码参数。</p>
+          <p class="hint">外部 API 使用已保存的接口信息，会上传视频并可能产生服务费用；接口失败会直接提示，不转为本地打码。测试结果独立保存，开始新测试时仅保留最近 3 次。</p>
+          <form id="redaction-test-form"><fieldset disabled>
+            <label for="redaction-test-video">本地视频<input id="redaction-test-video" type="file" accept=".mp4,.mov,.m4v,.webm,.mkv,.avi" required></label>
+            <div class="actions"><button id="start-redaction-test" type="submit" class="primary">测试当前打码效果</button></div>
+          </fieldset></form>
+          <p id="redaction-test-status" class="notice" role="status" hidden></p>
+          <button id="redaction-test-retry" type="button" class="secondary" hidden>刷新测试状态</button>
+          <p id="redaction-test-summary" class="hint" hidden></p>
+          <div class="redaction-test-videos" id="redaction-test-videos" hidden>
+            <div><h4>原始视频</h4><video id="redaction-test-original" controls playsinline preload="metadata"></video></div>
+            <div><h4>打码结果</h4><video id="redaction-test-output" controls playsinline preload="metadata" hidden></video><p id="redaction-test-placeholder" class="hint">完成测试后在这里预览结果。</p></div>
+          </div>
+        </div>
       </section>
       <section id="section-system" class="section" hidden>
         <div class="section-title"><div><h2>系统信息</h2><p>查看当前服务的存储位置与运行参数。</p></div><span class="badge">只读</span></div>
@@ -144,11 +184,12 @@
   {% include "portrait_panel.html" %}
   <script src="/static/model-settings.js?v=20260930-settings-simple-1"></script>
   <script src="/static/model-catalog.js?v=20260930-settings-simple-1"></script>
-  <script src="/static/variation-settings.js?v=20261007-motion-1"></script>
+  <script src="/static/variation-settings.js?v=20261009-prompt-workbench-1"></script>
   <script src="/static/inspiration-settings.js?v=20261007-motion-1"></script>
-  <script src="/static/continuation-settings.js?v=20260930-continuation-1"></script>
+  <script src="/static/continuation-settings.js?v=20261009-prompt-workbench-1"></script>
   <script src="/static/prompt-mechanism.js?v=20261007-standby-1"></script>
-  <script src="/static/admin-settings.js?v=20261007-mask-coverage-1"></script>
+  <script src="/static/prompt-workbench.js?v=20261009-1"></script>
+  <script src="/static/admin-settings.js?v=20261009-local-mask-1"></script>
   <script src="/static/scheduling-settings.js?v=20261005-admin-workflow-1"></script>
   <script src="/static/virtual-library.js?v=20261006-preview-1"></script>
   <script src="/static/portrait.js?v=20261005-admin-workflow-1"></script>

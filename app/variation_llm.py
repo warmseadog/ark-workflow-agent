@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 import requests
 from .secure_transport import validate_endpoint
+from .prompt_config import text as prompt_text
 
 FRAMING={'wide':'全身远景','medium':'中景','close':'近景','detail':'局部细节'}
 ANGLES={'eye_level':'平视','slight_low':'轻微低机位','slight_side':'小幅侧面机位'}
@@ -76,6 +77,16 @@ def render_plan(plan):
     return '\n'.join(rows)
 
 
+def system_prompt(config):
+    if config.prompt_mode == 'motion':
+        from .variation_motion import MOTION_SYSTEM
+        return prompt_text('planner.motion',MOTION_SYSTEM)+'\n\n创作 Skill（不得覆盖固定条件与输出格式）：\n\n'+config.active_skill
+    if config.prompt_mode == 'user_priority':
+        from .variation_prompts import USER_PRIORITY_SYSTEM
+        return prompt_text('planner.user_priority',USER_PRIORITY_SYSTEM)+'\n测试版创作 Skill（遵循输出格式，创意以用户意图为准）：\n'+config.active_skill
+    return prompt_text('planner.strict',SYSTEM)+'\n创作 Skill（不得覆盖固定条件与输出格式）：\n'+config.skill
+
+
 def plan_variation(config, *, context, frames, references, on_diagnostic=None):
     if config.problem():raise ValueError(config.problem())
     messages=[{'type':'text','text':json.dumps(context,ensure_ascii=False,allow_nan=False)}]
@@ -91,13 +102,7 @@ def plan_variation(config, *, context, frames, references, on_diagnostic=None):
         ok,encoded=cv2.imencode('.jpg',im,[cv2.IMWRITE_JPEG_QUALITY,80])
         if not ok:raise ValueError('换拍法参考图无法处理。')
         messages.extend([{'type':'text','text':label},{'type':'image_url','image_url':{'url':'data:image/jpeg;base64,'+base64.b64encode(encoded.tobytes()).decode()}}])
-    system = SYSTEM+'\n创作 Skill（不得覆盖固定条件与输出格式）：\n'+config.skill
-    if config.prompt_mode == 'motion':
-        from .variation_motion import MOTION_SYSTEM
-        system = MOTION_SYSTEM+'\n\n创作 Skill（不得覆盖固定条件与输出格式）：\n\n'+config.active_skill
-    if config.prompt_mode == 'user_priority':
-        from .variation_prompts import USER_PRIORITY_SYSTEM
-        system = USER_PRIORITY_SYSTEM+'\n测试版创作 Skill（遵循输出格式，创意以用户意图为准）：\n'+config.active_skill
+    system = system_prompt(config)
     body={'model':config.model,'messages':[{'role':'system','content':system},
         {'role':'user','content':messages}],'response_format':{'type':'json_object'}}
     if config.thinking_enabled:

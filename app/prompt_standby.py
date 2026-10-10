@@ -28,7 +28,11 @@ def _rules_fingerprint():
     return digest.hexdigest()
 
 
-def _example(content, version):
+def _example(content, version, settings=None):
+    if settings is not None:
+        from .prompt_config import load, scope
+        with scope(load(settings)):
+            return _example(content,version)
     if version == 'legacy-v1':
         # Legacy provider also adds model/protocol-specific wrappers; name this
         # explicitly as an illustration, not a promise of an exact submission.
@@ -47,7 +51,7 @@ def overview(settings):
     fingerprint = _rules_fingerprint()
     if current:
         current = {**current, 'rule_label': RULE_LABELS.get(current['rule_version'], current['rule_version']),
-                   'rules_fingerprint': fingerprint, 'example_prompt': _example(current['content'], current['rule_version'])}
+                   'rules_fingerprint': fingerprint, 'example_prompt': _example(current['content'], current['rule_version'],settings)}
     path = _path(root)
     items = []
     if path.is_file():
@@ -72,7 +76,7 @@ def save(settings, *, name, content, source_template_id, note=''):
             'created_at': datetime.now(timezone.utc).isoformat(), 'source_template_id': source['id'],
             'source_name': source['name'], 'source_content': source['content'], 'rule_version': source['rule_version'],
             'rule_label': RULE_LABELS[source['rule_version']], 'rules_fingerprint': _rules_fingerprint(),
-            'example_prompt': _example(content, source['rule_version'])}
+            'example_prompt': _example(content, source['rule_version'],settings)}
     path = _path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(path, timeout=15) as db:

@@ -75,7 +75,7 @@ def test_external_calls_are_bounded_at_twenty(tmp_path, monkeypatch):
             future.result(timeout=5)
 
 
-def test_local_fallbacks_remain_serial(tmp_path, monkeypatch):
+def test_local_fallbacks_use_three_slots(tmp_path, monkeypatch):
     cfg = replace(settings, storage_dir=tmp_path, redaction_service=redaction_service.ServiceConfig(mode='http'))
     source = tmp_path / 'source.mp4'
     source.write_bytes(b'source')
@@ -101,14 +101,16 @@ def test_local_fallbacks_remain_serial(tmp_path, monkeypatch):
     with ThreadPoolExecutor(4) as pool:
         results = list(pool.map(lambda i: media.run_deface(source, tmp_path / f'{i}.mp4', cfg), range(4)))
     assert len(results) == 4
-    assert peak == 1
+    assert peak == 3
 
 
-def test_same_tenant_video_is_masked_only_once(tmp_path, monkeypatch):
+def test_same_tenant_pending_results_are_not_shared_until_success(tmp_path, monkeypatch):
     cfg, store, run = make_run(tmp_path)
     second = store.create_run(run['draft_id'], 1, 'second', run['private'])
     second = store.claim_next()
     calls = []
+    generating = threading.Barrier(2)
+    original_generate = worker.VideoProvider.generate
 
     def external(src, dst, *_):
         calls.append(src)
@@ -116,12 +118,24 @@ def test_same_tenant_video_is_masked_only_once(tmp_path, monkeypatch):
         dst.write_bytes(b'masked')
 
     monkeypatch.setattr(worker, 'run_deface', external)
+    def generate(self, video, faces, clothes, prompt, output, **kwargs):
+        # Neither run has succeeded yet, so there must be no shared result.
+        assert not list((tmp_path / 'cache' / 'redacted').glob('*.mp4'))
+        generating.wait(timeout=3)
+        output.write_bytes(b'finished')
+    monkeypatch.setattr(worker.VideoProvider, 'generate', generate)
     with ThreadPoolExecutor(2) as pool:
         futures = [pool.submit(worker.execute_run, cfg, store, r) for r in [run, second]]
         for future in futures:
             future.result(timeout=5)
     assert all(store.get_run(r['id'])['status'] == 'succeeded' for r in [run, second])
-    assert len(calls) == 1
+    assert len(calls) == 2
+    # Successful results are not reused by later submissions.
+    monkeypatch.setattr(worker.VideoProvider, 'generate', original_generate)
+    third = store.create_run(run['draft_id'], 1, 'third', run['private'])
+    worker.execute_run(cfg, store, store.claim_next())
+    assert store.get_run(third['id'])['status'] == 'succeeded'
+    assert len(calls) == 3
 
 
 def test_generic_http_decoders_remain_serial(tmp_path, monkeypatch):

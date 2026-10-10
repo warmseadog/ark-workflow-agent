@@ -101,7 +101,8 @@ def test_tos_generation_uploads_only_redacted_video_and_preserves_snapshot(clien
     work.mkdir(parents=True)
     (work / 'original.mp4').write_bytes(b'private-original')
     (work / 'defaced.mp4').write_bytes(video_bytes())
-    store.update(job.id, status='defaced', defaced_name='defaced.mp4')
+    monkeypatch.setattr(jobs, 'run_deface', lambda src,dst,*a: dst.write_bytes(video_bytes()))
+    jobs.run_deface_pipeline(job.id, main.settings, work/'original.mp4', None)
     uploaded = {}
     signed = {}
     class FakeTos:

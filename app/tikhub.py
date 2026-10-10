@@ -30,6 +30,7 @@ ENDPOINTS = {
 class MediaPlan:
     videos: list[str]
     audio: str | None = None
+    live_photo: bool = False
 
 def api_get(path, params, key):
     try:
@@ -91,6 +92,29 @@ def address(value):
     return None
 
 def parse_media(platform, data):
+    if platform == 'douyin':
+        # Photo posts have an outer video/music wrapper that is not the live
+        # image's moving content. Resolve explicit nested videos first.
+        for node in nodes(data):
+            images = node.get('images')
+            if not isinstance(images, list) or not images:
+                continue
+            videos = []
+            for item in images:
+                video = item.get('video') if isinstance(item, dict) else None
+                if not isinstance(video, dict):
+                    continue
+                url = next((url for field in ('play_addr_h264', 'play_addr', 'play_addr_265', 'download_addr')
+                            if (url := address(video.get(field)))), None)
+                if url:
+                    videos.append(url)
+                else:
+                    raise MediaPipelineError('实况照片的动态视频暂时不可访问，请稍后重试或上传本地视频。')
+            if videos:
+                if len(videos) > 30:
+                    raise MediaPipelineError('实况照片动态片段过多，请选择较短的作品。')
+                return MediaPlan(videos, live_photo=True)
+            raise MediaPipelineError('此作品只有静态图片，没有可用于动作参考的动态视频；请使用视频或实况照片作品。')
     if platform == 'bilibili':
         for node in nodes(data):
             dash = node.get('dash')
@@ -315,10 +339,20 @@ def download_tikhub_video(url, destination, settings):
                 if path.stat().st_size == 0:
                     raise MediaPipelineError('下载到的视频为空。')
                 paths.append(path)
+            if plan.live_photo:
+                from .live_photo import normalize_segments
+                paths = normalize_segments(paths, root)
             command = [imageio_ffmpeg.get_ffmpeg_exe(), '-y', '-v', 'error']
             if len(plan.videos) > 1:
                 manifest = root / 'segments.txt'
-                manifest.write_text(''.join(f"file '{path.name}'\n" for path in paths[:len(plan.videos)]), encoding='utf-8')
+                if plan.live_photo:
+                    from .person_video import probe
+                    # Container duration also includes AAC priming/padding. Use
+                    # the video clock at each boundary to prevent cumulative drift.
+                    entries = [f"file '{path.name}'\nduration {probe(path)['duration']:.10f}\n" for path in paths]
+                else:
+                    entries = [f"file '{path.name}'\n" for path in paths[:len(plan.videos)]]
+                manifest.write_text(''.join(entries), encoding='utf-8')
                 command += ['-f', 'concat', '-safe', '0', '-i', str(manifest)]
             else:
                 command += ['-i', str(paths[0])]
@@ -327,7 +361,18 @@ def download_tikhub_video(url, destination, settings):
             else:
                 command += ['-map', '0:v:0', '-map', '0:a:0?']
             output = root / 'complete.mp4'
-            command += ['-c', 'copy', '-movflags', '+faststart', str(output)]
+            if plan.live_photo and len(paths) > 1:
+                from .person_video import probe
+                # AAC segment padding must not introduce gaps or a variable
+                # video timebase when stitching separate moving photos.
+                duration = sum(probe(path)['duration'] for path in paths)
+                command += ['-c:v', 'libx264', '-preset', 'fast', '-threads', '1', '-crf', '18',
+                            '-pix_fmt', 'yuv420p', '-vf', 'tpad=stop_mode=clone:stop_duration=0.1,fps=30', '-c:a', 'aac',
+                            '-af', f'aresample=async=1:first_pts=0,atrim=duration={duration:.10f}',
+                            '-frames:v', str(max(1, round(duration*30)))]
+            else:
+                command += ['-c', 'copy']
+            command += ['-movflags', '+faststart', str(output)]
             result = subprocess.run(command, capture_output=True, timeout=300)
             if result.returncode or not output.exists() or not output.stat().st_size:
                 raise MediaPipelineError('视频封装失败，请尝试其他作品或上传本地视频。')

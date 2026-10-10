@@ -10,6 +10,7 @@ import re
 import shutil
 import time
 import threading
+import uuid
 from typing import Callable
 from urllib.parse import quote, urlsplit
 
@@ -18,7 +19,7 @@ import requests
 from .generation_settings import GenerationConfig
 from .secure_transport import validate_endpoint
 from .reference_roles import ACCESSORY_LABELS, ACCESSORY_RULES
-from .audio_policy import AUDIO_COPYRIGHT_CODE
+from .audio_policy import AUDIO_COPYRIGHT_CODE, AUDIO_COPYRIGHT_MESSAGE
 
 
 # The service runs one process with multiple production workers. Serialize only
@@ -89,14 +90,37 @@ class VideoProvider:
                         retryable=False, submission_uncertain=False) -> ProviderError:
         safe_detail = self._safe(detail) if detail is not None else ''
         material = str(detail).lower() if detail is not None else ''
+        indices = list(dict.fromkeys(int(a or b) for a, b in re.findall(
+            r'content\s*(?:\[\s*(\d+)\s*\]|\.\s*(\d+)\b)', material)))
+        labels = [self._safe(self._content_roles.get(i, '提示词' if i == 0 else f'content[{i}] 参考素材')) for i in indices]
+        reference = '、'.join(labels) or '参考素材'
         if AUDIO_COPYRIGHT_CODE.lower() in material:
-            return ProviderError(message + safe_detail, error_kind='audio_copyright', request_id=self._last_request_id)
+            return ProviderError(AUDIO_COPYRIGHT_MESSAGE + '可关闭生成声音后重新提交。服务商详情：' + safe_detail,
+                                 error_kind='audio_copyright', request_id=self._last_request_id)
         if 'real person' in material or 'real_person' in material:
             error_kind, retryable, submission_uncertain = 'material_rejected', False, False
-            indices = list(dict.fromkeys(int(x) for x in re.findall(r'content\s*\[\s*(\d+)\s*\]', material)))
-            labels = [self._content_roles.get(i, f'content[{i}] 参考素材') for i in indices]
-            reference = '、'.join(labels) or '参考素材'
             message = f'{reference}被服务商判定可能包含真人，请检查对应素材后重新提交。{safe_detail}'
+        elif any(token in material for token in ('sensitivecontentdetected', 'content_policy_violation',
+                                                  'content policy', 'content_filter')):
+            # A rejected output does not identify any particular input as its cause.
+            output_rejected = bool(re.search(r'output(?:audio|video|image|text)?sensitivecontentdetected', material))
+            target = '生成结果' if output_rejected else reference
+            location = '' if indices and not output_rejected else '服务商未指出具体素材，不能据此确定是哪段视频或哪张图片导致。'
+            message = f'{target}未通过服务商内容审核。{location}请检查提示词和参考素材后重新提交。服务商详情：{safe_detail}'
+            if not submission_uncertain and error_kind != 'query_unavailable':
+                error_kind = 'material_rejected'
+        elif any(token in material for token in ('invalidparameter', 'invalid_parameter', 'validationerror',
+                                                  'validation_error', 'invalid_argument')):
+            causes = []
+            for tokens, label in ((('duration',), '时长'), (('resolution', 'width', 'height'), '尺寸或分辨率'),
+                                  (('frame rate', 'frame_rate', 'fps'), '帧率'),
+                                  (('file size', 'file_size', 'filesize'), '文件大小'),
+                                  (('format', 'codec'), '文件格式或编码')):
+                if any(token in material for token in tokens):
+                    causes.append(label)
+            reason = '、'.join(causes) or '提交参数'
+            target = reference if indices else '本次请求'
+            message = f'{target}未通过服务商参数校验，涉及{reason}。请按服务商详情检查并调整后重新提交。服务商详情：{safe_detail}'
         elif safe_detail:
             message += safe_detail
         return ProviderError(message, error_kind=error_kind, request_id=self._last_request_id,
@@ -253,7 +277,10 @@ class VideoProvider:
             for index,(path,label) in enumerate(references,1):
                 if str(path) not in image_asset_uris:
                     try:
-                        path,notice=adapt_image(path,output.parent/'reference-inputs')
+                        # A masked hairstyle belongs to this submission only.
+                        directory = (output.parent/'reference-inputs'/uuid.uuid4().hex
+                                     if label == '发型' else output.parent/'reference-inputs')
+                        path,notice=adapt_image(path,directory)
                     except ValueError as exc:
                         raise ProviderError(str(exc),error_kind='material_rejected') from None
                     if notice and on_input_adapted:on_input_adapted({**notice,'label':f'第 {index} 张{label}参考图'})
@@ -262,6 +289,7 @@ class VideoProvider:
         self._content_roles = {i: f'第 {i} 张{kind}参考图' for i,(_,kind) in enumerate(references,1)}
         self._content_roles[len(references)+1] = '参考视频'
         if person_video is not None:self._content_roles[len(references)+2] = '人物参考视频'
+        self._content_roles.update(reference_roles or {})
         if self.config.protocol != 'adapter':
             if len(references) > limits['max_images']:
                 raise ProviderError(f"人物、衣服、发型、场景和配饰参考图合计最多 {limits['max_images']} 张，请删除部分图片后重试。")
@@ -269,42 +297,11 @@ class VideoProvider:
                 raise ProviderError('参考视频超过 50 MB，请压缩或缩短视频后重试。')
             if sum(p.stat().st_size for p, _ in references) > 45 * 1024 * 1024:
                 raise ProviderError('参考图片总大小过大，请压缩图片后重试。')
-        from .reference_prompt import strip_reference_rules, normalize_reference_mentions, strict_reference_rules
-        original_prompt = prompt
-        prompt = normalize_reference_mentions(strip_reference_rules(prompt), person_video is not None)
-        mapping = '；'.join(f'@Image{i}（图片{i}）为{kind}参考图' for i, (_, kind) in enumerate(references, 1))
-        # Existing saved templates may still contain the original scene instruction.
-        # Normalize the built-in phrases only; preserve custom text and give roles explicit priority.
-        if scenes or scene_description.strip():
-            for old,new in [('动作、镜头、场景和节奏','动作、镜头和节奏'),('动作、镜头和场景不变','动作、镜头不变'),('动作、镜头和场景','动作和镜头')]:
-                prompt = prompt.replace(old,new)
-        scene_rule = '保留原视频场景。' if not scenes else '场景以场景参考图为准，替换原视频背景，参考空间布局、光线和环境，不引入其中的人物。场景补充：'+scene_description.strip()+'。'
-        if not scenes and scene_description.strip():
-            scene_rule = '根据场景描述替换原视频背景，保留主体动作和镜头：'+scene_description.strip()+'。'
-        accessory_rules = ''.join(ACCESSORY_LABELS[k]+'参考：'+ACCESSORY_RULES[k]+'仅采用该配饰，不引入图中人物或背景。' for k in ACCESSORY_LABELS if accessories.get(k))
-        hair_rule = '发型沿用主人物参考图。' if not hairstyles else '发型以发型参考图为准，参考发长、轮廓、刘海、卷曲程度和发色；人物身份、五官和脸型仍以主人物参考图为准，不使用发型图的人脸或身份。'
-        structured = f'@Video1（视频1）为动作与镜头参考视频，保留其动作、镜头和节奏。{mapping}。主参考确定人物身份和服装，补充参考用于细节，保持全片一致。用户要求：{prompt.strip()}。素材分工（涉及场景或发型的冲突要求以此为准）：{scene_rule}{hair_rule}{accessory_rules}'
-        if person_video is not None:
-            structured=structured.replace('主人物参考图','人物参考视频 @Video2')
-            structured+='人物身份分工优先：@Video2（视频2）仅提供人物脸部身份与外貌；@Video1 仅提供动作、镜头与节奏，不采用视频2的动作、服装、背景、声音或台词。衣服以衣服参考图为准。'
-        structured += '\n' + strict_reference_rules(references, person_video is not None)
-        if limits['follow_source']:
-            structured = '视频编辑任务：编辑 @Video1，按参考素材替换人物、服装及指定元素。唯一编辑目标为 @Video1，保持原视频时长、画面比例、动作与镜头节奏；其他视频仅作人物身份参考，不进行延长或新增镜头。\n' + structured
-        from .prompt_templates import EXCLUSIVE_RULE_VERSION, YOYO_RULE_VERSION, RULE_VERSIONS
-        if prompt_rule_version not in RULE_VERSIONS:
-            raise ProviderError('提示词规则版本不正确。', error_kind='configuration')
-        if prompt_rule_version in (EXCLUSIVE_RULE_VERSION, YOYO_RULE_VERSION):
-            from .reference_prompt import compose_exclusive_prompt
-            structured = compose_exclusive_prompt(original_prompt, [role for _,role in references],
-                person_video=person_video is not None, scene_description=scene_description,
-                follow_source=limits['follow_source'], rule_version=prompt_rule_version)
-        if variation_plan is not None:
-            from .reference_prompt import compose_exclusive_prompt
-            structured=compose_exclusive_prompt('',[role for _,role in references],
-                person_video=person_video is not None,scene_description=scene_description,
-                rule_version=prompt_rule_version if prompt_rule_version in (EXCLUSIVE_RULE_VERSION,YOYO_RULE_VERSION) else EXCLUSIVE_RULE_VERSION,
-                variation_plan=variation_plan)
-            if on_prompt is not None:on_prompt(structured)
+        from .reference_prompt import compose_video_prompt
+        structured = compose_video_prompt(prompt, [role for _,role in references], person_video=person_video is not None,
+            scene_description=scene_description, follow_source=limits['follow_source'],
+            prompt_rule_version=prompt_rule_version, variation_plan=variation_plan)
+        if variation_plan is not None and on_prompt is not None:on_prompt(structured)
         self.progress('正在上传参考素材', 65)
         if self.config.protocol == 'toapis':
             with video.open('rb') as source:
@@ -373,10 +370,8 @@ class VideoProvider:
         if type(self.config.duration) is not int or not 4 <= self.config.duration <= 30:
             raise ProviderError('续写输出时长需为 4–30 秒。',error_kind='configuration')
         self._content_roles = {1:'已生成的基础视频'}
-        structured = (f'向后延长 @Video1（视频1），完整成片总时长 {self.config.duration} 秒。'
-            '原有片段属于成片前段，保持该段内容；仅在其结尾之后发展新的动作和剧情。'
-            '衔接视频末尾的姿态、动作方向、镜头和光线，人物身份、服装、发型、配饰和场景保持一致。'
-            '新增内容按正常速度自然发展，不循环原动作、不慢放、不定格填充。续写内容：\n'+prompt.strip())
+        from .reference_prompt import compose_extension_prompt
+        structured = compose_extension_prompt(self.config.duration,prompt)
         submitted = self._request('POST','/contents/generations/tasks',json={
             'model':self.config.model,'content':[{'type':'text','text':structured},
                 {'type':'video_url','video_url':{'url':video_url},'role':'reference_video'}],

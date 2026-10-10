@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Ark release snapshot retention every five minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=5min
+AccuracySec=15s
+Unit=ark-video-snapshot-retention.service
+
+[Install]
+WantedBy=timers.target
