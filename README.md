@@ -10,6 +10,10 @@
 
 用户可在 `/help` 查看素材要求与失败处理步骤，登录后提交反馈并查看管理员回复；管理员在 `/admin/support` 处理反馈。操作说明见 [帮助与反馈](docs/user-help-feedback.md)。
 
+任务记录中，用户可通过「取消任务」取消自己的排队、人物检查、视频预处理和上传阶段任务。取消与模型提交使用同一状态锁；一旦进入模型提交阶段，就不能再取消，以免误报取消成功。对比弹窗提供「下载对比视频」，将原始动作片段和生成结果合成为左右并排的 MP4，保留片段起点、慢放和原片结束后定格的同步方式，并采用当前选择的声音；首次导出后会缓存文件供再次下载。
+
+从任务复制、管理员还原或复制已有草稿得到的新草稿，每次提交新任务都会重新打码；重新上传并选用动作视频时，即使文件内容相同，也不会复用另一份上传的打码结果。缓存同时记录上传素材 ID 与文件版本，缺少来源记录的旧缓存会重新处理。只有整个生成任务成功后，才将新打码结果写入缓存；替换已有缓存时检查版本，避免覆盖并发任务更新的结果。任务列表显示「重新打码」，历史任务预览保留当时的工作文件；同一任务的继续查询、下载或拍法规划恢复会保留已完成的打码，不重复调用。
+
 发布与回退统一使用 `deploy/ecs/release.py` 的显式命令，按完整文件清单、锁定依赖、任务数据兼容性和发布前快照检查。`/api/version` 向登录用户提供实际发布内容标识；新包的 `REVISION`、发布清单和备份版本身份保持一致。操作步骤见 [发布与回退](docs/release-safety.md)。
 
 用户可在 `/help` 查看素材要求与失败处理步骤，登录后提交反馈并查看管理员回复；管理员在 `/admin/support` 处理反馈。操作说明见 [帮助与反馈](docs/user-help-feedback.md)。
@@ -60,30 +64,40 @@ v2 在保留 ORB-HD/deface 人脸打码的同时，接入了本地的头发语�
 
 新版制作页支持上传虚拟人物图片或视频，提交生成后自动入库；已有人物和真人授权流程继续兼容。配置、交互及验收范围见 [虚拟人物自动入库说明](docs/auto-virtual-person.md)。
 
-需要 Python 3.11+。在 Windows PowerShell 中执行：
+本地开发建议 Windows x64 + Python 3.11（支持 3.10–3.12）。首次拉取后在 PowerShell 中执行：
 
 ```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-Copy-Item .env.example .env
+.\run.ps1 -Setup
+.\run.ps1 -Check
+.\run.ps1 -Smoke
 .\run.ps1
 ```
 
-打开 http://127.0.0.1:8000 。如果 PowerShell 阻止脚本执行，可以直接运行：
+打开 http://127.0.0.1:8000/__dev 。入口固定使用独立 `.venv-dev`，不需要激活环境；默认 `demo` 使用 `.dev-data/demo`，忽略旧 `.env`、旧 `storage` 和终端里继承的服务凭据。输出为明确标记的打码演示视频。首次安装需要联网下载依赖；日常演示运行不调用云端服务。
+
+日常开发、回归和真实服务联调：
 
 ```powershell
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+.\run.ps1 -Reload
+.\run.ps1 -Test
+# 仅需要真实服务联调时：填写独立测试凭据，后台配置与 demo 分开保存。
+Copy-Item .env.integration.example .env.integration
+.\run.ps1 -Profile integration
 ```
+
+完整接入、模式区别、凭据配置和故障处理见 [本地开发与组员接入](docs/local-development.md)。以上入口不会修改 test/prod，也不会自动同步服务器配置。
 
 视频链接支持小红书、抖音、快手和 B 站的完整分享文案，自动提取 URL 后通过 TikHub 解析下载。参考视频卡片直接展示「粘贴视频链接」输入框，粘贴后点击「导入视频」或按回车即可导入；Shift+Enter 可换行，粘贴本身不会发起下载。管理员可在「链接解析设置」保存 TikHub API Key，或配置服务端 TIKHUB_API_KEY。其他链接在单用户模式保留 yt-dlp 通用下载。提示词模板支持新增、改名、编辑、保存和删除，详情见 [链接与模板说明](docs/tikhub-and-prompt-templates.md)。
 
 TikHub 配置独立于视频生成模型。尚未配置密钥时页面会提示补充配置；鉴权、余额、作品不可访问等问题会显示错误。链接识别本身不调用付费接口。
 
+分享文案可带数字前缀、时间、口令、联系信息或 Markdown 链接；重复出现的同一个作品链接会去重，不同作品链接仍要求分开导入。
+
+抖音实况照片（Live Photo）可作为动作参考导入：优先提取图文中内嵌的真实动态片段，转换为 H.264/AAC MP4，多段动态视频按作品顺序合并，保留片段声音；不把外层图文配乐时长当作动作时长。只有静态图片的作品会提示没有动态视频。导入后仍需满足所选模型的要求：Seedance 2.0 参考视频为 2–15 秒，Seedance 2.5 视频编辑输入为 4–30 秒；短实况片段不会自动重复或拉长。
+
 ## 真实 Seedance 适配器
 
-默认 mock 模式不调用外部模型。要启用当前项目内置的通用 HTTP 适配器，在 `.env` 中设置：
+默认 mock 模式不调用外部模型。以下为通用 HTTP 适配器协议说明：本地联调在 `.env.integration` 中设置这些值，服务器使用其独立环境文件；默认 demo 不启用此配置。
 
 ```dotenv
 SEEDANCE_MODE=http

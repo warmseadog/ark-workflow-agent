@@ -10,6 +10,8 @@ import platform
 import shutil
 import subprocess
 import time
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import cv2
@@ -17,6 +19,43 @@ import mediapipe as mp
 import numpy as np
 
 from hair_mosaic import HairSegmenter, mosaic_hair
+
+
+@contextmanager
+def face_detector(confidence):
+    """Keep the original full-range detector usable from Windows Unicode venvs.
+
+    MediaPipe Solutions opens both graph and TFLite via native filename APIs.
+    This script is an isolated media subprocess. Redirect its resource root only
+    while this detector is alive; don't edit the installed package or its models.
+    """
+    import mediapipe.python.solution_base as solution_base
+    package = Path(mp.__file__).parent
+    if platform.system() != 'Windows' or str(package).isascii():
+        with mp.solutions.face_detection.FaceDetection(
+                model_selection=1, min_detection_confidence=confidence) as detector:
+            yield detector
+        return
+    with tempfile.TemporaryDirectory(prefix='ark-face-model-') as temporary:
+        root = Path(temporary)
+        if not str(root).isascii():
+            # Windows user names may also be Unicode. Use the OS short name when
+            # available, otherwise explain how to select a writable ASCII TEMP.
+            import ctypes
+            buffer = ctypes.create_unicode_buffer(32768)
+            size = ctypes.windll.kernel32.GetShortPathNameW(str(root), buffer, len(buffer))
+            if not size or size >= len(buffer) or not buffer.value.isascii():
+                raise RuntimeError('MediaPipe requires an ASCII TEMP/TMP directory on this Windows installation.')
+            root = Path(buffer.value)
+        shutil.copytree(package / 'modules' / 'face_detection', root / 'mediapipe/modules/face_detection')
+        original = solution_base.__file__
+        try:
+            solution_base.__file__ = str(root / 'mediapipe/python/solution_base.py')
+            with mp.solutions.face_detection.FaceDetection(
+                    model_selection=1, min_detection_confidence=confidence) as detector:
+                yield detector
+        finally:
+            solution_base.__file__ = original
 
 
 def discover_ffmpeg(explicit=None):
@@ -217,9 +256,7 @@ def main():
         tracker.init(track_frame, tracker_box)
 
     try:
-        with mp.solutions.face_detection.FaceDetection(
-            model_selection=1, min_detection_confidence=args.primary_confidence
-        ) as detector:
+        with face_detector(args.primary_confidence) as detector:
             index = 0
             while True:
                 ok, frame = cap.read()

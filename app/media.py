@@ -91,7 +91,10 @@ def build_deface_command(
 ) -> list[str]:
     if options.mask_mode != 'face':
         raise ValueError('头发遮挡模式必须使用本地处理器')
-    command = [settings.deface_bin, str(input_path), '--replacewith', options.style]
+    launcher = [settings.deface_bin]
+    if os.name == 'nt' and settings.deface_bin == 'deface':
+        launcher = [sys.executable, str(Path(__file__).with_name('deface_runner.py'))]
+    command = [*launcher, str(input_path), '--replacewith', options.style]
     command += ['--mask-scale', str(options.mask_scale), '--thresh', str(options.threshold)]
     if options.style == 'mosaic':
         command += ['--mosaicsize', str(options.mosaic_size)]
@@ -213,7 +216,8 @@ def _run_local_deface(input_path, output_path, settings, options):
         return run_local_mosaic(input_path, output_path, options)
     command = build_deface_command(input_path, output_path, settings, options)
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=3600)
+        result = subprocess.run(command, capture_output=True, text=True,
+                                encoding='utf-8', errors='replace', timeout=3600)
     except FileNotFoundError as exc:
         raise MediaPipelineError(
             '找不到 deface 命令。请先运行 pip install deface，或在 .env 中设置 DEFACE_BIN。'

@@ -74,9 +74,6 @@ def test_pixel_granularity_changes_both_face_and_hair_output(monkeypatch):
 @pytest.mark.parametrize('keep_audio',[False,True])
 def test_real_local_processor_creates_decodable_video_with_audio_choice(tmp_path,mode,keep_audio):
     import subprocess, imageio_ffmpeg, cv2
-    import sys, mediapipe
-    if mode!='face_hair_all' and sys.platform=='win32' and not mediapipe.__file__.isascii():
-        pytest.skip('MediaPipe legacy graph loader cannot read a Unicode Windows installation path; exercised on Linux release host')
     ffmpeg=imageio_ffmpeg.get_ffmpeg_exe()
     import skimage
     portrait=tmp_path/'portrait.png'

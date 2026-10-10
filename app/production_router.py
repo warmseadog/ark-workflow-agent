@@ -432,9 +432,11 @@ def get_router(settings_getter, local_guard):
                                          'source_run_id':draft.get('delegation',{}).get('source_run_id')}
             if continuation_intent:
                 private['continuation'] = continuation_intent
-            if policy == 'auto_virtual':
+            from .config import local_demo_enabled
+            offline_demo = local_demo_enabled() and config.mode == 'mock'
+            if policy == 'auto_virtual' and not offline_demo:
                 private['person_preparation'] = preflight(settings_getter(),store(),draft,config)
-            else:
+            elif not offline_demo:
                 portrait=prepare(settings_getter(),store(),draft,config)
                 if portrait: private['portrait']=portrait
             if tenancy.enabled():

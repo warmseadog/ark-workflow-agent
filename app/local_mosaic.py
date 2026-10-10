@@ -69,6 +69,8 @@ def run_local_mosaic(
             cwd=SCRIPT_DIR,
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=3600,
             check=False,
         )

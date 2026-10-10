@@ -145,8 +145,12 @@ def execute_run(settings, store, run):
                 person_path=Path(store.get_asset(snapshot['person_video_asset_id'],private=True)['path'])
                 validate_pair(source_path,person_path,max_seconds=capabilities(config.model,config.protocol)['max_video_seconds'])
                 person_uri=image_asset_uris.pop(str(person_path),None)
-                if not person_uri:raise ValueError('人物视频尚未通过官方检查，请重新选择。')
-                extra_references.update(person_video=person_path,person_video_uri=person_uri)
+                from .config import local_demo_enabled
+                if not (local_demo_enabled() and config.mode == 'mock'):
+                    if not person_uri:raise ValueError('人物视频尚未通过官方检查，请重新选择。')
+                    extra_references.update(person_video=person_path,person_video_uri=person_uri)
+                # Offline demo copies the redacted source; it neither sends the
+                # identity video nor invents an official asset URI for it.
             clothes = [Path(store.get_asset(x, private=True)['path']) for x in snapshot['clothing_asset_ids']]
             for kind, argument in [('hairstyle','hairstyles'),('scene','scenes')]:
                 if snapshot.get(kind+'_enabled',False):

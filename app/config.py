@@ -19,6 +19,13 @@ def _as_bool(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def local_demo_enabled() -> bool:
+    """Only the explicit loopback developer entry point enables offline fixtures."""
+    return (os.getenv('APP_LOCAL_DEV_PROFILE') == 'demo'
+            and os.getenv('APP_HOST') == '127.0.0.1'
+            and not _as_bool(os.getenv('APP_AUTH_ENABLED')))
+
+
 @dataclass(frozen=True)
 class Settings:
     host: str

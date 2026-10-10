@@ -1,4 +1,7 @@
 .venv/
+.venv-dev/
+.dev-data/
+.env.integration
 __pycache__/
 *.py[cod]
 .pytest_cache/

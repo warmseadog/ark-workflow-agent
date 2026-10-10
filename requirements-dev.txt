@@ -1,0 +1,4 @@
+-c requirements-dev-windows.lock.txt
+-r requirements.txt
+# Required for PYTHON_DOTENV_DISABLED: don't read an old root .env in local profiles.
+python-dotenv>=1.2,<2
